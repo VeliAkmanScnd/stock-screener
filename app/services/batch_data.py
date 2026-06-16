@@ -1,0 +1,223 @@
+"""Batch OHLCV download and active-symbol validation."""
+
+from __future__ import annotations
+
+import logging
+from datetime import timedelta
+from typing import Any
+
+import pandas as pd
+import yfinance as yf
+
+from app.config import DEFAULT_LOOKBACK_DAYS
+from app.services.data_fetcher import INTRADAY_MIN_BARS, INTRADAY_PERIOD, INTRADAY_TIMEFRAMES
+from app.services.ticker_format import (
+    from_yf_ticker,
+    is_binance_universe,
+    is_bist_universe,
+    to_yf_ticker,
+)
+
+logger = logging.getLogger(__name__)
+
+YF_CHUNK_SIZE = 100
+OHLCV_COLS = ["Open", "High", "Low", "Close", "Volume"]
+
+# Built from 1h bars via pandas resample (yfinance has no native 4h/8h/12h)
+RESAMPLED_TIMEFRAMES: dict[str, str] = {
+    "4h": "4h",
+    "8h": "8h",
+    "12h": "12h",
+}
+RESAMPLED_SOURCE_PERIOD = "730d"
+RESAMPLED_SOURCE_INTERVAL = "1h"
+
+# Bar length in minutes (for volume window aggregation)
+BAR_MINUTES: dict[str, int] = {
+    "5m": 5,
+    "15m": 15,
+    "30m": 30,
+    "1h": 60,
+    "4h": 240,
+    "8h": 480,
+    "12h": 720,
+    "1d": 390,
+    "1wk": 1950,
+    "1mo": 8400,
+}
+
+# Max age of last bar before symbol treated as delisted / stale
+STALE_MULTIPLIER: dict[str, timedelta] = {
+    "5m": timedelta(days=3),
+    "15m": timedelta(days=5),
+    "30m": timedelta(days=7),
+    "1h": timedelta(days=10),
+    "4h": timedelta(days=14),
+    "8h": timedelta(days=18),
+    "12h": timedelta(days=21),
+    "1d": timedelta(days=8),
+    "1wk": timedelta(days=21),
+    "1mo": timedelta(days=45),
+}
+
+
+def _normalize_frame(df: pd.DataFrame) -> pd.DataFrame | None:
+    if df is None or df.empty:
+        return None
+    if isinstance(df.columns, pd.MultiIndex):
+        return None
+    df = df.rename(columns=str.title)
+    if not set(OHLCV_COLS).issubset(df.columns):
+        return None
+    out = df[OHLCV_COLS].dropna(how="all")
+    return out if len(out) >= 10 else None
+
+
+def _split_download(
+    data: pd.DataFrame,
+    yf_tickers: list[str],
+    universe: str,
+) -> dict[str, pd.DataFrame]:
+    out: dict[str, pd.DataFrame] = {}
+    if data is None or data.empty:
+        return out
+
+    if isinstance(data.columns, pd.MultiIndex):
+        for yf_sym in yf_tickers:
+            try:
+                sub = data.xs(yf_sym, axis=1, level=0, drop_level=True)
+                frame = _normalize_frame(sub)
+                if frame is not None:
+                    out[from_yf_ticker(yf_sym, universe)] = frame
+            except (KeyError, ValueError):
+                continue
+    else:
+        frame = _normalize_frame(data)
+        if frame is not None and len(yf_tickers) == 1:
+            out[from_yf_ticker(yf_tickers[0], universe)] = frame
+    return out
+
+
+def _resample_ohlcv(df: pd.DataFrame, rule: str) -> pd.DataFrame | None:
+    if df is None or df.empty:
+        return None
+    work = df.copy()
+    if work.index.tz is not None:
+        work.index = work.index.tz_localize(None)
+    agg = work.resample(rule).agg(
+        {
+            "Open": "first",
+            "High": "max",
+            "Low": "min",
+            "Close": "last",
+            "Volume": "sum",
+        }
+    )
+    agg = agg.dropna(subset=["Close"])
+    return agg if len(agg) >= 10 else None
+
+
+def fetch_ohlcv_batch(
+    symbols: list[str],
+    timeframe: str,
+    universe: str = "sp500",
+) -> dict[str, pd.DataFrame]:
+    """Download many symbols in chunks (much faster than one-by-one)."""
+    if not symbols:
+        return {}
+
+    if is_binance_universe(universe):
+        from app.services.binance_data import fetch_ohlcv_batch_binance
+
+        return fetch_ohlcv_batch_binance(symbols, timeframe)
+
+    resample_rule = RESAMPLED_TIMEFRAMES.get(timeframe)
+
+    if resample_rule:
+        period, interval, min_bars = RESAMPLED_SOURCE_PERIOD, RESAMPLED_SOURCE_INTERVAL, INTRADAY_MIN_BARS
+    elif timeframe in INTRADAY_TIMEFRAMES:
+        period, interval, min_bars = INTRADAY_PERIOD, timeframe, INTRADAY_MIN_BARS
+    elif timeframe in ("1d", "1wk", "1mo"):
+        period = f"{DEFAULT_LOOKBACK_DAYS}d" if timeframe == "1d" else "2y"
+        interval, min_bars = timeframe, 30
+    else:
+        period, interval, min_bars = INTRADAY_PERIOD, timeframe, 30
+
+    all_frames: dict[str, pd.DataFrame] = {}
+
+    for i in range(0, len(symbols), YF_CHUNK_SIZE):
+        chunk = symbols[i : i + YF_CHUNK_SIZE]
+        yf_chunk = [to_yf_ticker(s, universe) for s in chunk]
+        yf_chunk = [t for t in yf_chunk if t]
+        if not yf_chunk:
+            continue
+        tickers = " ".join(yf_chunk)
+        try:
+            raw = yf.download(
+                tickers=tickers,
+                period=period,
+                interval=interval,
+                auto_adjust=True,
+                group_by="ticker",
+                threads=True,
+                progress=False,
+            )
+            chunk_frames = _split_download(raw, yf_chunk, universe)
+            if resample_rule:
+                for sym, frame in chunk_frames.items():
+                    resampled = _resample_ohlcv(frame, resample_rule)
+                    if resampled is not None:
+                        all_frames[sym] = resampled
+            else:
+                all_frames.update(chunk_frames)
+        except Exception as exc:
+            logger.warning("Batch download chunk failed: %s", exc)
+
+    # Drop too-short series early
+    return {s: f for s, f in all_frames.items() if len(f) >= min_bars}
+
+
+def bars_for_minutes(timeframe: str, minutes: int) -> int:
+    bar = BAR_MINUTES.get(timeframe, 390)
+    return max(1, int(minutes / bar))
+
+
+def sum_volume_window(df: pd.DataFrame, timeframe: str, minutes: int) -> float:
+    n = bars_for_minutes(timeframe, minutes)
+    return float(df["Volume"].iloc[-n:].sum())
+
+
+def validate_active(
+    df: pd.DataFrame,
+    timeframe: str,
+    universe: str = "sp500",
+) -> tuple[bool, str | None]:
+    """Reject delisted, stale, or zero-liquidity symbols."""
+    if df is None or df.empty:
+        return False, "no_data"
+
+    close = df["Close"].iloc[-1]
+    if is_bist_universe(universe):
+        min_price = 0.5
+    elif is_binance_universe(universe):
+        min_price = 0.0000001
+    else:
+        min_price = 0.05
+    if pd.isna(close) or float(close) < min_price:
+        return False, "invalid_price"
+
+    last_ts = pd.Timestamp(df.index[-1]).tz_localize(None)
+    now = pd.Timestamp.utcnow().tz_localize(None)
+    stale_limit = STALE_MULTIPLIER.get(timeframe, timedelta(days=8))
+    if is_bist_universe(universe) and timeframe == "1d":
+        stale_limit = timedelta(days=12)
+    elif is_binance_universe(universe):
+        stale_limit = STALE_MULTIPLIER.get(timeframe, timedelta(days=3)) * 2
+    if (now - last_ts) > stale_limit:
+        return False, "stale_delisted"
+
+    recent_n = min(5, len(df))
+    if float(df["Volume"].iloc[-recent_n:].sum()) <= 0:
+        return False, "no_volume"
+
+    return True, None

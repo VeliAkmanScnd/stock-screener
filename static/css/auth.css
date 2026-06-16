@@ -1,0 +1,222 @@
+.auth-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+}
+
+.auth-card {
+  width: 100%;
+  max-width: 22rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--orange);
+  border-radius: var(--radius);
+  padding: 1.5rem 1.35rem;
+}
+
+.auth-brand {
+  text-align: center;
+  margin-bottom: 1.25rem;
+}
+
+.auth-brand h1 {
+  font-size: 1.15rem;
+  margin-top: 0.35rem;
+}
+
+.auth-brand .tagline {
+  margin-top: 0.25rem;
+}
+
+.auth-form .field {
+  margin-bottom: 0.75rem;
+}
+
+.auth-status {
+  min-height: 1.2em;
+  font-size: 0.82rem;
+  color: var(--danger);
+  margin-bottom: 0.5rem;
+}
+
+.auth-status.ok {
+  color: var(--success);
+}
+
+.auth-hint {
+  font-size: 0.72rem;
+  color: var(--muted);
+  margin-top: 1rem;
+  line-height: 1.45;
+}
+
+.app-tabs {
+  display: flex;
+  gap: 0.35rem;
+  margin-left: auto;
+}
+
+.app-tab {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--silver);
+  border-radius: 999px;
+  padding: 0.35rem 0.85rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.app-tab.active {
+  background: var(--orange-glow);
+  border-color: rgba(249, 115, 22, 0.45);
+  color: var(--orange);
+}
+
+.app-tab:hover:not(.active) {
+  border-color: var(--silver-dim);
+}
+
+.header-user {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+.header-user-name {
+  font-size: 0.8rem;
+  color: var(--silver);
+}
+
+.btn-logout {
+  background: transparent;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  color: var(--danger);
+  border-radius: 999px;
+  padding: 0.3rem 0.7rem;
+  font-size: 0.75rem;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.btn-logout:hover {
+  background: var(--danger-dim);
+}
+
+.admin-panel {
+  display: none;
+}
+
+.admin-panel.active {
+  display: block;
+}
+
+.scan-panel.hidden {
+  display: none;
+}
+
+.admin-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.25rem;
+  margin-bottom: 1rem;
+}
+
+.admin-users-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+  margin-top: 0.75rem;
+}
+
+.admin-users-table th,
+.admin-users-table td {
+  text-align: left;
+  padding: 0.5rem 0.65rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.admin-users-table th {
+  font-size: 0.72rem;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+.admin-form-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  align-items: flex-end;
+  margin-top: 0.75rem;
+}
+
+.admin-form-row .field {
+  margin-bottom: 0;
+  flex: 1 1 10rem;
+}
+
+.btn-sm {
+  padding: 0.3rem 0.55rem;
+  font-size: 0.72rem;
+  margin-right: 0.25rem;
+}
+
+.admin-actions {
+  white-space: nowrap;
+}
+
+.header {
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.header .header-meta {
+  width: 100%;
+  order: 3;
+}
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.65);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: 1rem;
+}
+
+.modal-overlay[hidden] {
+  display: none !important;
+}
+
+.modal-card {
+  width: 100%;
+  max-width: 24rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--orange);
+  border-radius: var(--radius);
+  padding: 1.25rem;
+}
+
+.modal-card h2 {
+  font-size: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.modal-card .hint {
+  margin-bottom: 0.85rem;
+}
+
+.password-rules {
+  font-size: 0.72rem;
+  color: var(--silver-dim);
+  margin-bottom: 0.75rem;
+  line-height: 1.4;
+}

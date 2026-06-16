@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TradeLABtr Stock Screener</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/css/style.css?v=13" />
+  <link rel="stylesheet" href="/static/css/auth.css?v=1" />
+</head>
+<body>
+  <div class="app">
+    <header class="header">
+      <div class="brand">
+        <span class="logo">◈</span>
+        <div>
+          <h1>TradeLABtr Stock Screener</h1>
+          <p class="tagline">US &amp; BIST &amp; Binance · EMA · ALMA · RSI · ADX · Pine AL</p>
+        </div>
+      </div>
+      <div class="header-user">
+        <div class="app-tabs">
+          <button type="button" class="app-tab active" id="tabScan">Tarama</button>
+          <button type="button" class="app-tab" id="tabAdmin" hidden>Kullanıcılar</button>
+        </div>
+        <span class="header-user-name" id="headerUsername"></span>
+        <button type="button" class="btn-logout" id="btnLogout">Çıkış</button>
+      </div>
+      <div class="header-meta" id="universeInfo">S&amp;P 500 evreni</div>
+    </header>
+
+    <div id="adminPanel" class="admin-panel">
+      <div class="admin-card">
+        <h2>Kullanıcı yönetimi</h2>
+        <p class="hint">Yeni kullanıcı için geçici şifre belirleyin; ilk girişte kendi şifresini tanımlar.</p>
+        <form id="adminCreateUserForm" class="admin-form-row">
+          <label class="field">
+            <span>Kullanıcı adı</span>
+            <input type="text" id="newAdminUsername" required autocomplete="off" />
+          </label>
+          <label class="field">
+            <span>Geçici şifre</span>
+            <input type="text" id="newAdminPassword" required autocomplete="new-password" />
+          </label>
+          <button type="submit" class="btn primary">Kullanıcı ekle</button>
+        </form>
+        <p class="auth-status" id="adminCreateStatus"></p>
+        <table class="admin-users-table">
+          <thead>
+            <tr>
+              <th>Kullanıcı</th>
+              <th>Rol</th>
+              <th>Şifre değişmeli</th>
+              <th>İşlem</th>
+            </tr>
+          </thead>
+          <tbody id="adminUsersBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <main class="layout scan-panel" id="scanPanel">
+      <div class="layout-top">
+        <section class="card universe-card">
+          <h2>Evren &amp; Zaman</h2>
+          <label class="field universe-field">
+            <span>Hisse evreni</span>
+            <select id="universe" class="universe-select">
+              <option value="sp500">S&amp;P 500</option>
+              <option value="nasdaq">NASDAQ (aktif hisseler)</option>
+              <option value="nyse">NYSE (aktif hisseler)</option>
+              <option value="all_us">NASDAQ + NYSE + S&amp;P 500</option>
+              <option value="bist">BIST — Borsa İstanbul</option>
+              <option value="binance">Binance Spot (USDT)</option>
+              <option value="custom">Özel liste</option>
+            </select>
+            <button type="button" class="btn secondary btn-block" id="btnRefreshUniverse" title="Hisse listesini internetten yeniden indir">Yenile</button>
+          </label>
+          <label class="field" id="customSymbolsWrap" hidden>
+            <span>Semboller (virgül veya satır)</span>
+            <textarea id="customSymbols" rows="3" placeholder="AAPL, MSFT, NVDA"></textarea>
+          </label>
+          <label class="field">
+            <span>Zaman dilimi</span>
+            <select id="timeframe">
+              <option value="1d">Günlük (1D)</option>
+              <option value="1wk">Haftalık (1W)</option>
+              <option value="12h">12 saat</option>
+              <option value="8h">8 saat</option>
+              <option value="4h">4 saat</option>
+              <option value="1h">Saatlik (1H)</option>
+              <option value="30m">30 dakika</option>
+              <option value="15m">15 dakika</option>
+              <option value="5m">5 dakika</option>
+            </select>
+          </label>
+          <label class="field">
+            <span id="maxSymbolsLabel">Maks. taranacak hisse</span>
+            <input type="number" id="maxSymbols" value="1" min="1" max="20000" />
+          </label>
+          <button type="button" class="btn primary full universe-scan-btn" id="btnScan">
+            <span class="btn-label">Taramayı Başlat</span>
+            <span class="spinner" hidden></span>
+          </button>
+        </section>
+
+        <section class="card filters-card">
+          <h2>Teknik Filtreler</h2>
+          <p class="hint filters-hint">Delist / güncel olmayan hisseler otomatik elenir; veri toplu indirilir.</p>
+          <div class="filter-list-2col">
+            <div class="filter-list-col" id="filterListColA"></div>
+            <div class="filter-list-col" id="filterListColB"></div>
+          </div>
+        </section>
+
+        <aside class="panel pine-panel">
+          <section class="card pine-card">
+            <div class="card-heading-row pine-heading-row">
+              <h2>Pine Script (AL)</h2>
+              <span class="pine-help-wrap">
+                <button
+                  type="button"
+                  class="pine-help-trigger"
+                  aria-label="Pine Script açıklaması"
+                  aria-describedby="pineHelpTooltip"
+                >
+                  ?
+                </button>
+                <div class="pine-help-tooltip" id="pineHelpTooltip" role="tooltip">
+                  <p class="pine-help-bist" id="pineHelpBist" hidden>
+                    <strong>BIST:</strong> Fiyat verisi Yahoo Finance (<code>SYMBOL.IS</code>) ile gelir; intraday gecikmeli olabilir.
+                  </p>
+                  <p>
+                    TradingView indikatörünüzü .txt olarak yükleyin. AL veya yeşil mum indikatörlerinde koşul kaydedilir.
+                    Mum rengi indikatörlerinde <strong>sadece yeşile dönen ilk bar</strong> alış sayılır.
+                  </p>
+                </div>
+              </span>
+            </div>
+
+            <label class="field">
+              <span>Dosya yükle</span>
+              <input type="file" id="pineFile" accept=".txt,.pine,.pinescript" />
+            </label>
+            <label class="field">
+              <span>Kayıt adı (isteğe bağlı)</span>
+              <input type="text" id="pineName" placeholder="Örn: MyStrategy v2" />
+            </label>
+            <button type="button" class="btn secondary" id="btnUploadPine">Yükle ve Kaydet</button>
+
+            <div class="field">
+              <span>Kayıtlı script</span>
+              <div class="pine-script-row">
+                <select id="savedPine">
+                  <option value="">— Seçin —</option>
+                </select>
+                <button type="button" class="btn danger" id="btnDeletePine" disabled title="Seçili scripti sil">Sil</button>
+              </div>
+              <button
+                type="button"
+                class="btn secondary btn-block pine-missing-btn"
+                id="btnDeleteMissingPine"
+                disabled
+                title="Dosyası olmayan kayıtları toplu sil"
+              >
+                Eksikleri sil
+              </button>
+            </div>
+            <label class="check">
+              <input type="checkbox" id="requirePineAl" />
+              <span>Sadece Pine AL koşulunu uygula (diğer filtrelerle birleştir)</span>
+            </label>
+            <div class="pine-condition" id="pineConditionBox" hidden>
+              <span class="label">Tespit edilen AL koşulu</span>
+              <code id="pineConditionText"></code>
+            </div>
+            <label class="field">
+              <span>Manuel koşul (isteğe bağlı)</span>
+              <textarea id="pineOverride" rows="2" placeholder="crossover(ema(close,9), ema(close,21))"></textarea>
+            </label>
+          </section>
+        </aside>
+      </div>
+
+      <section class="card pine-settings-area" id="pineParamsBox" hidden>
+        <div class="pine-params-head">
+          <div>
+            <h2>Script parametreleri</h2>
+            <p class="hint pine-settings-hint" id="pineParamsHint">
+              Seçili Pine script ayarları. Değişiklikleri kaydedin veya Pine dosyası varsayılanına dönün.
+            </p>
+          </div>
+          <div class="pine-params-actions">
+            <button type="button" class="btn primary btn-sm" id="btnSavePineInputs" title="Mevcut değerleri bu script için kalıcı varsayılan yap">
+              Varsayılan olarak kaydet
+            </button>
+            <button type="button" class="btn secondary btn-sm" id="btnResetPineInputs" title="Kayıtlı varsayılanları sil; Pine dosyası değerlerine dön">
+              Pine varsayılanı
+            </button>
+          </div>
+        </div>
+        <form id="pineInputsForm" class="pine-inputs-form" autocomplete="off"></form>
+      </section>
+
+      <section class="results-area">
+        <div class="results-header">
+          <h2>Sonuçlar</h2>
+          <div class="results-actions">
+            <span class="badge" id="resultCount">0 eşleşme</span>
+            <div class="results-export-actions">
+              <button type="button" class="btn secondary" id="btnExportTv" disabled title="TradingView izleme listesi (.txt)">
+                TV listesi indir
+              </button>
+              <button
+                type="button"
+                class="btn secondary"
+                id="btnAddToCustomList"
+                disabled
+                title="Sonuç sembollerini özel listeye aktar"
+              >
+                Özel listeye ekle
+              </button>
+            </div>
+          </div>
+        </div>
+        <div class="status" id="statusMsg"></div>
+        <p class="hint results-hint">TradingView: İzleme Listesi → içe aktar → indirilen .txt dosyasını seçin (her satırda bir sembol).</p>
+        <div class="scan-summary" id="scanSummary" hidden>
+          <h3 class="scan-summary-title">Tarama özeti</h3>
+          <p class="scan-summary-criteria" id="scanCriteriaList"></p>
+          <dl class="scan-signal-dl" id="scanSignalExample"></dl>
+          <p class="hint scan-summary-note">Sinyal değerleri ilk eşleşmeden örnektir; her hissedeki sayılar farklı olabilir.</p>
+        </div>
+        <div class="table-wrap">
+          <table class="results-table">
+            <thead>
+              <tr>
+                <th>Sembol</th>
+                <th>Fiyat</th>
+              </tr>
+            </thead>
+            <tbody id="resultsBody">
+              <tr class="empty"><td colspan="2">Filtreleri seçip taramayı başlatın.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div class="modal-overlay" id="changePasswordModal" hidden>
+    <div class="modal-card">
+      <h2>Şifrenizi belirleyin</h2>
+      <p class="hint">İlk girişte güçlü bir şifre tanımlamanız gerekir.</p>
+      <p class="password-rules">
+        En az 8 karakter; büyük harf, küçük harf, rakam ve özel karakter (ör. ! @ # $).
+      </p>
+      <form id="changePasswordForm">
+        <label class="field" id="currentPasswordWrap">
+          <span>Mevcut şifre</span>
+          <input type="password" id="currentPassword" autocomplete="current-password" />
+        </label>
+        <label class="field">
+          <span>Yeni şifre</span>
+          <input type="password" id="newPassword" required autocomplete="new-password" />
+        </label>
+        <label class="field">
+          <span>Yeni şifre (tekrar)</span>
+          <input type="password" id="newPasswordConfirm" required autocomplete="new-password" />
+        </label>
+        <p class="auth-status" id="changePasswordStatus"></p>
+        <button type="submit" class="btn primary full">Şifreyi kaydet</button>
+      </form>
+    </div>
+  </div>
+
+  <script src="/static/js/auth.js?v=2"></script>
+  <script src="/static/js/app.js?v=18"></script>
+</body>
+</html>

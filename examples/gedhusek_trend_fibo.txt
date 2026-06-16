@@ -1,0 +1,33 @@
+//@version=5
+indicator("Gedhusek TrendFibonacci",shorttitle="G FiboTrend",scale=scale.left)
+
+BackStep = input.int(50,"Analysis Period")
+lowerValue = input.float(0.382,"Lower Fibonacci Level",options=[0.236, 0.382, 0.50, 0.618, 0.786])
+upperValue = input.float(0.618,"Upper Fibonacci Level",options=[0.236, 0.382, 0.50, 0.618, 0.786])
+showFill = input.bool(true,"Show Filling")
+changeCandle = input.bool(true,"Change Candle Color")
+atr = ta.atr(200)
+max = ta.highest(close,BackStep)
+min = ta.lowest(close,BackStep)
+
+
+lowerFib = min + (max-min)*lowerValue
+upperFib = min + (max-min)*upperValue
+ma = ta.wma(close,6)
+
+float closeVal = ma
+float openVal = ma
+color clrToUse = closeVal>upperFib and openVal>upperFib?color.green:closeVal<lowerFib and openVal<lowerFib?color.red:color.yellow
+
+maxLine = plot(max,color=color.green)
+minLine = plot(min,color=color.red)
+LowerFibLine = plot(lowerFib,color=color.rgb(228, 255, 75, 20))
+UpperFibLine = plot(upperFib,color=color.rgb(228, 255, 75, 20))
+fill(maxLine,UpperFibLine,color=showFill?color.rgb(0,255,0,changeCandle?95:70):na)
+fill(UpperFibLine,LowerFibLine,color=showFill?color.rgb(228, 255, 75, changeCandle?95:70):na)
+fill(LowerFibLine,minLine,color=showFill?color.rgb(255,0,0,changeCandle?95:70):na)
+plotcandle(open,high,low,close,"Bar",color=changeCandle?clrToUse:na,wickcolor=changeCandle?clrToUse:na,bordercolor=changeCandle?clrToUse:na)
+
+
+float LowerRetracement = (max-min)*0.318
+float UpperRetracement = (max-min)*0.618

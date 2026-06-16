@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Giriş — TradeLABtr Stock Screener</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/css/style.css?v=10" />
+  <link rel="stylesheet" href="/static/css/auth.css?v=1" />
+</head>
+<body class="auth-page">
+  <div class="auth-card">
+    <div class="auth-brand">
+      <span class="logo">◈</span>
+      <h1>TradeLABtr Stock Screener</h1>
+      <p class="tagline">Giriş yapın</p>
+    </div>
+    <form id="loginForm" class="auth-form">
+      <label class="field">
+        <span>Kullanıcı adı</span>
+        <input type="text" id="loginUsername" autocomplete="username" required />
+      </label>
+      <label class="field">
+        <span>Şifre</span>
+        <input type="password" id="loginPassword" autocomplete="current-password" required />
+      </label>
+      <p class="auth-status" id="loginStatus"></p>
+      <button type="submit" class="btn primary full">Giriş</button>
+    </form>
+    <p class="auth-hint">
+      İlk girişte admin tarafından verilen geçici şifreyi kullanın; ardından kendi şifrenizi belirleyin.
+    </p>
+  </div>
+  <script src="/static/js/login.js?v=1"></script>
+</body>
+</html>
