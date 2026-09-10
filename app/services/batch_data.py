@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from datetime import timedelta
-from typing import Any
+from typing import Any, Callable
 
 import pandas as pd
 import yfinance as yf
@@ -117,19 +117,17 @@ def _resample_ohlcv(df: pd.DataFrame, rule: str) -> pd.DataFrame | None:
     return agg if len(agg) >= 10 else None
 
 
-def fetch_ohlcv_batch(
+def fetch_yfinance_ohlcv_batch(
     symbols: list[str],
     timeframe: str,
     universe: str = "sp500",
+    on_progress: Callable[[int, int, str], None] | None = None,
+    progress_offset: int = 0,
+    progress_total: int | None = None,
 ) -> dict[str, pd.DataFrame]:
-    """Download many symbols in chunks (much faster than one-by-one)."""
+    """Yahoo Finance batch download (US, BIST .IS, etc.)."""
     if not symbols:
         return {}
-
-    if is_binance_universe(universe):
-        from app.services.binance_data import fetch_ohlcv_batch_binance
-
-        return fetch_ohlcv_batch_binance(symbols, timeframe)
 
     resample_rule = RESAMPLED_TIMEFRAMES.get(timeframe)
 
@@ -144,9 +142,12 @@ def fetch_ohlcv_batch(
         period, interval, min_bars = INTRADAY_PERIOD, timeframe, 30
 
     all_frames: dict[str, pd.DataFrame] = {}
+    total = progress_total if progress_total is not None else len(symbols)
+    done = progress_offset
+    chunk_size = 50 if is_bist_universe(universe) else YF_CHUNK_SIZE
 
-    for i in range(0, len(symbols), YF_CHUNK_SIZE):
-        chunk = symbols[i : i + YF_CHUNK_SIZE]
+    for i in range(0, len(symbols), chunk_size):
+        chunk = symbols[i : i + chunk_size]
         yf_chunk = [to_yf_ticker(s, universe) for s in chunk]
         yf_chunk = [t for t in yf_chunk if t]
         if not yf_chunk:
@@ -173,8 +174,41 @@ def fetch_ohlcv_batch(
         except Exception as exc:
             logger.warning("Batch download chunk failed: %s", exc)
 
-    # Drop too-short series early
+        done += len(chunk)
+        if on_progress:
+            label = chunk[-1] if chunk else ""
+            on_progress(min(done, total), total, label)
+
     return {s: f for s, f in all_frames.items() if len(f) >= min_bars}
+
+
+def fetch_ohlcv_batch(
+    symbols: list[str],
+    timeframe: str,
+    universe: str = "sp500",
+    on_progress: Callable[[int, int, str], None] | None = None,
+    bist_provider: str | None = None,
+) -> dict[str, pd.DataFrame]:
+    """Download many symbols in chunks (much faster than one-by-one)."""
+    if not symbols:
+        return {}
+
+    if is_binance_universe(universe):
+        from app.services.binance_data import fetch_ohlcv_batch_binance
+
+        return fetch_ohlcv_batch_binance(symbols, timeframe)
+
+    if is_bist_universe(universe):
+        from app.services.bist_data import fetch_ohlcv_batch_bist
+        from app.services.twelvedata_client import MIN_BARS
+
+        min_bars = MIN_BARS.get(timeframe, 30)
+        frames = fetch_ohlcv_batch_bist(
+            symbols, timeframe, on_progress=on_progress, provider_override=bist_provider
+        )
+        return {s: f for s, f in frames.items() if len(f) >= min_bars}
+
+    return fetch_yfinance_ohlcv_batch(symbols, timeframe, universe, on_progress=on_progress)
 
 
 def bars_for_minutes(timeframe: str, minutes: int) -> int:
@@ -206,8 +240,10 @@ def validate_active(
     if pd.isna(close) or float(close) < min_price:
         return False, "invalid_price"
 
-    last_ts = pd.Timestamp(df.index[-1]).tz_localize(None)
-    now = pd.Timestamp.utcnow().tz_localize(None)
+    last_ts = pd.Timestamp(df.index[-1])
+    if last_ts.tzinfo is not None:
+        last_ts = last_ts.tz_convert(None)
+    now = pd.Timestamp.now("UTC").tz_localize(None)
     stale_limit = STALE_MULTIPLIER.get(timeframe, timedelta(days=8))
     if is_bist_universe(universe) and timeframe == "1d":
         stale_limit = timedelta(days=12)

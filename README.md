@@ -36,14 +36,30 @@ SESSION_SECRET=uzun-rastgele-bir-metin
 
 ## Kurulum
 
-```bash
+```powershell
 cd C:\Users\Dell\Projects\stock-screener
 python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements.txt
+.\.venv\Scripts\pip install -r requirements.txt
 copy .env.example .env
+```
+
+### Sunucuyu başlatma (Windows PowerShell)
+
+`activate` tek başına çalışmaz. Aşağıdakilerden birini kullanın:
+
+```powershell
+# Önerilen — venv activate gerekmez
+.\start.ps1
+
+# veya proje kökünden
+.\.venv\Scripts\python.exe run.py
+
+# venv activate etmek isterseniz (Scripts klasörünün içinde değil, proje kökünden)
+.\.venv\Scripts\Activate.ps1
 python run.py
 ```
+
+Zamanlanmış taramalar **yalnızca sunucu çalışırken** tetiklenir; pencereyi kapatırsanız planlar durur.
 
 Tarayıcı: http://127.0.0.1:8000
 

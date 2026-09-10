@@ -5,9 +5,10 @@ from __future__ import annotations
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-import certifi
 import httpx
 import pandas as pd
+
+from app.services.http_ssl import default_ssl_context
 
 from app.services.ticker_format import to_binance_pair
 
@@ -50,7 +51,7 @@ def _fetch_klines(symbol: str, interval: str, limit: int = KLINES_LIMIT) -> pd.D
         return None
     try:
         with httpx.Client(
-            verify=certifi.where(),
+            verify=default_ssl_context(),
             timeout=60.0,
             follow_redirects=True,
             headers={"User-Agent": "Mozilla/5.0 (compatible; StockScreener/1.0)"},

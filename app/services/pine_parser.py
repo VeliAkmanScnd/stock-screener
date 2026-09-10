@@ -168,6 +168,20 @@ def _finalize_condition(code: str, expr: str, var_name: str | None = None) -> Pi
     return PineALSignal(expr, "plotshape" if not var_name else "variable", var_name)
 
 
+def _extract_choch_bullish(code: str) -> PineALSignal | None:
+    """Market structure scripts: bullish ChoCh flip (BigBeluga-style)."""
+    from app.services.pine_choch import CHOCH_BULLISH_MARKER, choch_display_label, is_choch_market_structure_script
+
+    if not is_choch_market_structure_script(code):
+        return None
+    return PineALSignal(
+        condition=CHOCH_BULLISH_MARKER,
+        source="choch_bullish",
+        first_bar_only=True,
+        display_condition=choch_display_label(code),
+    )
+
+
 def extract_al_condition(pine_code: str) -> PineALSignal | None:
     """
     Find the boolean expression that triggers an 'AL' (buy) signal.
@@ -191,6 +205,10 @@ def extract_al_condition(pine_code: str) -> PineALSignal | None:
             variable_name="buyFlip",
             display_condition=merged_triple_display_label(pine_code),
         )
+
+    choch = _extract_choch_bullish(code)
+    if choch:
+        return choch
 
     # plotshape(cond, ..., title="AL" or "BUY")
     for m in re.finditer(

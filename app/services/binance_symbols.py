@@ -5,8 +5,9 @@ from __future__ import annotations
 import logging
 import re
 
-import certifi
 import httpx
+
+from app.services.http_ssl import default_ssl_context
 
 from app.services.ticker_format import clean_binance_symbol
 
@@ -48,7 +49,7 @@ def _is_leveraged_token(base: str) -> bool:
 def fetch_binance_usdt_symbols_live() -> tuple[str, ...]:
     """Active Binance Spot symbols quoted in USDT (base asset as display ticker)."""
     with httpx.Client(
-        verify=certifi.where(),
+        verify=default_ssl_context(),
         timeout=90.0,
         follow_redirects=True,
         headers={"User-Agent": "Mozilla/5.0 (compatible; StockScreener/1.0)"},

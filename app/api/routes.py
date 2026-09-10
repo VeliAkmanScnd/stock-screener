@@ -52,6 +52,7 @@ class ScanBody(BaseModel):
     require_pine_al: bool = False
     pine_input_overrides: dict[str, Any] = Field(default_factory=dict)
     max_symbols: int = 100
+    bist_data_provider: str | None = None
 
 
 class TradingViewExportBody(BaseModel):
@@ -61,13 +62,29 @@ class TradingViewExportBody(BaseModel):
 
 @router.get("/api/config/providers")
 def api_data_providers():
+    from app.config import BIST_DATA_PROVIDER, BIST_TD_FALLBACK
+    from app.services.bist_data import active_provider_label, bist_provider_options
+    from app.services.borsapy_client import (
+        is_borsapy_available,
+        tradingview_auth_configured,
+    )
+    from app.services.twelvedata_client import is_configured as td_configured
+
+    daily_provider = active_provider_label("1d")
     return {
-        "bist_provider": "yfinance",
+        "bist_provider": daily_provider,
         "bist_ready": True,
+        "bist_data_provider_setting": BIST_DATA_PROVIDER,
+        "bist_providers": bist_provider_options(),
+        "default_bist_provider": BIST_DATA_PROVIDER,
+        "borsapy_installed": is_borsapy_available(),
+        "tradingview_auth_configured": tradingview_auth_configured(),
+        "twelvedata_configured": td_configured(),
+        "bist_td_fallback": BIST_TD_FALLBACK,
         "us_provider": "yfinance",
         "verda_note": (
-            "Borsa İstanbul VERDA API yalnızca yetkili kurumlar için dosya indirme sunar; "
-            "canlı BIST OHLCV taraması Yahoo Finance (.IS) ile yapılır."
+            "BIST: tarama öncesi veri kaynağını seçebilirsiniz. borsapy + TradingView canlı "
+            "veri için .env içinde TRADINGVIEW_SESSION_ID ve TRADINGVIEW_SESSION_SIGN gerekir."
         ),
     }
 
@@ -124,6 +141,9 @@ def api_universe_info(universe: str = "sp500", refresh: bool = False):
         fetch_ok = False
         meta = type(meta)(ok=False, source=universe, message=str(exc), cached=False)
 
+    from app.services.bist_data import active_provider_label
+
+    bist_provider = active_provider_label("1d") if universe == "bist" else None
     return {
         "universe": universe,
         "label": labels.get(universe, universe),
@@ -134,7 +154,7 @@ def api_universe_info(universe: str = "sp500", refresh: bool = False):
         "cached": meta.cached,
         "message": meta.message,
         "bist_requires_api_key": False,
-        "bist_provider": "yfinance" if universe == "bist" else None,
+        "bist_provider": bist_provider,
         "binance_provider": "binance" if universe == "binance" else None,
     }
 
@@ -155,13 +175,27 @@ def list_pine_scripts(db: Session = Depends(get_db)):
     for r in rows:
         path_ok = bool(r.file_path) and Path(r.file_path).is_file()
         content_ok = bool(r.pine_content and r.pine_content.strip())
+        al_condition = r.al_condition
+        al_source = r.al_source
+        if not al_condition and (path_ok or content_ok):
+            content = load_pine_content(r)
+            al = extract_al_condition(content)
+            if al:
+                al_source = al.source
+                if al.source in ("candle_green_first", "merged_triple", "choch_bullish"):
+                    al_condition = al.display_condition
+                else:
+                    al_condition = al.display_condition or al.condition
+                r.al_condition = al_condition
+                r.al_source = al_source
+                db.commit()
         out.append(
             {
                 "id": r.id,
                 "name": r.name,
                 "filename": r.filename,
-                "al_condition": r.al_condition,
-                "al_source": r.al_source,
+                "al_condition": al_condition,
+                "al_source": al_source,
                 "created_at": r.created_at.isoformat() if r.created_at else None,
                 "available": path_ok or content_ok,
             }
@@ -263,7 +297,7 @@ async def upload_pine(
 
     stored_condition = None
     if al:
-        if al.source in ("candle_green_first", "merged_triple"):
+        if al.source in ("candle_green_first", "merged_triple", "choch_bullish"):
             stored_condition = al.display_condition
         else:
             stored_condition = al.display_condition or al.condition
@@ -284,6 +318,8 @@ async def upload_pine(
             f"Merged-Triple motoru aktif ({len(params)} parametre). "
             "BUY sinyali tam confluence ile taranır."
         )
+    elif al and al.source == "choch_bullish":
+        msg = "ChoCh ↑ sinyali: yükseliş yapısı değişimi (ilk bar) taranacak."
     elif al and al.first_bar_only:
         msg = "Yeşil mum sinyali: sadece yeşile DÖNÜŞEN ilk bar (alış) taranacak."
     elif not al:
@@ -321,97 +357,24 @@ async def preview_pine(file: UploadFile = File(...)):
 
 
 @router.post("/api/scan")
-def api_scan(body: ScanBody, db: Session = Depends(get_db)):
-    pine_condition = body.pine_condition_override
-    pine_source: str | None = None
-    pine_code: str | None = None
-
-    pine_label: str | None = None
-
-    pine_input_overrides = dict(body.pine_input_overrides or {})
-
-    if body.pine_script_id:
-        row = db.query(PineScript).filter(PineScript.id == body.pine_script_id).first()
-        if not row:
-            raise HTTPException(404, "Kayıtlı Pine script bulunamadı")
-        pine_code = load_pine_content(row)
-        saved = parse_saved_input_defaults(row.input_defaults)
-        if not pine_input_overrides and saved:
-            pine_input_overrides = saved
-        detected = extract_al_condition(pine_code)
-        if detected:
-            pine_source = detected.source
-            pine_condition = detected.condition
-            pine_label = detected.display_condition
-            if detected.source == "candle_green_first":
-                pine_condition = detected.condition
-                pine_label = fibo_display_label(pine_code)
-        else:
-            pine_source = row.al_source
-            pine_condition = pine_condition or row.al_condition
-        if pine_source == "candle_green_first" and pine_code and not pine_label:
-            pine_label = fibo_display_label(pine_code)
-
-    if body.require_pine_al and not pine_condition:
+def api_scan(body: ScanBody):
+    if body.require_pine_al and not body.pine_script_id and not body.pine_condition_override:
         raise HTTPException(400, "Pine AL taraması için script veya koşul gerekli")
 
-    filters = [FilterRule(id=f.id, enabled=f.enabled, params=f.params) for f in body.filters]
+    from app.services.scan_jobs import start_scan_job
 
-    req = ScanRequest(
-        universe=body.universe,
-        custom_symbols=body.custom_symbols,
-        custom_source_universe=body.custom_source_universe,
-        timeframe=body.timeframe,
-        filters=filters,
-        pine_script_id=body.pine_script_id,
-        require_pine_al=body.require_pine_al,
-        pine_input_overrides=pine_input_overrides,
-        max_symbols=min(body.max_symbols, MAX_SYMBOLS_PER_SCAN),
-    )
+    job_id = start_scan_job(body.model_dump())
+    return {"job_id": job_id, "status": "running"}
 
-    try:
-        results, stats = run_scan(req, pine_condition, pine_source, pine_code)
-    except TwelveDataError as exc:
-        raise HTTPException(400, str(exc)) from exc
-    except Exception as exc:
-        raise HTTPException(500, f"Tarama hatası: {exc}") from exc
 
-    pine_inputs_applied = (
-        applied_inputs_summary(pine_code, pine_input_overrides)
-        if pine_code and pine_input_overrides
-        else []
-    )
+@router.get("/api/scan/jobs/{job_id}")
+def api_scan_job(job_id: str):
+    from app.services.scan_jobs import get_scan_job
 
-    return json_safe(
-        {
-            "count": len(results),
-            "pine_label": pine_label,
-            "pine_source": pine_source,
-            "pine_inputs_applied": pine_inputs_applied,
-            "pine_mode": "first_green_bar" if pine_source == "candle_green_first" else None,
-            "stats": {
-                "requested": stats.requested,
-                "downloaded": stats.downloaded,
-                "skipped_inactive": stats.skipped_inactive,
-                "scanned": stats.scanned,
-                "matched": stats.matched,
-                "skip_reasons": stats.skip_reasons,
-            },
-            "results": [
-                {
-                    "symbol": r.symbol,
-                    "price": round(r.price, 2) if r.price == r.price else None,
-                    "signals": r.signals,
-                }
-                for r in results
-            ],
-            "tradingview_symbols": build_tradingview_list(
-                [r.symbol for r in results], body.universe
-            ).split("\n")
-            if results
-            else [],
-        }
-    )
+    job = get_scan_job(job_id)
+    if not job:
+        raise HTTPException(404, "Tarama bulunamadı veya süresi doldu")
+    return job
 
 
 @router.post("/api/export/tradingview")

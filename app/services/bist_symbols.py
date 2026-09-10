@@ -5,9 +5,9 @@ from __future__ import annotations
 import logging
 import re
 
-import certifi
 import httpx
 
+from app.services.http_ssl import default_ssl_context
 from app.services.ticker_format import clean_bist_symbol
 
 logger = logging.getLogger(__name__)
@@ -28,7 +28,7 @@ def _is_valid_bist_code(code: str) -> bool:
 
 def fetch_bist_symbols_bigpara() -> tuple[str, ...]:
     with httpx.Client(
-        verify=certifi.where(),
+        verify=default_ssl_context(),
         timeout=90.0,
         follow_redirects=True,
         headers=_HTTP_HEADERS,
@@ -54,6 +54,9 @@ def fetch_bist_symbols_bigpara() -> tuple[str, ...]:
 
 def fetch_bist_symbols_live() -> tuple[str, ...]:
     """BigPara public list (no API key; matches yfinance .IS tickers)."""
+    from app.services.bist_blocklist import filter_bist_blocklist
+
     syms = fetch_bist_symbols_bigpara()
+    syms = filter_bist_blocklist(syms)
     logger.info("BIST symbols from BigPara: %d", len(syms))
     return syms

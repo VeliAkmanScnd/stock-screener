@@ -12,9 +12,9 @@ logger = logging.getLogger(__name__)
 MAX_CAP_WORKERS = 24
 
 
-def _fetch_one_cap(symbol: str) -> tuple[str, float | None]:
+def _fetch_one_cap_yf(yf_ticker: str, symbol: str) -> tuple[str, float | None]:
     try:
-        t = yf.Ticker(symbol)
+        t = yf.Ticker(yf_ticker)
         cap = None
         try:
             fi = t.fast_info
@@ -32,7 +32,7 @@ def _fetch_one_cap(symbol: str) -> tuple[str, float | None]:
 
 
 def fetch_market_caps(symbols: list[str], universe: str = "sp500") -> dict[str, float]:
-    from app.services.ticker_format import is_bist_universe, to_yf_ticker
+    from app.services.ticker_format import to_yf_ticker
 
     caps: dict[str, float] = {}
     if not symbols:
@@ -41,7 +41,7 @@ def fetch_market_caps(symbols: list[str], universe: str = "sp500") -> dict[str, 
     workers = min(MAX_CAP_WORKERS, max(4, len(symbols) // 20))
     with ThreadPoolExecutor(max_workers=workers) as pool:
         futures = {
-            pool.submit(_fetch_one_cap, to_yf_ticker(s, universe)): s for s in symbols
+            pool.submit(_fetch_one_cap_yf, to_yf_ticker(s, universe), s): s for s in symbols
         }
         for fut in as_completed(futures):
             sym, cap = fut.result()

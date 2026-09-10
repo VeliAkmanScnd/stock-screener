@@ -16,6 +16,12 @@ const FILTERS = [
     ],
   },
   {
+    id: "open_gap_min",
+    label: "Bar açılış artışı (min %)",
+    defaultParams: { min_pct: 1 },
+    fields: [{ key: "min_pct", label: "Min %" }],
+  },
+  {
     id: "momentum_positive",
     label: "Momentum pozitif",
     defaultParams: {},
@@ -95,13 +101,104 @@ let lastScanData = null;
 const CUSTOM_SOURCE_KEY = "screenerCustomSourceUniverse";
 
 function getCustomSourceUniverse() {
+  const sel = $("#customSourceUniverse");
+  if (sel?.value) return sel.value;
   return localStorage.getItem(CUSTOM_SOURCE_KEY) || "sp500";
+}
+
+function syncCustomSourceUI() {
+  const isCustom = $("#universe")?.value === "custom";
+  const sourceWrap = $("#customSourceWrap");
+  const symbolsWrap = $("#customSymbolsWrap");
+  if (sourceWrap) sourceWrap.hidden = !isCustom;
+  if (symbolsWrap) symbolsWrap.hidden = !isCustom;
+  const sel = $("#customSourceUniverse");
+  if (isCustom && sel) {
+    const saved = localStorage.getItem(CUSTOM_SOURCE_KEY);
+    if (saved) sel.value = saved;
+  }
+  syncBistProviderUI();
 }
 
 function setCustomSourceUniverse(universe) {
   if (universe && universe !== "custom") {
     localStorage.setItem(CUSTOM_SOURCE_KEY, universe);
+    const sel = $("#customSourceUniverse");
+    if (sel) sel.value = universe;
   }
+}
+
+function isBistScanContext() {
+  const u = $("#universe")?.value || "sp500";
+  return u === "bist" || (u === "custom" && getCustomSourceUniverse() === "bist");
+}
+
+let bistProviderMeta = { providers: [], tradingview_auth_configured: false };
+
+async function loadBistProviderOptions() {
+  try {
+    const res = await apiFetch("/api/config/providers");
+    if (!res.ok) return;
+    const data = await res.json();
+    bistProviderMeta = data;
+    const sel = $("#bistDataProvider");
+    if (!sel) return;
+    const current = sel.value;
+    sel.innerHTML = '<option value="">Varsayılan (.env)</option>';
+    (data.bist_providers || []).forEach((p) => {
+      const opt = document.createElement("option");
+      opt.value = p.id;
+      opt.textContent = p.label + (p.available === false ? " (yüklü değil)" : "");
+      opt.disabled = p.available === false;
+      sel.appendChild(opt);
+    });
+    if (current) sel.value = current;
+    updateBistProviderHint();
+  } catch {
+    /* ignore */
+  }
+}
+
+function updateBistProviderHint() {
+  const hint = $("#bistProviderHint");
+  const tvHelp = $("#bistTvHelp");
+  const sel = $("#bistDataProvider");
+  if (!hint || !sel) return;
+  const chosen = sel.value;
+  const row = (bistProviderMeta.bist_providers || []).find((p) => p.id === chosen);
+  let text = row?.hint || "";
+  if (!chosen) {
+    text =
+      `Varsayılan: ${bistProviderMeta.default_bist_provider || "yfinance"}. ` +
+      (bistProviderMeta.borsapy_installed
+        ? "borsapy yüklü."
+        : "borsapy için pip install borsapy.");
+  }
+  if (chosen === "borsapy" || (!chosen && bistProviderMeta.default_bist_provider === "borsapy")) {
+    if (bistProviderMeta.tradingview_auth_configured) {
+      text += " TradingView oturumu bağlı (canlı veri mümkün).";
+    } else {
+      text += " Canlı BIST için TradingView cookie’lerini .env dosyasına ekleyin.";
+    }
+  }
+  hint.textContent = text;
+  if (tvHelp) {
+    tvHelp.hidden = chosen !== "borsapy";
+  }
+}
+
+function syncBistProviderUI() {
+  const wrap = $("#bistProviderWrap");
+  if (!wrap) return;
+  const show = isBistScanContext();
+  wrap.hidden = !show;
+  if (show) updateBistProviderHint();
+}
+
+function getSelectedBistProvider() {
+  if (!isBistScanContext()) return null;
+  const v = $("#bistDataProvider")?.value?.trim();
+  return v || null;
 }
 
 function parseSymbolsFromText(text) {
@@ -244,12 +341,19 @@ function isBinanceMarket(universe) {
   return false;
 }
 
+function effectiveScanMarket(universe, customSource) {
+  if (universe === "custom") {
+    return customSource || getCustomSourceUniverse() || "sp500";
+  }
+  return universe || $("#universe")?.value || "sp500";
+}
+
 function formatPrice(price, universe) {
   if (price == null || Number.isNaN(Number(price))) {
     return "—";
   }
   const u = universe || $("#universe")?.value || "sp500";
-  if (u === "bist") {
+  if (isBistMarket(u)) {
     return new Intl.NumberFormat("tr-TR", {
       style: "currency",
       currency: "TRY",
@@ -274,7 +378,7 @@ function formatPrice(price, universe) {
 
 function toTradingViewSymbol(symbol, universe) {
   const sym = String(symbol).trim().toUpperCase();
-  if (universe === "bist") {
+  if (isBistMarket(universe)) {
     return sym.startsWith("BIST:") ? sym : `BIST:${sym}`;
   }
   if (universe === "binance" || (universe === "custom" && getCustomSourceUniverse() === "binance")) {
@@ -321,7 +425,8 @@ async function downloadTradingViewList() {
     return;
   }
 
-  const universe = lastScanData.universe || $("#universe").value;
+  const universe =
+    lastScanData.market || lastScanData.universe || $("#universe").value;
   const lines = buildTvLinesFromScan(lastScanData, universe);
   if (!lines.length) {
     setStatus("Liste boş.", "error");
@@ -520,8 +625,10 @@ function countCustomSymbols(text) {
 function setCustomListExportEnabled(enabled) {
   const btnTv = $("#btnExportTv");
   const btnCustom = $("#btnAddToCustomList");
+  const btnTrack = $("#btnTrackResults");
   if (btnTv) btnTv.disabled = !enabled;
   if (btnCustom) btnCustom.disabled = !enabled;
+  if (btnTrack) btnTrack.disabled = !enabled;
 }
 
 function addResultsToCustomList() {
@@ -589,8 +696,20 @@ async function loadUniverseInfo() {
   const universe = $("#universe")?.value || "sp500";
 
   if (universe === "custom") {
+    syncCustomSourceUI();
     const n = countCustomSymbols($("#customSymbols").value);
-    applyMaxSymbols(n, "Özel liste");
+    const src = getCustomSourceUniverse();
+    const srcLabels = {
+      bist: "BIST",
+      sp500: "S&P 500",
+      nasdaq: "NASDAQ",
+      nyse: "NYSE",
+      all_us: "ABD (tümü)",
+      binance: "Binance",
+    };
+    applyMaxSymbols(n, `Özel liste (${srcLabels[src] || src})`);
+    const pineHelpBist = $("#pineHelpBist");
+    if (pineHelpBist) pineHelpBist.hidden = src !== "bist";
     return;
   }
 
@@ -962,14 +1081,9 @@ async function uploadPine() {
   $("#savedPine").value = String(data.id);
 }
 
-async function runScan() {
-  const btn = $("#btnScan");
-  const spinner = btn.querySelector(".spinner");
-  btn.disabled = true;
-  spinner.hidden = false;
-
+function collectScanBody() {
   const universe = $("#universe").value;
-  const body = {
+  return {
     universe,
     custom_symbols: $("#customSymbols").value,
     custom_source_universe: universe === "custom" ? getCustomSourceUniverse() : null,
@@ -980,14 +1094,606 @@ async function runScan() {
     pine_input_overrides: $("#savedPine").value ? collectPineInputs() : {},
     require_pine_al: $("#requirePineAl").checked,
     max_symbols: parseInt($("#maxSymbols").value, 10) || 80,
+    bist_data_provider: getSelectedBistProvider(),
   };
+}
 
-  const isBist = body.universe === "bist";
-  setStatus(
-    isBist
-      ? "BIST taraması… (bu birkaç dakika sürebilir)"
-      : "Tarama devam ediyor… (bu birkaç dakika sürebilir)"
+const SCHEDULE_TYPE_LABELS = {
+  hourly: "Saatlik",
+  every_4h: "4 saatte bir",
+  daily: "Günlük",
+  weekly: "Haftalık",
+};
+
+const SCHEDULE_WEEKDAY_LABELS = ["Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "Paz"];
+
+let editingScheduleId = null;
+let scheduledScansById = {};
+let scheduleJobNextRuns = {};
+
+function setScheduleWeekdays(days) {
+  const selected = new Set(
+    days?.length ? days : [0, 1, 2, 3, 4, 5, 6],
   );
+  document.querySelectorAll("#scheduleWeekdays input").forEach((el) => {
+    el.checked = selected.has(parseInt(el.value, 10));
+  });
+}
+
+function applyPineInputOverrides(overrides) {
+  if (!overrides) return;
+  Object.entries(overrides).forEach(([name, val]) => {
+    const inp = document.querySelector(`[data-pine-input="${CSS.escape(name)}"]`);
+    if (!inp) return;
+    if (inp.type === "checkbox") {
+      inp.checked = val === true || val === "true";
+    } else {
+      inp.value = val;
+    }
+  });
+}
+
+async function applyScanConfigToUI(cfg) {
+  if (!cfg) return;
+  $("#universe").value = cfg.universe || "sp500";
+  $("#customSymbolsWrap").hidden = cfg.universe !== "custom";
+  if (cfg.custom_symbols != null) {
+    $("#customSymbols").value = cfg.custom_symbols;
+  }
+  if (cfg.custom_source_universe) {
+    setCustomSourceUniverse(cfg.custom_source_universe);
+  }
+  syncCustomSourceUI();
+  $("#timeframe").value = cfg.timeframe || "1d";
+  if (cfg.bist_data_provider && $("#bistDataProvider")) {
+    $("#bistDataProvider").value = cfg.bist_data_provider;
+  }
+  updateBistProviderHint();
+  if (cfg.max_symbols != null) {
+    $("#maxSymbols").value = cfg.max_symbols;
+  }
+  $("#requirePineAl").checked = !!cfg.require_pine_al;
+  $("#pineOverride").value = cfg.pine_condition_override || "";
+  const pineHelpBist = $("#pineHelpBist");
+  if (pineHelpBist) pineHelpBist.hidden = cfg.universe !== "bist";
+  syncMarketCapFilterUI();
+
+  const bist =
+    cfg.universe === "bist" ||
+    (cfg.universe === "custom" && cfg.custom_source_universe === "bist");
+  FILTERS.forEach((f) => {
+    const cb = document.querySelector(`.filter-enable[data-id="${f.id}"]`);
+    if (cb) cb.checked = false;
+    const defs =
+      f.id === "market_cap_min" && bist
+        ? f.defaultParamsBist || f.defaultParams
+        : f.defaultParams;
+    f.fields.forEach(({ key }) => {
+      const inp = document.querySelector(`[data-filter="${f.id}"][data-param="${key}"]`);
+      if (!inp) return;
+      const def = defs[key];
+      if (f.id === "market_cap_min" && key === "min_usd") {
+        inp.value = formatGroupedNumber(def);
+      } else if (def != null) {
+        inp.value = def;
+      }
+    });
+  });
+
+  (cfg.filters || []).forEach((f) => {
+    const cb = document.querySelector(`.filter-enable[data-id="${f.id}"]`);
+    if (cb) cb.checked = !!f.enabled;
+    Object.entries(f.params || {}).forEach(([key, val]) => {
+      const inp = document.querySelector(
+        `[data-filter="${f.id}"][data-param="${key}"]`,
+      );
+      if (!inp || val == null) return;
+      if (f.id === "market_cap_min" && key === "min_usd") {
+        inp.value = formatGroupedNumber(val);
+      } else {
+        inp.value = val;
+      }
+    });
+  });
+
+  if (cfg.pine_script_id) {
+    $("#savedPine").value = String(cfg.pine_script_id);
+    const opt = $("#savedPine").selectedOptions[0];
+    const box = $("#pineConditionBox");
+    const text = $("#pineConditionText");
+    if (box) box.hidden = false;
+    if (opt?.dataset.available === "0") {
+      if (text) {
+        text.textContent =
+          "Dosya içeriği bulunamadı. Bu kayıt taramada kullanılamaz; «Sil» veya «Eksikleri sil» ile kaldırabilirsiniz.";
+        text.classList.add("warn");
+      }
+    } else if (text) {
+      text.classList.remove("warn");
+      text.textContent = opt?.dataset.condition || "AL koşulu tespit edilmedi.";
+    }
+    if ($("#btnDeletePine")) $("#btnDeletePine").disabled = false;
+    await loadPineParamsForScript(cfg.pine_script_id);
+    applyPineInputOverrides(cfg.pine_input_overrides);
+  } else {
+    $("#savedPine").value = "";
+    onPineSelect();
+  }
+  loadUniverseInfo();
+}
+
+function fillScheduleFormFromRow(row) {
+  $("#scheduleName").value = row.name || "";
+  $("#scheduleType").value = row.schedule_type || "daily";
+  const windowed = isWindowScheduleType(row.schedule_type);
+  if (windowed) {
+    $("#scheduleStartHour").value = row.hour ?? 10;
+    $("#scheduleEndHour").value = row.end_hour ?? 18;
+    $("#scheduleWindowMinute").value = row.minute ?? 0;
+  } else {
+    $("#scheduleHour").value = row.hour ?? 8;
+    $("#scheduleMinute").value = row.minute ?? 30;
+  }
+  const days =
+    row.weekdays?.length
+      ? row.weekdays
+      : row.schedule_type === "daily" || windowed
+        ? [0, 1, 2, 3, 4, 5, 6]
+        : [];
+  setScheduleWeekdays(days);
+  $("#scheduleTimezone").value = row.timezone || "Europe/Istanbul";
+  $("#scheduleEmail").value = row.email_to || "";
+  updateScheduleFormVisibility();
+}
+
+function resetScheduleModalForCreate() {
+  editingScheduleId = null;
+  const title = $("#scheduleModalTitle");
+  const hint = $("#scheduleModalHint");
+  const submitBtn = $("#scheduleSubmitBtn");
+  if (title) title.textContent = "Zamanlanmış tarama oluştur";
+  if (hint) {
+    hint.innerHTML =
+      "Mevcut evren, filtreler, Pine ayarları ve zaman dilimi kaydedilir. TV listesi e-postası yalnızca tarama <strong>çalıştığında</strong> gönderilir (Şimdi veya planlanan saatte).";
+  }
+  if (submitBtn) submitBtn.textContent = "Oluştur";
+  $("#scheduleScanForm")?.reset();
+  setScheduleWeekdays([0, 1, 2, 3, 4, 5, 6]);
+  updateScheduleFormVisibility();
+}
+
+function setScheduleModalEditMode(row) {
+  editingScheduleId = row.id;
+  const title = $("#scheduleModalTitle");
+  const hint = $("#scheduleModalHint");
+  const submitBtn = $("#scheduleSubmitBtn");
+  if (title) title.textContent = "Zamanlanmış tarama düzenle";
+  if (hint) {
+    hint.innerHTML =
+      "Zamanlama ve e-posta buradan güncellenir. <strong>Kaydet</strong> ayrıca üstteki evren, filtreler ve Pine ayarlarını da bu taramaya yazar.";
+  }
+  if (submitBtn) submitBtn.textContent = "Kaydet";
+  fillScheduleFormFromRow(row);
+}
+
+function parseUtcIso(iso) {
+  if (!iso) return null;
+  if (iso.endsWith("Z") || /[+-]\d{2}:\d{2}$/.test(iso)) return new Date(iso);
+  return new Date(`${iso}Z`);
+}
+
+function formatLocalDateTime(iso, timeZone = "Europe/Istanbul") {
+  const d = parseUtcIso(iso);
+  if (!d || Number.isNaN(d.getTime())) return iso || "";
+  return d.toLocaleString("tr-TR", { timeZone });
+}
+
+function getSelectedScheduleWeekdays() {
+  return [...document.querySelectorAll("#scheduleWeekdays input:checked")]
+    .map((el) => parseInt(el.value, 10))
+    .sort((a, b) => a - b);
+}
+
+function formatWeekdaysList(days) {
+  if (!days?.length) return "";
+  return days.map((d) => SCHEDULE_WEEKDAY_LABELS[d] || d).join(", ");
+}
+
+function formatScheduleTime(row) {
+  const m = String(row.minute).padStart(2, "0");
+  const tz = row.timezone || "Europe/Istanbul";
+  if (row.schedule_type === "hourly") {
+    const start = String(row.hour).padStart(2, "0");
+    const end =
+      row.end_hour != null ? String(row.end_hour).padStart(2, "0") : "23";
+    let label = `Her saat ${start}:${m}–${end}:${m} (${tz})`;
+    if (row.weekdays?.length && row.weekdays.length < 7) {
+      label = `${formatWeekdaysList(row.weekdays)} · ${label}`;
+    }
+    return label;
+  }
+  if (row.schedule_type === "every_4h") {
+    const start = String(row.hour).padStart(2, "0");
+    const end =
+      row.end_hour != null ? String(row.end_hour).padStart(2, "0") : "23";
+    let label = `4 saatte bir ${start}:${m}–${end}:${m} (${tz})`;
+    if (row.weekdays?.length && row.weekdays.length < 7) {
+      label = `${formatWeekdaysList(row.weekdays)} · ${label}`;
+    }
+    return label;
+  }
+  const h = String(row.hour).padStart(2, "0");
+  if (row.schedule_type === "weekly") {
+    return `${SCHEDULE_WEEKDAY_LABELS[row.weekday ?? 0]} ${h}:${m} (${tz})`;
+  }
+  if (row.schedule_type === "daily" && row.weekdays?.length) {
+    const dayLabel =
+      row.weekdays.length === 7 ? "Her gün" : formatWeekdaysList(row.weekdays);
+    return `${dayLabel} ${h}:${m} (${tz})`;
+  }
+  return `${h}:${m} (${tz})`;
+}
+
+function isWindowScheduleType(t) {
+  return t === "hourly" || t === "every_4h";
+}
+
+function setDefaultMarketWeekdays() {
+  document.querySelectorAll("#scheduleWeekdays input").forEach((el) => {
+    const day = parseInt(el.value, 10);
+    el.checked = day >= 0 && day <= 4;
+  });
+}
+
+function updateScheduleFormVisibility() {
+  const t = $("#scheduleType")?.value || "daily";
+  const timeWrap = $("#scheduleTimeWrap");
+  const windowWrap = $("#scheduleWindowWrap");
+  const weekdaysWrap = $("#scheduleWeekdaysWrap");
+  const weekdaysLabel = $("#scheduleWeekdaysLabel");
+  const windowed = isWindowScheduleType(t);
+  if (timeWrap) timeWrap.hidden = windowed;
+  if (windowWrap) windowWrap.hidden = !windowed;
+  if (weekdaysWrap) weekdaysWrap.hidden = t !== "daily" && !windowed;
+  if (weekdaysLabel) {
+    weekdaysLabel.textContent = windowed
+      ? "Günler (BIST için genelde Pzt–Cum)"
+      : "Günler (günlük tarama)";
+  }
+}
+
+function formatScheduleLastStatus(row) {
+  if (row.last_status === "error") {
+    const err = row.last_error ? ` title="${escapeHtml(row.last_error)}"` : "";
+    return `<span class="status-pill err"${err}>hata</span>`;
+  }
+  if (row.last_status === "success_no_email") {
+    const err = row.last_error
+      ? ` title="${escapeHtml(row.last_error)}"`
+      : ' title="E-posta gönderilemedi"';
+    return `<span class="status-pill warn"${err}>e-posta yok</span>`;
+  }
+  if (row.last_status === "success") {
+    return `<span class="status-pill ok" title="E-posta gönderildi">tamam</span>`;
+  }
+  return "";
+}
+
+function escapeHtml(text) {
+  return String(text)
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+async function pollScheduledScanRun(scanId, attempt = 0) {
+  const maxAttempts = 180;
+  try {
+    const res = await apiFetch(`/api/scheduled-scans/${scanId}/runs`);
+    const runs = await res.json();
+    const latest = runs[0];
+    if (!latest || latest.status === "running") {
+      if (attempt === 0) {
+        setStatus("Zamanlanmış tarama çalışıyor…", "");
+      }
+      if (attempt < maxAttempts) {
+        setTimeout(() => pollScheduledScanRun(scanId, attempt + 1), 5000);
+        return;
+      }
+      setStatus("Tarama uzun sürüyor veya zaman aşımı. Sonuçlar tabloda görünecek.", "error");
+      loadScheduledScans();
+      return;
+    }
+    if (latest.status === "error") {
+      setStatus(
+        `Zamanlanmış tarama hatası: ${latest.error_message || "bilinmiyor"}`,
+        "error",
+      );
+    } else {
+      let msg = `Zamanlanmış tarama tamamlandı: ${latest.match_count ?? 0} eşleşme.`;
+      if (latest.email_sent) {
+        msg += " TV listesi e-posta ile gönderildi.";
+        setStatus(msg, "ok");
+      } else if (latest.error_message) {
+        msg += ` E-posta gönderilemedi: ${latest.error_message}`;
+        setStatus(msg, "error");
+      } else {
+        msg += " E-posta gönderilmedi.";
+        setStatus(msg, "error");
+      }
+    }
+    loadScheduledScans();
+  } catch (e) {
+    setStatus("Tarama durumu alınamadı: " + e.message, "error");
+    loadScheduledScans();
+  }
+}
+
+function buildSchedulePreviewText() {
+  const body = collectScanBody();
+  const t = $("#scheduleType")?.value || "daily";
+  const windowed = isWindowScheduleType(t);
+  const previewRow = {
+    schedule_type: t,
+    hour: windowed
+      ? parseInt($("#scheduleStartHour")?.value || "10", 10)
+      : parseInt($("#scheduleHour")?.value || "8", 10),
+    end_hour: windowed
+      ? parseInt($("#scheduleEndHour")?.value || "18", 10)
+      : null,
+    minute: windowed
+      ? parseInt($("#scheduleWindowMinute")?.value || "0", 10)
+      : parseInt($("#scheduleMinute")?.value || "30", 10),
+    weekdays:
+      t === "daily" || windowed ? getSelectedScheduleWeekdays() : [],
+    timezone: $("#scheduleTimezone")?.value || "Europe/Istanbul",
+  };
+  const parts = [
+    `Evren: ${body.universe}`,
+    `Zaman dilimi (tarama): ${body.timeframe}`,
+    `Maks: ${body.max_symbols}`,
+    `Periyot: ${SCHEDULE_TYPE_LABELS[t] || t} — ${formatScheduleTime(previewRow)}`,
+  ];
+  if (body.require_pine_al) parts.push("Pine AL zorunlu");
+  if (body.pine_script_id) parts.push(`Pine script #${body.pine_script_id}`);
+  return parts.join(" · ");
+}
+
+function openScheduleModal() {
+  resetScheduleModalForCreate();
+  const modal = $("#scheduleScanModal");
+  if (!modal) return;
+  $("#scheduleFormStatus").textContent = "";
+  $("#schedulePreview").textContent = buildSchedulePreviewText();
+  modal.hidden = false;
+}
+
+async function openEditScheduleModal(id) {
+  let row = scheduledScansById[id];
+  if (!row) {
+    try {
+      const res = await apiFetch(`/api/scheduled-scans/${id}`);
+      row = await res.json();
+      scheduledScansById[id] = row;
+    } catch (e) {
+      setStatus("Zamanlanmış tarama yüklenemedi: " + e.message, "error");
+      return;
+    }
+  }
+  setScheduleModalEditMode(row);
+  await applyScanConfigToUI(row.scan_config);
+  const modal = $("#scheduleScanModal");
+  if (!modal) return;
+  $("#scheduleFormStatus").textContent = "";
+  $("#schedulePreview").textContent = buildSchedulePreviewText();
+  modal.hidden = false;
+}
+
+function closeScheduleModal() {
+  const modal = $("#scheduleScanModal");
+  if (modal) modal.hidden = true;
+  resetScheduleModalForCreate();
+}
+
+async function loadScheduleConfig() {
+  try {
+    const res = await apiFetch("/api/scheduled-scans/config");
+    const data = await res.json();
+    const hint = $("#scheduledScansHint");
+    if (hint) {
+      hint.textContent = data.smtp_configured
+        ? "SMTP yapılandırıldı. E-posta yalnızca tarama çalıştığında gider — «Şimdi» ile test edin."
+        : "SMTP yapılandırılmamış (.env: SMTP_HOST, SMTP_FROM). Uygulamayı yeniden başlatın.";
+    }
+    if ($("#scheduleTimezone") && data.default_timezone) {
+      $("#scheduleTimezone").value = data.default_timezone;
+    }
+    scheduleJobNextRuns = {};
+    for (const job of data.scheduler?.jobs || []) {
+      if (!job?.id?.startsWith("scheduled_scan_") || !job.next_run) continue;
+      const id = job.id.replace("scheduled_scan_", "");
+      scheduleJobNextRuns[id] = job.next_run;
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+function resolveNextRunAt(row) {
+  if (row.next_run_at) return row.next_run_at;
+  return scheduleJobNextRuns[String(row.id)] || null;
+}
+
+async function loadScheduledScans() {
+  const tbody = $("#scheduledScansBody");
+  if (!tbody) return;
+  try {
+    const res = await apiFetch("/api/scheduled-scans");
+    const rows = await res.json();
+    scheduledScansById = Object.fromEntries(rows.map((r) => [String(r.id), r]));
+    if (!rows.length) {
+      tbody.innerHTML =
+        '<tr class="empty"><td colspan="7">Henüz zamanlanmış tarama yok.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows
+      .map((r) => {
+        const tz = r.timezone || "Europe/Istanbul";
+        const last = r.last_run_at
+          ? `${formatLocalDateTime(r.last_run_at, tz)} · ${r.last_match_count ?? 0} eşleşme`
+          : "—";
+        const nextAt = resolveNextRunAt(r);
+        const next =
+          r.enabled && nextAt
+            ? formatLocalDateTime(nextAt, tz)
+            : r.enabled
+              ? "—"
+              : "Durduruldu";
+        const status = formatScheduleLastStatus(r);
+        return `<tr>
+          <td><strong>${r.name}</strong> ${status}</td>
+          <td>${SCHEDULE_TYPE_LABELS[r.schedule_type] || r.schedule_type}</td>
+          <td>${formatScheduleTime(r)}</td>
+          <td>${r.email_to}</td>
+          <td>${last}</td>
+          <td>${next}</td>
+          <td class="scheduled-actions">
+            <button type="button" class="btn secondary btn-sm" data-edit-sched="${r.id}">Düzenle</button>
+            <button type="button" class="btn secondary btn-sm" data-run-now="${r.id}">Şimdi</button>
+            <button type="button" class="btn secondary btn-sm" data-toggle="${r.id}" data-enabled="${r.enabled ? "1" : "0"}">${r.enabled ? "Durdur" : "Başlat"}</button>
+            <button type="button" class="btn danger btn-sm" data-delete-sched="${r.id}">Sil</button>
+          </td>
+        </tr>`;
+      })
+      .join("");
+
+    tbody.querySelectorAll("[data-edit-sched]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        openEditScheduleModal(btn.dataset.editSched);
+      });
+    });
+    tbody.querySelectorAll("[data-run-now]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const id = btn.dataset.runNow;
+        btn.disabled = true;
+        try {
+          await apiFetch(`/api/scheduled-scans/${id}/run-now`, { method: "POST" });
+          pollScheduledScanRun(id);
+        } catch (e) {
+          setStatus("Tarama başlatılamadı: " + e.message, "error");
+        } finally {
+          btn.disabled = false;
+        }
+      });
+    });
+    tbody.querySelectorAll("[data-toggle]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const id = btn.dataset.toggle;
+        const enabled = btn.dataset.enabled !== "1";
+        await apiFetch(`/api/scheduled-scans/${id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ enabled }),
+        });
+        loadScheduledScans();
+      });
+    });
+    tbody.querySelectorAll("[data-delete-sched]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        if (!confirm("Bu zamanlanmış tarama silinsin mi?")) return;
+        await apiFetch(`/api/scheduled-scans/${btn.dataset.deleteSched}`, {
+          method: "DELETE",
+        });
+        loadScheduledScans();
+      });
+    });
+  } catch {
+    tbody.innerHTML =
+      '<tr class="empty"><td colspan="7">Liste yüklenemedi.</td></tr>';
+  }
+}
+
+async function submitScheduleScan(e) {
+  e.preventDefault();
+  const status = $("#scheduleFormStatus");
+  const scheduleType = $("#scheduleType").value;
+  const windowed = isWindowScheduleType(scheduleType);
+  const weekdays =
+    scheduleType === "daily" || windowed ? getSelectedScheduleWeekdays() : null;
+  if (scheduleType === "daily" && !weekdays.length) {
+    if (status) status.textContent = "En az bir gün seçin.";
+    return;
+  }
+  if (windowed && !weekdays.length) {
+    if (status) status.textContent = "En az bir gün seçin.";
+    return;
+  }
+  const startHour = parseInt($("#scheduleStartHour").value, 10);
+  const endHour = parseInt($("#scheduleEndHour").value, 10);
+  if (windowed && endHour < startHour) {
+    if (status) status.textContent = "Bitiş saati başlangıçtan önce olamaz.";
+    return;
+  }
+  const payload = {
+    name: $("#scheduleName").value.trim(),
+    schedule_type: scheduleType,
+    hour: windowed ? startHour : parseInt($("#scheduleHour").value, 10) || 0,
+    end_hour: windowed ? endHour : null,
+    minute: windowed
+      ? parseInt($("#scheduleWindowMinute").value, 10) || 0
+      : parseInt($("#scheduleMinute").value, 10) || 0,
+    weekdays,
+    timezone: $("#scheduleTimezone").value.trim() || "Europe/Istanbul",
+    email_to: $("#scheduleEmail").value.trim(),
+    enabled: editingScheduleId
+      ? scheduledScansById[editingScheduleId]?.enabled !== false
+      : true,
+    scan_config: collectScanBody(),
+  };
+  if (!payload.name) {
+    if (status) status.textContent = "Preset adı gerekli.";
+    return;
+  }
+  try {
+    const isEdit = editingScheduleId != null;
+    const url = isEdit
+      ? `/api/scheduled-scans/${editingScheduleId}`
+      : "/api/scheduled-scans";
+    const res = await apiFetch(url, {
+      method: isEdit ? "PATCH" : "POST",
+      body: JSON.stringify(payload),
+    });
+    const { data, text } = await parseJsonResponse(res);
+    if (!res.ok) {
+      if (status) status.textContent = data?.detail || text?.slice(0, 200) || "Hata";
+      return;
+    }
+    closeScheduleModal();
+    setStatus(
+      isEdit
+        ? "Zamanlanmış tarama güncellendi."
+        : "Zamanlanmış tarama oluşturuldu. E-posta, tarama çalıştığında gönderilir — listeden «Şimdi» ile test edebilirsiniz.",
+      "ok",
+    );
+    loadScheduledScans();
+  } catch (err) {
+    if (status) status.textContent = err.message;
+  }
+}
+
+async function runScan() {
+  const btn = $("#btnScan");
+  const spinner = btn.querySelector(".spinner");
+  btn.disabled = true;
+  spinner.hidden = false;
+
+  const body = collectScanBody();
+  const displayMarket = effectiveScanMarket(
+    body.universe,
+    body.custom_source_universe
+  );
+  const isBist = isBistMarket(displayMarket);
+  setScanProgress(0, isBist ? "BIST taraması başlatılıyor…" : "Tarama başlatılıyor…");
 
   try {
     const res = await apiFetch("/api/scan", {
@@ -995,17 +1701,60 @@ async function runScan() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
-    const { data, text } = await parseJsonResponse(res);
-    if (!data) {
+    const { data: startData, text } = await parseJsonResponse(res);
+    if (!startData) {
       setStatus(text?.slice(0, 300) || "Sunucu yanıtı okunamadı", "error");
       return;
     }
     if (!res.ok) {
-      setStatus(data.detail || "Tarama hatası", "error");
+      setStatus(startData.detail || "Tarama hatası", "error");
       return;
     }
-    lastScanData = { ...data, universe: body.universe, timeframe: body.timeframe };
-    renderResults(data, body.universe);
+
+    const jobId = startData.job_id;
+    if (!jobId) {
+      setStatus("Tarama kimliği alınamadı", "error");
+      return;
+    }
+
+    let data = null;
+    while (true) {
+      await new Promise((r) => setTimeout(r, 500));
+      const stRes = await apiFetch(`/api/scan/jobs/${jobId}`);
+      const { data: job, text: jobText } = await parseJsonResponse(stRes);
+      if (!job) {
+        setStatus(jobText?.slice(0, 300) || "İlerleme okunamadı", "error");
+        return;
+      }
+      if (!stRes.ok) {
+        setStatus(job.detail || "Tarama durumu alınamadı", "error");
+        return;
+      }
+
+      setScanProgress(job.progress ?? 0, job.message || "Tarama devam ediyor…");
+
+      if (job.status === "done") {
+        data = job.result;
+        break;
+      }
+      if (job.status === "error") {
+        setStatus(job.error || job.message || "Tarama hatası", "error");
+        return;
+      }
+    }
+
+    if (!data) {
+      setStatus("Tarama sonucu boş", "error");
+      return;
+    }
+
+    lastScanData = {
+      ...data,
+      universe: body.universe,
+      market: displayMarket,
+      timeframe: body.timeframe,
+    };
+    renderResults(data, displayMarket);
     setCustomListExportEnabled(
       !!(data.results?.length || data.tradingview_symbols?.length)
     );
@@ -1013,8 +1762,11 @@ async function runScan() {
     if (data.stats) {
       const s = data.stats;
       msg += ` · taranan ${s.scanned}/${s.requested}`;
+      if (s.downloaded != null && s.downloaded < s.requested) {
+        msg += ` · veri ${s.downloaded}/${s.requested}`;
+      }
       if (s.skipped_inactive > 0) {
-        msg += ` · elenen (delist/ölü) ${s.skipped_inactive}`;
+        msg += ` · elenen ${s.skipped_inactive}`;
       }
     }
     if (data.pine_mode === "first_green_bar") {
@@ -1022,17 +1774,27 @@ async function runScan() {
     } else if (data.pine_label) {
       msg += ` · ${data.pine_label}`;
     }
+    setScanProgress(100, msg);
     setStatus(msg, "ok");
   } catch (e) {
     setStatus("Bağlantı hatası: " + e.message, "error");
   } finally {
     btn.disabled = false;
     spinner.hidden = true;
+    setTimeout(hideScanProgress, 2500);
   }
 }
 
 function renderResults(data, universe) {
-  const market = universe || lastScanData?.universe || $("#universe")?.value || "sp500";
+  const market =
+    universe ||
+    lastScanData?.market ||
+    effectiveScanMarket(
+      lastScanData?.universe,
+      lastScanData?.custom_source_universe
+    ) ||
+    $("#universe")?.value ||
+    "sp500";
   $("#resultCount").textContent = `${data.count} eşleşme`;
   setCustomListExportEnabled(!!data.results?.length);
   renderSignalSummary(data);
@@ -1059,6 +1821,23 @@ function setStatus(msg, type = "") {
   el.className = "status" + (type ? ` ${type}` : "");
 }
 
+function setScanProgress(pct, message) {
+  const wrap = $("#scanProgress");
+  const bar = $("#scanProgressBar");
+  const label = $("#scanProgressLabel");
+  if (!wrap || !bar || !label) return;
+  wrap.hidden = false;
+  const p = Math.max(0, Math.min(100, Number(pct) || 0));
+  bar.style.width = `${p}%`;
+  label.textContent = `${p}%`;
+  if (message) setStatus(message);
+}
+
+function hideScanProgress() {
+  const wrap = $("#scanProgress");
+  if (wrap) wrap.hidden = true;
+}
+
 document.addEventListener("DOMContentLoaded", async () => {
   try {
     if (typeof bootstrapAuth === "function") {
@@ -1069,16 +1848,33 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
   renderFilters();
   loadUniverseInfo();
+  loadBistProviderOptions();
   loadSavedPine();
+  loadScheduleConfig().then(() => loadScheduledScans());
+  syncCustomSourceUI();
 
   $("#universe").addEventListener("change", () => {
     const u = $("#universe").value;
-    $("#customSymbolsWrap").hidden = u !== "custom";
+    syncCustomSourceUI();
     const pineHelpBist = $("#pineHelpBist");
-    if (pineHelpBist) pineHelpBist.hidden = u !== "bist";
+    if (pineHelpBist) {
+      pineHelpBist.hidden =
+        u !== "bist" && !(u === "custom" && getCustomSourceUniverse() === "bist");
+    }
     syncMarketCapFilterUI();
+    syncBistProviderUI();
     loadUniverseInfo();
   });
+
+  $("#customSourceUniverse")?.addEventListener("change", () => {
+    setCustomSourceUniverse($("#customSourceUniverse").value);
+    const pineHelpBist = $("#pineHelpBist");
+    if (pineHelpBist) pineHelpBist.hidden = getCustomSourceUniverse() !== "bist";
+    syncBistProviderUI();
+    loadUniverseInfo();
+  });
+
+  $("#bistDataProvider")?.addEventListener("change", updateBistProviderHint);
 
   $("#btnRefreshUniverse").addEventListener("click", async () => {
     const universe = $("#universe").value;
@@ -1112,6 +1908,33 @@ document.addEventListener("DOMContentLoaded", async () => {
   $("#btnResetPineInputs")?.addEventListener("click", resetPineInputsToDefaults);
   $("#btnSavePineInputs")?.addEventListener("click", savePineInputsAsDefault);
   $("#btnScan").addEventListener("click", runScan);
+  $("#btnScheduleScan")?.addEventListener("click", openScheduleModal);
+  $("#btnScheduleCancel")?.addEventListener("click", closeScheduleModal);
+  $("#scheduleScanForm")?.addEventListener("submit", submitScheduleScan);
+  $("#scheduleType")?.addEventListener("change", () => {
+    if (isWindowScheduleType($("#scheduleType").value) && !editingScheduleId) {
+      setDefaultMarketWeekdays();
+    }
+    updateScheduleFormVisibility();
+    $("#schedulePreview").textContent = buildSchedulePreviewText();
+  });
+  [
+    "scheduleHour",
+    "scheduleMinute",
+    "scheduleStartHour",
+    "scheduleEndHour",
+    "scheduleWindowMinute",
+    "scheduleTimezone",
+  ].forEach((id) => {
+    $("#" + id)?.addEventListener("change", () => {
+      $("#schedulePreview").textContent = buildSchedulePreviewText();
+    });
+  });
+  document.querySelectorAll("#scheduleWeekdays input").forEach((el) => {
+    el.addEventListener("change", () => {
+      $("#schedulePreview").textContent = buildSchedulePreviewText();
+    });
+  });
   $("#btnExportTv").addEventListener("click", downloadTradingViewList);
   $("#btnAddToCustomList").addEventListener("click", addResultsToCustomList);
 });

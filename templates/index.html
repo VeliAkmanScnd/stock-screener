@@ -6,7 +6,7 @@
   <title>TradeLABtr Stock Screener</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/css/style.css?v=13" />
+  <link rel="stylesheet" href="/static/css/style.css?v=27" />
   <link rel="stylesheet" href="/static/css/auth.css?v=1" />
 </head>
 <body>
@@ -22,6 +22,7 @@
       <div class="header-user">
         <div class="app-tabs">
           <button type="button" class="app-tab active" id="tabScan">Tarama</button>
+          <button type="button" class="app-tab" id="tabTrack">İzleme</button>
           <button type="button" class="app-tab" id="tabAdmin" hidden>Kullanıcılar</button>
         </div>
         <span class="header-user-name" id="headerUsername"></span>
@@ -79,7 +80,35 @@
           </label>
           <label class="field" id="customSymbolsWrap" hidden>
             <span>Semboller (virgül veya satır)</span>
-            <textarea id="customSymbols" rows="3" placeholder="AAPL, MSFT, NVDA"></textarea>
+            <textarea id="customSymbols" rows="5" placeholder="THYAO, AKBNK, GARAN"></textarea>
+          </label>
+          <label class="field" id="customSourceWrap" hidden>
+            <span>Liste piyasası</span>
+            <select id="customSourceUniverse">
+              <option value="bist">BIST — Borsa İstanbul</option>
+              <option value="sp500">ABD (S&amp;P 500)</option>
+              <option value="nasdaq">NASDAQ</option>
+              <option value="nyse">NYSE</option>
+              <option value="all_us">ABD (tümü)</option>
+              <option value="binance">Binance Spot</option>
+            </select>
+            <p class="hint">BIST sembolleri için mutlaka <strong>BIST</strong> seçin (ör. THYAO, AKBNK).</p>
+          </label>
+          <label class="field" id="bistProviderWrap" hidden>
+            <span>BIST veri kaynağı</span>
+            <select id="bistDataProvider" class="universe-select">
+              <option value="">Varsayılan (.env)</option>
+            </select>
+            <p class="hint" id="bistProviderHint"></p>
+            <details class="bist-tv-help" id="bistTvHelp" hidden>
+              <summary>TradingView canlı BIST nasıl bağlanır?</summary>
+              <ol class="hint bist-tv-steps">
+                <li>TradingView → Profil → <strong>Hesap ve Faturalama</strong> → <strong>Piyasa Verileri</strong> → <strong>Borsa İstanbul</strong> aboneliğini ekleyin (canlı veya gecikmeli paket).</li>
+                <li>Tarayıcıda tradingview.com’a giriş yapın → Geliştirici araçları (F12) → Application → Cookies → <code>sessionid</code> ve <code>sessionid_sign</code> değerlerini kopyalayın.</li>
+                <li>Proje <code>.env</code> dosyasına ekleyin:<br><code>TRADINGVIEW_SESSION_ID=...</code><br><code>TRADINGVIEW_SESSION_SIGN=...</code></li>
+                <li>Burada <strong>borsapy</strong> seçip taramayı başlatın; sunucuyu yeniden başlatın.</li>
+              </ol>
+            </details>
           </label>
           <label class="field">
             <span>Zaman dilimi</span>
@@ -102,6 +131,9 @@
           <button type="button" class="btn primary full universe-scan-btn" id="btnScan">
             <span class="btn-label">Taramayı Başlat</span>
             <span class="spinner" hidden></span>
+          </button>
+          <button type="button" class="btn secondary full" id="btnScheduleScan" title="Mevcut ayarlarla zamanlanmış tarama oluştur">
+            Zamanlanmış tarama
           </button>
         </section>
 
@@ -203,6 +235,33 @@
         <form id="pineInputsForm" class="pine-inputs-form" autocomplete="off"></form>
       </section>
 
+      <section class="card scheduled-scans-area" id="scheduledScansSection">
+        <div class="scheduled-scans-head">
+          <div>
+            <h2>Zamanlanmış taramalar</h2>
+            <p class="hint" id="scheduledScansHint">Otomatik tarama + TV listesi e-postası (SMTP .env gerekli).</p>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="scheduled-scans-table">
+            <thead>
+              <tr>
+                <th>Ad</th>
+                <th>Periyot</th>
+                <th>Saat</th>
+                <th>E-posta</th>
+                <th>Son çalışma</th>
+                <th>Sonraki çalışma</th>
+                <th>İşlem</th>
+              </tr>
+            </thead>
+            <tbody id="scheduledScansBody">
+              <tr class="empty"><td colspan="7">Henüz zamanlanmış tarama yok.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
       <section class="results-area">
         <div class="results-header">
           <h2>Sonuçlar</h2>
@@ -215,6 +274,15 @@
               <button
                 type="button"
                 class="btn secondary"
+                id="btnTrackResults"
+                disabled
+                title="Sonuçları izleme listesine ekle"
+              >
+                İzlemeye ekle
+              </button>
+              <button
+                type="button"
+                class="btn secondary"
                 id="btnAddToCustomList"
                 disabled
                 title="Sonuç sembollerini özel listeye aktar"
@@ -223,6 +291,12 @@
               </button>
             </div>
           </div>
+        </div>
+        <div class="scan-progress" id="scanProgress" hidden>
+          <div class="scan-progress-track">
+            <div class="scan-progress-bar" id="scanProgressBar"></div>
+          </div>
+          <span class="scan-progress-label" id="scanProgressLabel">0%</span>
         </div>
         <div class="status" id="statusMsg"></div>
         <p class="hint results-hint">TradingView: İzleme Listesi → içe aktar → indirilen .txt dosyasını seçin (her satırda bir sembol).</p>
@@ -247,6 +321,151 @@
         </div>
       </section>
     </main>
+
+    <main class="layout track-panel hidden" id="trackPanel">
+      <section class="card track-settings-card">
+        <h2>İzleme ayarları</h2>
+        <p class="hint">Varsayılan hedef +8% / stop −5%. Zamanlanmış taramalar eşleşmeleri otomatik ekler (ayrı satır / kaynak).</p>
+        <form id="trackSettingsForm" class="track-settings-form">
+          <label class="field">
+            <span>Hedef %</span>
+            <input type="number" id="trackTargetPct" min="0.1" max="100" step="0.1" value="8" />
+          </label>
+          <label class="field">
+            <span>Stop %</span>
+            <input type="number" id="trackStopPct" min="0.1" max="100" step="0.1" value="5" />
+          </label>
+          <label class="field track-check">
+            <input type="checkbox" id="trackAutoTrack" checked />
+            <span>Zamanlanmış taramalardan otomatik ekle</span>
+          </label>
+          <label class="field track-check">
+            <input type="checkbox" id="trackAutoCloseTpSl" checked />
+            <span>TP/SL otomatik kapat</span>
+          </label>
+          <label class="field track-check">
+            <input type="checkbox" id="trackAutoWeekend" />
+            <span>Cuma intraday otomatik kapat (isteğe bağlı)</span>
+          </label>
+          <label class="field">
+            <span>Cuma kapanış saati (İstanbul)</span>
+            <input type="number" id="trackWeekendHour" min="0" max="23" value="23" />
+          </label>
+          <button type="submit" class="btn secondary">Ayarları kaydet</button>
+        </form>
+        <p class="auth-status" id="trackSettingsStatus"></p>
+      </section>
+
+      <section class="card track-list-card">
+        <div class="track-list-head">
+          <div>
+            <h2>Performans izleme</h2>
+            <p class="hint" id="trackListHint">Aktif pozisyonlar — fiyatlar saatlik güncellenir (Pzt–Cum 10:00–23:50).</p>
+          </div>
+          <div class="track-list-actions">
+            <button type="button" class="btn secondary btn-sm" id="btnTrackRefresh">Fiyatları güncelle</button>
+            <button type="button" class="btn secondary btn-sm" id="btnTrackClearActive">Listeyi kapat</button>
+            <button type="button" class="btn secondary btn-sm" id="btnTrackReopenSelected" hidden>Seçilenleri aktife al</button>
+            <button type="button" class="btn secondary btn-sm" id="btnTrackDeleteSelected" hidden>Seçilenleri listeden kaldır</button>
+          </div>
+        </div>
+        <div class="track-view-tabs">
+          <button type="button" class="track-view-tab active" data-track-view="active">Aktif</button>
+          <button type="button" class="track-view-tab" data-track-view="closed">Geçmiş</button>
+        </div>
+        <div class="track-universe-tabs" id="trackUniverseTabs" hidden></div>
+        <div class="track-benchmark-bar" id="trackBenchmarkBar" hidden></div>
+        <div class="track-table-toolbar" id="trackTableToolbar" hidden>
+          <span class="hint" id="trackFilterSummary"></span>
+          <button type="button" class="btn secondary btn-sm" id="btnTrackClearFilters">Filtreleri temizle</button>
+        </div>
+        <div class="table-wrap track-table-wrap">
+          <table class="scheduled-scans-table track-table">
+            <thead>
+              <tr id="trackTableHeadRow"></tr>
+            </thead>
+            <tbody id="trackPositionsBody">
+              <tr class="empty"><td colspan="12">Henüz izlenen pozisyon yok.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="auth-status" id="trackListStatus"></p>
+      </section>
+    </main>
+  </div>
+
+  <div class="modal-overlay" id="scheduleScanModal" hidden>
+    <div class="modal-card modal-card-wide">
+      <h2 id="scheduleModalTitle">Zamanlanmış tarama oluştur</h2>
+      <p class="hint" id="scheduleModalHint">Mevcut evren, filtreler, Pine ayarları ve zaman dilimi kaydedilir. TV listesi e-postası yalnızca tarama <strong>çalıştığında</strong> gönderilir (Şimdi veya planlanan saatte).</p>
+      <form id="scheduleScanForm">
+        <label class="field">
+          <span>Preset adı</span>
+          <input type="text" id="scheduleName" required placeholder="Örn: Merged 4h Binance" />
+        </label>
+        <div class="schedule-form-row">
+          <label class="field schedule-period-field">
+            <span>Periyot</span>
+            <select id="scheduleType" required>
+              <option value="hourly">Saatlik</option>
+              <option value="every_4h">4 saatte bir</option>
+              <option value="daily" selected>Günlük</option>
+            </select>
+          </label>
+          <div class="schedule-time-fields" id="scheduleTimeWrap">
+            <label class="field" id="scheduleHourWrap">
+              <span>Saat</span>
+              <input type="number" id="scheduleHour" min="0" max="23" value="8" />
+            </label>
+            <label class="field">
+              <span>Dakika</span>
+              <input type="number" id="scheduleMinute" min="0" max="59" value="30" />
+            </label>
+          </div>
+          <div class="schedule-time-fields" id="scheduleWindowWrap" hidden>
+            <label class="field">
+              <span>Başlangıç</span>
+              <input type="number" id="scheduleStartHour" min="0" max="23" value="10" />
+            </label>
+            <label class="field">
+              <span>Bitiş</span>
+              <input type="number" id="scheduleEndHour" min="0" max="23" value="18" />
+            </label>
+            <label class="field">
+              <span>Dakika</span>
+              <input type="number" id="scheduleWindowMinute" min="0" max="59" value="0" />
+            </label>
+          </div>
+        </div>
+        <div class="field" id="scheduleWeekdaysWrap">
+          <span id="scheduleWeekdaysLabel">Günler (günlük tarama)</span>
+          <div class="schedule-weekdays" id="scheduleWeekdays">
+            <label class="schedule-weekday"><input type="checkbox" value="0" checked> Pzt</label>
+            <label class="schedule-weekday"><input type="checkbox" value="1" checked> Sal</label>
+            <label class="schedule-weekday"><input type="checkbox" value="2" checked> Çar</label>
+            <label class="schedule-weekday"><input type="checkbox" value="3" checked> Per</label>
+            <label class="schedule-weekday"><input type="checkbox" value="4" checked> Cum</label>
+            <label class="schedule-weekday"><input type="checkbox" value="5" checked> Cmt</label>
+            <label class="schedule-weekday"><input type="checkbox" value="6" checked> Paz</label>
+          </div>
+        </div>
+        <label class="field">
+          <span>Saat dilimi</span>
+          <input type="text" id="scheduleTimezone" value="Europe/Istanbul" />
+        </label>
+        <label class="field">
+          <span>E-posta (TV listesi)</span>
+          <input type="text" id="scheduleEmail" required placeholder="you@example.com; partner@example.com" autocomplete="email" />
+          <span class="hint">Birden fazla adres için noktalı virgül (;) kullanın.</span>
+        </label>
+        <div class="schedule-preview" id="schedulePreview"></div>
+        <p class="auth-status" id="scheduleFormStatus"></p>
+        <div class="modal-actions">
+          <button type="button" class="btn secondary" id="btnScheduleCancel">İptal</button>
+          <button type="submit" class="btn primary" id="scheduleSubmitBtn">Oluştur</button>
+        </div>
+      </form>
+    </div>
   </div>
 
   <div class="modal-overlay" id="changePasswordModal" hidden>
@@ -275,7 +494,28 @@
     </div>
   </div>
 
-  <script src="/static/js/auth.js?v=2"></script>
-  <script src="/static/js/app.js?v=18"></script>
+  <div class="track-col-filter-menu" id="trackColFilterMenu" hidden>
+    <div class="track-col-filter-title" id="trackColFilterTitle"></div>
+    <div class="track-col-filter-sort" id="trackColFilterSort"></div>
+    <div class="track-col-filter-body" id="trackColFilterBody"></div>
+    <div class="track-col-filter-actions">
+      <button type="button" class="btn secondary btn-sm" id="trackColFilterClear">Temizle</button>
+      <button type="button" class="btn primary btn-sm" id="trackColFilterApply">Uygula</button>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="trackChartModal" hidden>
+    <div class="modal-card modal-card-wide track-chart-modal">
+      <h2 id="trackChartTitle">Fiyat performansı</h2>
+      <p class="hint" id="trackChartMeta"></p>
+      <div id="trackChartWrap" class="track-chart-wrap"></div>
+      <div class="track-chart-legend" id="trackChartLegend"></div>
+      <button type="button" class="btn secondary" id="trackChartClose">Kapat</button>
+    </div>
+  </div>
+
+  <script src="/static/js/auth.js?v=3"></script>
+  <script src="/static/js/app.js?v=32"></script>
+  <script src="/static/js/track.js?v=8"></script>
 </body>
 </html>

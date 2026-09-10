@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Callable
 
 import pandas as pd
 
@@ -37,6 +37,7 @@ class ScanRequest:
     require_pine_al: bool = False
     pine_input_overrides: dict[str, Any] = field(default_factory=dict)
     max_symbols: int = MAX_SYMBOLS_PER_SCAN
+    bist_data_provider: str | None = None
 
 
 @dataclass
@@ -101,6 +102,20 @@ def apply_builtin_filters(
             signals["volume_window"] = vol
             signals["volume_window_minutes"] = minutes
             if vol < min_vol:
+                return False, signals
+
+        elif fid == "open_gap_min":
+            min_pct = float(p.get("min_pct", 1.0))
+            if len(df) < 2:
+                return False, signals
+            prev_close = df["Close"].iloc[-2]
+            curr_open = df["Open"].iloc[-1]
+            if pd.isna(prev_close) or pd.isna(curr_open) or not float(prev_close):
+                return False, signals
+            gap_pct = (float(curr_open) - float(prev_close)) / float(prev_close) * 100
+            signals["open_gap_pct"] = round(gap_pct, 2)
+            signals["open_gap_min_pct"] = min_pct
+            if gap_pct <= min_pct:
                 return False, signals
 
         elif fid == "ema_cross":
@@ -298,12 +313,28 @@ def run_scan(
     pine_condition: str | None = None,
     pine_source: str | None = None,
     pine_code: str | None = None,
+    progress_callback: Callable[[str, int, int, str], None] | None = None,
 ) -> tuple[list[ScanResult], ScanStats]:
+    def report(phase: str, done: int, total: int, detail: str = "") -> None:
+        if progress_callback:
+            progress_callback(phase, done, total, detail)
+
     symbols = resolve_symbols(req)
     stats = ScanStats(requested=len(symbols))
 
     market = scan_market_universe(req)
-    frames = fetch_ohlcv_batch(symbols, req.timeframe, market)
+
+    def on_download(done: int, total: int, symbol: str) -> None:
+        report("downloading", done, total, symbol)
+
+    bist_provider = req.bist_data_provider if is_bist_universe(market) else None
+    frames = fetch_ohlcv_batch(
+        symbols,
+        req.timeframe,
+        market,
+        on_progress=on_download,
+        bist_provider=bist_provider,
+    )
     stats.downloaded = len(frames)
 
     active: dict[str, pd.DataFrame] = {}
@@ -320,7 +351,9 @@ def run_scan(
     caps = fetch_market_caps(list(active.keys()), market) if needs_cap else {}
 
     results: list[ScanResult] = []
-    for sym, df in active.items():
+    active_items = list(active.items())
+    total_scan = len(active_items)
+    for idx, (sym, df) in enumerate(active_items, start=1):
         stats.scanned += 1
         r = scan_dataframe(
             sym,
@@ -334,6 +367,7 @@ def run_scan(
         if r.matched:
             results.append(r)
             stats.matched += 1
+        report("scanning", idx, total_scan, sym)
 
     results.sort(key=lambda x: x.symbol)
     return results, stats

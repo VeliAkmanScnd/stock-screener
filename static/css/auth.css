@@ -119,6 +119,10 @@
   display: none;
 }
 
+.track-panel.hidden {
+  display: none;
+}
+
 .admin-card {
   background: var(--surface);
   border: 1px solid var(--border);

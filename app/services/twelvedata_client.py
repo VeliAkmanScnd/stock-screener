@@ -6,12 +6,14 @@ import logging
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Callable
 
 import httpx
 import pandas as pd
 
 from app.config import TWELVE_DATA_API_KEY, TWELVE_DATA_BASE_URL
 from app.services.batch_data import RESAMPLED_TIMEFRAMES, _resample_ohlcv
+from app.services.http_ssl import default_ssl_context
 from app.services.ticker_format import clean_bist_symbol
 
 logger = logging.getLogger(__name__)
@@ -86,6 +88,7 @@ def require_api_key() -> str:
 def _client() -> httpx.Client:
     return httpx.Client(
         base_url=TWELVE_DATA_BASE_URL,
+        verify=default_ssl_context(),
         timeout=90.0,
         follow_redirects=True,
         headers={"User-Agent": "StockScreener/1.0"},
@@ -220,7 +223,11 @@ def fetch_time_series(symbol: str, timeframe: str) -> pd.DataFrame | None:
     return None
 
 
-def fetch_ohlcv_batch_bist(symbols: list[str], timeframe: str) -> dict[str, pd.DataFrame]:
+def fetch_ohlcv_batch_bist(
+    symbols: list[str],
+    timeframe: str,
+    on_progress: Callable[[int, int, str], None] | None = None,
+) -> dict[str, pd.DataFrame]:
     """Download BIST OHLCV per symbol (rate-limited, fault-tolerant)."""
     require_api_key()
     if not symbols:
@@ -228,18 +235,23 @@ def fetch_ohlcv_batch_bist(symbols: list[str], timeframe: str) -> dict[str, pd.D
 
     all_frames: dict[str, pd.DataFrame] = {}
     clean_syms = [clean_bist_symbol(s) for s in symbols if clean_bist_symbol(s)]
+    total = len(clean_syms)
+    done = 0
 
     workers = min(_MAX_WORKERS, max(1, len(clean_syms)))
     with ThreadPoolExecutor(max_workers=workers) as pool:
         futures = {pool.submit(fetch_time_series, sym, timeframe): sym for sym in clean_syms}
         for fut in as_completed(futures):
             sym = futures[fut]
+            done += 1
             try:
                 df = fut.result()
                 if df is not None:
                     all_frames[sym] = df
             except Exception as exc:
                 logger.debug("BIST batch item %s failed: %s", sym, exc)
+            if on_progress:
+                on_progress(done, total, sym)
 
     logger.info("BIST downloaded %d / %d symbols", len(all_frames), len(clean_syms))
     return all_frames

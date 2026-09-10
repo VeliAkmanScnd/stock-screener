@@ -11,12 +11,12 @@ from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 from pathlib import Path
 
-import certifi
 import httpx
 import pandas as pd
 import yfinance as yf
 
 from app.config import BASE_DIR, DEFAULT_LOOKBACK_DAYS, DEFAULT_TIMEFRAME
+from app.services.http_ssl import default_ssl_context
 from app.services.bist_symbols import fetch_bist_symbols_live
 from app.services.binance_symbols import fetch_binance_usdt_symbols_live
 from app.services.symbol_filter import nasdaq_listed_row_passes, nyse_otherlisted_row_passes
@@ -63,7 +63,7 @@ def _clean_symbol(sym: str) -> str:
 
 def _http_get(url: str) -> str:
     with httpx.Client(
-        verify=certifi.where(),
+        verify=default_ssl_context(),
         timeout=90.0,
         follow_redirects=True,
         headers=HTTP_HEADERS,
@@ -235,8 +235,10 @@ def get_nyse_symbols() -> tuple[str, ...]:
 
 @lru_cache(maxsize=1)
 def get_bist_symbols() -> tuple[str, ...]:
+    from app.services.bist_blocklist import filter_bist_blocklist
+
     symbols, _ = _resolve_cached("bist", fetch_bist_symbols_live, "BIST")
-    return symbols
+    return filter_bist_blocklist(symbols)
 
 
 @lru_cache(maxsize=1)
@@ -339,7 +341,23 @@ def refresh_universe_cache(universe: str | None = None) -> dict[str, int]:
 def parse_symbol_list(text: str, universe: str = "sp500") -> list[str]:
     raw = text.replace(",", "\n").replace(";", "\n").split("\n")
     if is_bist_universe(universe):
-        return sorted({clean_bist_symbol(s) for s in raw if s.strip()})
+        parsed = sorted({clean_bist_symbol(s) for s in raw if s.strip()})
+        try:
+            known = set(get_bist_symbols())
+            if known:
+                valid = [s for s in parsed if s in known]
+                skipped = [s for s in parsed if s not in known]
+                if skipped:
+                    import logging
+
+                    logging.getLogger(__name__).info(
+                        "Skipped unknown BIST symbols: %s",
+                        ", ".join(skipped),
+                    )
+                return valid
+        except Exception:
+            pass
+        return parsed
     if is_binance_universe(universe):
         return sorted({clean_binance_symbol(s) for s in raw if s.strip()})
     return sorted({_clean_symbol(s) for s in raw if s.strip()})
@@ -354,9 +372,9 @@ def fetch_ohlcv(
     from app.services.ticker_format import to_yf_ticker
 
     if is_bist_universe(universe):
-        from app.services.twelvedata_client import fetch_time_series
+        from app.services.bist_data import fetch_time_series_bist
 
-        return fetch_time_series(symbol, timeframe)
+        return fetch_time_series_bist(symbol, timeframe)
 
     if is_binance_universe(universe):
         from app.services.binance_data import fetch_ohlcv_batch_binance

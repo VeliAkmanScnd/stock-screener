@@ -177,6 +177,7 @@ def evaluate_pine_al(
 ) -> bool:
     """Evaluate buy signal; Fibo candle scripts always use dedicated engine."""
     from app.services.pine_fibo import FIBO_MARKER, fibo_first_green_from_script
+    from app.services.pine_choch import CHOCH_BULLISH_MARKER, choch_bullish_from_script
     from app.services.pine_merged_triple import MERGED_TRIPLE_MARKER, merged_triple_buy_last_bar
     from app.services.pine_parser import _inline_variables
     from app.services.pine_params import merge_pine_inputs
@@ -189,6 +190,10 @@ def evaluate_pine_al(
         if not pine_code:
             raise PineEvalError("Pine script dosyası gerekli (yeşil mum indikatörü)")
         return fibo_first_green_from_script(df, pine_code, pine_input_overrides)
+    if source == "choch_bullish" or condition == CHOCH_BULLISH_MARKER:
+        if not pine_code:
+            raise PineEvalError("Pine script dosyası gerekli (ChoCh market structure)")
+        return choch_bullish_from_script(df, pine_code, pine_input_overrides)
     expr = condition
     if pine_code and pine_input_overrides:
         inputs = merge_pine_inputs(pine_code, pine_input_overrides)
