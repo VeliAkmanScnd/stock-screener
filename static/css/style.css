@@ -880,6 +880,37 @@ body {
   margin-bottom: 0.45rem;
 }
 
+.custom-list-save-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin-bottom: 0.75rem;
+}
+
+.custom-list-save-wrap > span {
+  font-size: 0.78rem;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.custom-list-save-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.custom-list-save-row input[type="text"],
+.custom-list-save-row select {
+  flex: 1 1 10rem;
+  min-width: 8rem;
+}
+
+.custom-list-save-row .btn {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
 .results-header h2 {
   color: var(--silver);
 }

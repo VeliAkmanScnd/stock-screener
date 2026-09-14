@@ -99,6 +99,7 @@ const $ = (sel) => document.querySelector(sel);
 
 let lastScanData = null;
 const CUSTOM_SOURCE_KEY = "screenerCustomSourceUniverse";
+const SAVED_CUSTOM_LISTS_KEY = "screenerSavedCustomLists";
 
 function getCustomSourceUniverse() {
   const sel = $("#customSourceUniverse");
@@ -110,13 +111,16 @@ function syncCustomSourceUI() {
   const isCustom = $("#universe")?.value === "custom";
   const sourceWrap = $("#customSourceWrap");
   const symbolsWrap = $("#customSymbolsWrap");
+  const saveWrap = $("#customListSaveWrap");
   if (sourceWrap) sourceWrap.hidden = !isCustom;
   if (symbolsWrap) symbolsWrap.hidden = !isCustom;
+  if (saveWrap) saveWrap.hidden = !isCustom;
   const sel = $("#customSourceUniverse");
   if (isCustom && sel) {
     const saved = localStorage.getItem(CUSTOM_SOURCE_KEY);
     if (saved) sel.value = saved;
   }
+  if (isCustom) refreshSavedCustomListsSelect();
   syncBistProviderUI();
 }
 
@@ -631,6 +635,109 @@ function setCustomListExportEnabled(enabled) {
   if (btnTrack) btnTrack.disabled = !enabled;
 }
 
+function loadSavedCustomLists() {
+  try {
+    const raw = localStorage.getItem(SAVED_CUSTOM_LISTS_KEY);
+    const data = raw ? JSON.parse(raw) : {};
+    return data && typeof data === "object" && !Array.isArray(data) ? data : {};
+  } catch {
+    return {};
+  }
+}
+
+function persistSavedCustomLists(map) {
+  localStorage.setItem(SAVED_CUSTOM_LISTS_KEY, JSON.stringify(map));
+}
+
+function refreshSavedCustomListsSelect(selectedName) {
+  const sel = $("#savedCustomLists");
+  if (!sel) return;
+  const map = loadSavedCustomLists();
+  const names = Object.keys(map).sort((a, b) =>
+    a.localeCompare(b, "tr", { sensitivity: "base" })
+  );
+  const keep = selectedName ?? sel.value;
+  sel.innerHTML = '<option value="">Kayıtlı liste seç…</option>';
+  names.forEach((name) => {
+    const opt = document.createElement("option");
+    opt.value = name;
+    const n = parseSymbolsFromText(map[name]?.symbols || "").length;
+    const src = map[name]?.source || "?";
+    opt.textContent = `${name} (${n} · ${src})`;
+    sel.appendChild(opt);
+  });
+  if (keep && map[keep]) sel.value = keep;
+}
+
+function saveCurrentCustomList(explicitName) {
+  const symbols = parseSymbolsFromText($("#customSymbols")?.value || "");
+  if (!symbols.length) {
+    setStatus("Kaydedilecek sembol yok.", "error");
+    return false;
+  }
+  let name = (explicitName ?? $("#customListName")?.value ?? "").trim();
+  if (!name) {
+    name = (prompt("Liste adı girin:", $("#customListName")?.value || "") || "").trim();
+  }
+  if (!name) {
+    setStatus("Kayıt iptal — isim gerekli.", "error");
+    return false;
+  }
+  const map = loadSavedCustomLists();
+  if (map[name]) {
+    const ok = confirm(`«${name}» zaten var. Üzerine yazılsın mı?`);
+    if (!ok) return false;
+  }
+  map[name] = {
+    symbols: symbols.join("\n"),
+    source: getCustomSourceUniverse(),
+    updatedAt: new Date().toISOString(),
+  };
+  persistSavedCustomLists(map);
+  if ($("#customListName")) $("#customListName").value = name;
+  refreshSavedCustomListsSelect(name);
+  setStatus(`«${name}» kaydedildi (${symbols.length} sembol).`, "ok");
+  return true;
+}
+
+function loadSelectedCustomList() {
+  const name = $("#savedCustomLists")?.value;
+  if (!name) {
+    setStatus("Yüklenecek kayıtlı liste seçin.", "error");
+    return;
+  }
+  const entry = loadSavedCustomLists()[name];
+  if (!entry) {
+    setStatus("Kayıt bulunamadı.", "error");
+    refreshSavedCustomListsSelect();
+    return;
+  }
+  const symbols = parseSymbolsFromText(entry.symbols || "");
+  $("#customSymbols").value = symbols.join("\n");
+  $("#universe").value = "custom";
+  if (entry.source) setCustomSourceUniverse(entry.source);
+  if ($("#customListName")) $("#customListName").value = name;
+  syncCustomSourceUI();
+  applyMaxSymbols(symbols.length, name);
+  syncMarketCapFilterUI();
+  setStatus(`«${name}» yüklendi (${symbols.length} sembol).`, "ok");
+}
+
+function deleteSelectedCustomList() {
+  const name = $("#savedCustomLists")?.value;
+  if (!name) {
+    setStatus("Silinecek kayıtlı liste seçin.", "error");
+    return;
+  }
+  if (!confirm(`«${name}» silinsin mi?`)) return;
+  const map = loadSavedCustomLists();
+  delete map[name];
+  persistSavedCustomLists(map);
+  if ($("#customListName")?.value === name) $("#customListName").value = "";
+  refreshSavedCustomListsSelect();
+  setStatus(`«${name}» silindi.`, "ok");
+}
+
 function addResultsToCustomList() {
   if (!lastScanData?.results?.length) {
     setStatus("Önce tarama yapın.", "error");
@@ -665,12 +772,23 @@ function addResultsToCustomList() {
   if (sourceUniverse !== "custom") {
     setCustomSourceUniverse(sourceUniverse);
   }
+  syncCustomSourceUI();
   applyMaxSymbols(merged.length, "Özel liste");
   syncMarketCapFilterUI();
-  setStatus(
-    `${newSyms.length} sembol özel listeye eklendi (toplam ${merged.length}, kaynak: ${getCustomSourceUniverse()}).`,
-    "ok"
-  );
+
+  const suggested =
+    ($("#customListName")?.value || "").trim() ||
+    `${getCustomSourceUniverse().toUpperCase()} ${new Date().toLocaleDateString("tr-TR")}`;
+  const name = (prompt("Özel liste adı (kaydetmek için):", suggested) || "").trim();
+  if (name) {
+    if ($("#customListName")) $("#customListName").value = name;
+    saveCurrentCustomList(name);
+  } else {
+    setStatus(
+      `${newSyms.length} sembol özel listeye eklendi (toplam ${merged.length}). Kaydetmek için isim verin.`,
+      "ok"
+    );
+  }
 }
 
 function applyMaxSymbols(count, labelText, fetchOk = true, message = null) {
@@ -1937,4 +2055,12 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
   $("#btnExportTv").addEventListener("click", downloadTradingViewList);
   $("#btnAddToCustomList").addEventListener("click", addResultsToCustomList);
+  $("#btnSaveCustomList")?.addEventListener("click", () => saveCurrentCustomList());
+  $("#btnLoadCustomList")?.addEventListener("click", loadSelectedCustomList);
+  $("#btnDeleteCustomList")?.addEventListener("click", deleteSelectedCustomList);
+  $("#savedCustomLists")?.addEventListener("change", () => {
+    const name = $("#savedCustomLists")?.value;
+    if (name && $("#customListName")) $("#customListName").value = name;
+  });
+  refreshSavedCustomListsSelect();
 });

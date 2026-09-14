@@ -6,7 +6,7 @@
   <title>TradeLABtr Stock Screener</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/css/style.css?v=27" />
+  <link rel="stylesheet" href="/static/css/style.css?v=28" />
   <link rel="stylesheet" href="/static/css/auth.css?v=1" />
 </head>
 <body>
@@ -82,6 +82,33 @@
             <span>Semboller (virgül veya satır)</span>
             <textarea id="customSymbols" rows="5" placeholder="THYAO, AKBNK, GARAN"></textarea>
           </label>
+          <div class="field custom-list-save-wrap" id="customListSaveWrap" hidden>
+            <span>Kayıtlı özel listeler</span>
+            <div class="custom-list-save-row">
+              <input
+                type="text"
+                id="customListName"
+                maxlength="80"
+                placeholder="Liste adı (ör. BIST100 AL)"
+                autocomplete="off"
+              />
+              <button type="button" class="btn secondary" id="btnSaveCustomList" title="Mevcut sembolleri bu isimle kaydet">
+                Kaydet
+              </button>
+            </div>
+            <div class="custom-list-save-row">
+              <select id="savedCustomLists" class="universe-select">
+                <option value="">Kayıtlı liste seç…</option>
+              </select>
+              <button type="button" class="btn secondary" id="btnLoadCustomList" title="Seçili kaydı yükle">
+                Yükle
+              </button>
+              <button type="button" class="btn secondary" id="btnDeleteCustomList" title="Seçili kaydı sil">
+                Sil
+              </button>
+            </div>
+            <p class="hint">Listeler bu tarayıcıda saklanır. «Özel listeye ekle» sonrası da isim sorulur.</p>
+          </div>
           <label class="field" id="customSourceWrap" hidden>
             <span>Liste piyasası</span>
             <select id="customSourceUniverse">
@@ -515,7 +542,7 @@
   </div>
 
   <script src="/static/js/auth.js?v=3"></script>
-  <script src="/static/js/app.js?v=32"></script>
+  <script src="/static/js/app.js?v=33"></script>
   <script src="/static/js/track.js?v=8"></script>
 </body>
 </html>
