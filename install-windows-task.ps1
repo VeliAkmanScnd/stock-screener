@@ -1,9 +1,10 @@
-# TradeLABtr - Windows Task Scheduler installer (run in Admin PowerShell on VPS)
-# Usage:
+# TradeLABtr - auto-start installer for Windows VPS
+# Run in PowerShell:
 #   cd C:\Users\vakman\stock-screener
 #   .\install-windows-task.ps1
-# Or with password:
-#   .\install-windows-task.ps1 -WindowsPassword "YourWindowsPassword"
+#
+# Prefer Admin PowerShell for Task Scheduler.
+# If Access Denied, script falls back to Startup folder (no admin needed).
 
 param(
     [string]$TaskName = "TradeLABtr",
@@ -15,6 +16,26 @@ $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $Bat = Join-Path $Root "start-tradelab.bat"
 $Python = Join-Path $Root ".venv\Scripts\python.exe"
+
+function Test-IsAdmin {
+    $id = [Security.Principal.WindowsIdentity]::GetCurrent()
+    $p = New-Object Security.Principal.WindowsPrincipal($id)
+    return $p.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+
+function Install-StartupShortcut {
+    $startup = [Environment]::GetFolderPath("Startup")
+    $lnkPath = Join-Path $startup "TradeLABtr.lnk"
+    $w = New-Object -ComObject WScript.Shell
+    $lnk = $w.CreateShortcut($lnkPath)
+    $lnk.TargetPath = $Bat
+    $lnk.WorkingDirectory = $Root
+    $lnk.WindowStyle = 7
+    $lnk.Description = "TradeLABtr Stock Screener"
+    $lnk.Save()
+    Write-Host "Installed Startup shortcut: $lnkPath"
+    return $lnkPath
+}
 
 if (-not (Test-Path $Bat)) {
     throw "Missing start-tradelab.bat at $Bat"
@@ -37,41 +58,55 @@ if ($listeners) {
     exit 1
 }
 
-# Remove old Windows service if present
-$svc = Get-Service -Name $TaskName -ErrorAction SilentlyContinue
-if ($svc) {
-    Write-Host "Removing old Windows service $TaskName ..."
-    Stop-Service $TaskName -Force -ErrorAction SilentlyContinue
-    sc.exe delete $TaskName | Out-Null
-    Start-Sleep -Seconds 2
-}
+$isAdmin = Test-IsAdmin
+Write-Host "Running as admin: $isAdmin"
 
-# Remove existing scheduled task (ignore if missing)
-$ErrorActionPreference = "Continue"
-cmd /c "schtasks /Delete /TN `"$TaskName`" /F >nul 2>&1"
-$ErrorActionPreference = "Stop"
+$createdTask = $false
+if ($isAdmin) {
+    # Remove old Windows service if present
+    $svc = Get-Service -Name $TaskName -ErrorAction SilentlyContinue
+    if ($svc) {
+        Write-Host "Removing old Windows service $TaskName ..."
+        Stop-Service $TaskName -Force -ErrorAction SilentlyContinue
+        cmd /c "sc delete $TaskName >nul 2>&1"
+        Start-Sleep -Seconds 2
+    }
 
-$tr = "`"$Bat`""
-if ($WindowsPassword) {
-    & schtasks /Create /TN $TaskName /TR $tr /SC ONSTART /RU $WindowsUser /RP $WindowsPassword /RL HIGHEST /F
+    cmd /c "schtasks /Delete /TN `"$TaskName`" /F >nul 2>&1"
+
+    $tr = "`"$Bat`""
+    if ($WindowsPassword) {
+        & schtasks /Create /TN $TaskName /TR $tr /SC ONSTART /RU $WindowsUser /RP $WindowsPassword /RL HIGHEST /F
+    } else {
+        & schtasks /Create /TN $TaskName /TR $tr /SC ONLOGON /RU $WindowsUser /RL LIMITED /F
+    }
+
+    if ($LASTEXITCODE -eq 0) {
+        $createdTask = $true
+        Write-Host "Scheduled task created: $TaskName"
+        & schtasks /Run /TN $TaskName
+    } else {
+        Write-Warning "schtasks Create failed (exit $LASTEXITCODE). Falling back to Startup folder."
+    }
 } else {
-    # Runs as current user at logon (no password in this script)
-    & schtasks /Create /TN $TaskName /TR $tr /SC ONLOGON /RL HIGHEST /F
+    Write-Warning "Not admin. Skipping schtasks; using Startup folder instead."
+    Write-Warning "Tip: Right-click PowerShell -> Run as administrator, then re-run this script for a scheduled task."
 }
 
-if ($LASTEXITCODE -ne 0) {
-    throw "schtasks Create failed (exit $LASTEXITCODE)"
+if (-not $createdTask) {
+    Install-StartupShortcut | Out-Null
+    Write-Host "Starting now via bat..."
+    Start-Process -FilePath $Bat -WorkingDirectory $Root -WindowStyle Minimized
 }
 
-& schtasks /Run /TN $TaskName
-Start-Sleep -Seconds 3
+Start-Sleep -Seconds 4
 
 $ok = Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction SilentlyContinue
 if ($ok) {
     Write-Host "OK - TradeLABtr listening on port 8000"
     Write-Host "Open http://127.0.0.1:8000  or  http://10.255.7.55:8000"
 } else {
-    Write-Warning "Task started but port 8000 not listening yet. Check Task Scheduler or run start-tradelab.bat manually."
+    Write-Warning "Port 8000 not listening yet. Try: start-tradelab.bat manually"
 }
 
 Write-Host ""
@@ -79,3 +114,4 @@ Write-Host "Useful commands:"
 Write-Host "  schtasks /Run /TN $TaskName"
 Write-Host "  schtasks /End /TN $TaskName"
 Write-Host "  schtasks /Query /TN $TaskName /V /FO LIST"
+Write-Host "  Startup folder: shell:startup"
