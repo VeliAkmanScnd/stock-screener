@@ -46,22 +46,24 @@ if ($svc) {
     Start-Sleep -Seconds 2
 }
 
-# Remove existing scheduled task
-schtasks /Delete /TN $TaskName /F 2>$null | Out-Null
+# Remove existing scheduled task (ignore if missing)
+$ErrorActionPreference = "Continue"
+cmd /c "schtasks /Delete /TN `"$TaskName`" /F >nul 2>&1"
+$ErrorActionPreference = "Stop"
 
 $tr = "`"$Bat`""
 if ($WindowsPassword) {
-    schtasks /Create /TN $TaskName /TR $tr /SC ONSTART /RU $WindowsUser /RP $WindowsPassword /RL HIGHEST /F
+    & schtasks /Create /TN $TaskName /TR $tr /SC ONSTART /RU $WindowsUser /RP $WindowsPassword /RL HIGHEST /F
 } else {
     # Runs as current user at logon (no password in this script)
-    schtasks /Create /TN $TaskName /TR $tr /SC ONLOGON /RL HIGHEST /F
+    & schtasks /Create /TN $TaskName /TR $tr /SC ONLOGON /RL HIGHEST /F
 }
 
 if ($LASTEXITCODE -ne 0) {
     throw "schtasks Create failed (exit $LASTEXITCODE)"
 }
 
-schtasks /Run /TN $TaskName
+& schtasks /Run /TN $TaskName
 Start-Sleep -Seconds 3
 
 $ok = Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction SilentlyContinue
