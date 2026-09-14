@@ -138,12 +138,14 @@ class TrackPriceLog(Base):
 
 
 def _migrate_db() -> None:
-    """Schema updates for existing SQLite DBs."""
+    """Schema updates for existing SQLite DBs. create_all first for fresh installs."""
+    Base.metadata.create_all(engine)
+
     with engine.connect() as conn:
         cols = {row[1] for row in conn.execute(text("PRAGMA table_info(pine_scripts)"))}
-        if "pine_content" not in cols:
+        if cols and "pine_content" not in cols:
             conn.execute(text("ALTER TABLE pine_scripts ADD COLUMN pine_content TEXT"))
-        if "input_defaults" not in cols:
+        if cols and "input_defaults" not in cols:
             conn.execute(text("ALTER TABLE pine_scripts ADD COLUMN input_defaults TEXT"))
 
         sched_cols = {
@@ -175,8 +177,6 @@ def _migrate_db() -> None:
             if "benchmark_current_price" not in pos_cols:
                 conn.execute(text("ALTER TABLE track_positions ADD COLUMN benchmark_current_price REAL"))
         conn.commit()
-
-    Base.metadata.create_all(engine)
 
 
 STORAGE_DIR.mkdir(parents=True, exist_ok=True)
