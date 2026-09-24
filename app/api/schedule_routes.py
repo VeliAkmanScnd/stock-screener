@@ -35,6 +35,11 @@ from app.config import DEFAULT_SCHEDULE_TIMEZONE
 from app.database import ScanRun, ScheduledScan, User, get_db
 
 from app.services.email_service import send_tv_list_email, smtp_configured
+from app.services.telegram_service import (
+    normalize_telegram_storage,
+    send_telegram_scan_result,
+    telegram_configured,
+)
 
 from app.services.scan_executor import config_to_json, execute_scan_config, scan_body_from_dict
 
@@ -100,6 +105,8 @@ class ScheduledScanCreate(BaseModel):
 
     email_to: str
 
+    telegram_to: str | None = None
+
     enabled: bool = True
 
     scan_config: ScanBody
@@ -126,7 +133,10 @@ class ScheduledScanCreate(BaseModel):
 
         return normalize_email_storage(emails)
 
-
+    @field_validator("telegram_to")
+    @classmethod
+    def validate_telegram_to(cls, value: str | None) -> str | None:
+        return normalize_telegram_storage(value)
 
     @field_validator("weekdays")
 
@@ -160,6 +170,8 @@ class ScheduledScanUpdate(BaseModel):
 
     email_to: str | None = None
 
+    telegram_to: str | None = None
+
     enabled: bool | None = None
 
     scan_config: ScanBody | None = None
@@ -190,7 +202,12 @@ class ScheduledScanUpdate(BaseModel):
 
         return normalize_email_storage(emails)
 
-
+    @field_validator("telegram_to")
+    @classmethod
+    def validate_telegram_to(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return normalize_telegram_storage(value)
 
     @field_validator("weekdays")
 
@@ -247,6 +264,7 @@ def _row_to_dict(row: ScheduledScan, *, owner_username: str | None = None) -> di
         "timezone": row.timezone,
 
         "email_to": row.email_to,
+        "telegram_to": row.telegram_to,
 
         "enabled": row.enabled,
 
@@ -318,6 +336,7 @@ def schedule_config():
     return {
 
         "smtp_configured": smtp_configured(),
+        "telegram_configured": telegram_configured(),
 
         "default_timezone": DEFAULT_SCHEDULE_TIMEZONE,
 
@@ -431,6 +450,7 @@ def create_scheduled_scan(
         timezone=body.timezone or DEFAULT_SCHEDULE_TIMEZONE,
 
         email_to=body.email_to,
+        telegram_to=body.telegram_to,
 
         enabled=body.enabled,
 
@@ -507,6 +527,10 @@ def update_scheduled_scan(
     if body.email_to is not None:
 
         row.email_to = body.email_to
+
+    if body.telegram_to is not None:
+
+        row.telegram_to = body.telegram_to
 
     if body.enabled is not None:
 
@@ -717,4 +741,33 @@ def test_schedule_email(
     except Exception as exc:
         raise HTTPException(500, str(exc)) from exc
     return {"ok": True, "message": "Test e-postası gönderildi."}
+
+
+class TestTelegramBody(BaseModel):
+    chat_id: str | None = None
+
+
+@router.post("/test-telegram")
+def test_schedule_telegram(
+    body: TestTelegramBody,
+    user: User = Depends(get_current_user),
+):
+    if not telegram_configured() and not (body.chat_id or "").strip():
+        raise HTTPException(
+            400,
+            "Telegram yapılandırılmamış. .env içine TELEGRAM_BOT_TOKEN ve TELEGRAM_CHAT_ID ekleyin.",
+        )
+    try:
+        send_telegram_scan_result(
+            name="Telegram test",
+            universe="test",
+            timeframe="1d",
+            match_count=1,
+            tv_list_text="# test\nBINANCE:BTCUSDT\n",
+            extra_chat_ids=body.chat_id,
+            filename="telegram_test.txt",
+        )
+    except Exception as exc:
+        raise HTTPException(500, str(exc)) from exc
+    return {"ok": True, "message": "Telegram test mesajı gönderildi."}
 

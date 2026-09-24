@@ -12,7 +12,8 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.database import ScanRun, ScheduledScan, SessionLocal
-from app.services.email_service import send_tv_list_email, smtp_configured
+from app.services.email_service import send_tv_list_email
+from app.services.telegram_service import send_telegram_scan_result, telegram_configured
 from app.services.scan_executor import execute_scan_config
 from app.services.schedule_helpers import min_run_interval_seconds
 
@@ -139,7 +140,7 @@ def run_scheduled_scan(scheduled_id: int, *, force: bool = False) -> None:
         tv_text = payload.get("tradingview_text") or ""
         match_count = int(payload.get("count") or 0)
         email_sent = False
-        email_error: str | None = None
+        notify_errors: list[str] = []
 
         if sched.email_to:
             try:
@@ -165,27 +166,51 @@ def run_scheduled_scan(scheduled_id: int, *, force: bool = False) -> None:
                 )
                 email_sent = True
             except Exception as exc:
-                email_error = str(exc)
+                notify_errors.append(f"e-posta: {exc}")
                 logger.exception("Email failed for schedule %s", scheduled_id)
 
+        telegram_sent = False
+        if telegram_configured() or (getattr(sched, "telegram_to", None) or "").strip():
+            try:
+                send_telegram_scan_result(
+                    name=sched.name,
+                    universe=str(payload.get("universe") or ""),
+                    timeframe=str(payload.get("timeframe") or ""),
+                    match_count=match_count,
+                    tv_list_text=tv_text or "",
+                    extra_chat_ids=getattr(sched, "telegram_to", None),
+                    filename=f"tv_{sched.id}_{run_row.id}.txt",
+                )
+                telegram_sent = True
+            except Exception as exc:
+                notify_errors.append(f"telegram: {exc}")
+                logger.exception("Telegram failed for schedule %s", scheduled_id)
+
+        notify_error = " | ".join(notify_errors) if notify_errors else None
         run_row.finished_at = datetime.now(timezone.utc)
         run_row.status = "success"
         run_row.match_count = match_count
         run_row.results_json = json.dumps(payload, ensure_ascii=False)
         run_row.tv_list_text = tv_text
         run_row.email_sent = email_sent
-        run_row.error_message = email_error
+        run_row.error_message = notify_error
 
         sched.last_run_at = run_row.finished_at
-        sched.last_status = "success" if not email_error else "success_no_email"
+        if notify_error and not email_sent and not telegram_sent:
+            sched.last_status = "success_no_email"
+        elif notify_error:
+            sched.last_status = "success_no_email" if not email_sent else "success"
+        else:
+            sched.last_status = "success"
         sched.last_match_count = match_count
-        sched.last_error = email_error
+        sched.last_error = notify_error
         db.commit()
         logger.info(
-            "Scheduled scan %s done: %s matches, email=%s",
+            "Scheduled scan %s done: %s matches, email=%s telegram=%s",
             scheduled_id,
             match_count,
             email_sent,
+            telegram_sent,
         )
 
         from app.services.track_service import ingest_scan_results

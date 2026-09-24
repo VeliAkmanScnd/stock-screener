@@ -56,6 +56,10 @@ SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "").strip()
 SMTP_FROM = os.getenv("SMTP_FROM", "").strip()
 SMTP_USE_TLS = os.getenv("SMTP_USE_TLS", "true").strip().lower() in ("1", "true", "yes")
 
+# Telegram — optional; scheduled scan results (in addition to email)
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()
+
 # Performance tracking (TP/SL watchlist)
 TRACK_DEFAULT_TARGET_PCT = float(os.getenv("TRACK_DEFAULT_TARGET_PCT", "8"))
 TRACK_DEFAULT_STOP_PCT = float(os.getenv("TRACK_DEFAULT_STOP_PCT", "5"))

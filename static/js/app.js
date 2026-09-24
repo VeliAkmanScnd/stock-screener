@@ -1441,6 +1441,7 @@ function fillScheduleFormFromRow(row) {
   setScheduleWeekdays(days);
   $("#scheduleTimezone").value = row.timezone || "Europe/Istanbul";
   $("#scheduleEmail").value = row.email_to || "";
+  if ($("#scheduleTelegram")) $("#scheduleTelegram").value = row.telegram_to || "";
   updateScheduleFormVisibility();
 }
 
@@ -1699,9 +1700,13 @@ async function loadScheduleConfig() {
     const data = await res.json();
     const hint = $("#scheduledScansHint");
     if (hint) {
-      hint.textContent = data.smtp_configured
-        ? "SMTP yapılandırıldı. E-posta yalnızca tarama çalıştığında gider — «Şimdi» ile test edin."
-        : "SMTP yapılandırılmamış (.env: SMTP_HOST, SMTP_FROM). Uygulamayı yeniden başlatın.";
+      const smtp = data.smtp_configured
+        ? "SMTP hazır."
+        : "SMTP yok (.env: SMTP_HOST, SMTP_FROM).";
+      const tg = data.telegram_configured
+        ? "Telegram hazır."
+        : "Telegram yok (.env: TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID).";
+      hint.textContent = `${smtp} ${tg} Bildirim yalnızca tarama çalışınca gider.`;
     }
     if ($("#scheduleTimezone") && data.default_timezone) {
       $("#scheduleTimezone").value = data.default_timezone;
@@ -1846,6 +1851,7 @@ async function submitScheduleScan(e) {
     weekdays,
     timezone: $("#scheduleTimezone").value.trim() || "Europe/Istanbul",
     email_to: $("#scheduleEmail").value.trim(),
+    telegram_to: ($("#scheduleTelegram")?.value || "").trim() || null,
     enabled: editingScheduleId
       ? scheduledScansById[editingScheduleId]?.enabled !== false
       : true,

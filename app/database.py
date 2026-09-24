@@ -52,6 +52,7 @@ class ScheduledScan(Base):
     weekdays = Column(Text, nullable=True)  # comma-separated 0..6 for daily multi-day
     timezone = Column(String(64), nullable=False, default="Europe/Istanbul")
     email_to = Column(Text, nullable=False)
+    telegram_to = Column(Text, nullable=True)
     enabled = Column(Boolean, nullable=False, default=True)
     last_run_at = Column(DateTime, nullable=True)
     last_status = Column(String(32), nullable=True)
@@ -153,6 +154,8 @@ def _migrate_db() -> None:
         }
         if sched_cols and "weekdays" not in sched_cols:
             conn.execute(text("ALTER TABLE scheduled_scans ADD COLUMN weekdays TEXT"))
+        if sched_cols and "telegram_to" not in sched_cols:
+            conn.execute(text("ALTER TABLE scheduled_scans ADD COLUMN telegram_to TEXT"))
         if sched_cols and "end_hour" not in sched_cols:
             conn.execute(text("ALTER TABLE scheduled_scans ADD COLUMN end_hour INTEGER"))
             conn.execute(

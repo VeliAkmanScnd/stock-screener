@@ -499,6 +499,11 @@
           <input type="text" id="scheduleEmail" required placeholder="you@example.com; partner@example.com" autocomplete="email" />
           <span class="hint">Birden fazla adres için noktalı virgül (;) kullanın.</span>
         </label>
+        <label class="field">
+          <span>Telegram chat id (isteğe bağlı)</span>
+          <input type="text" id="scheduleTelegram" placeholder=".env varsayılanı veya 123456789" autocomplete="off" />
+          <span class="hint">Boş bırakırsanız .env’deki TELEGRAM_CHAT_ID kullanılır. Grup için -100… olabilir.</span>
+        </label>
         <div class="schedule-preview" id="schedulePreview"></div>
         <p class="auth-status" id="scheduleFormStatus"></p>
         <div class="modal-actions">
@@ -556,7 +561,7 @@
   </div>
 
   <script src="/static/js/auth.js?v=3"></script>
-  <script src="/static/js/app.js?v=36"></script>
+  <script src="/static/js/app.js?v=37"></script>
   <script src="/static/js/track.js?v=8"></script>
 </body>
 </html>
