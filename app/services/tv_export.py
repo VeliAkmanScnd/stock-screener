@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
-from app.services.ticker_format import is_bist_universe, is_binance_universe, to_binance_pair
+from app.services.ticker_format import (
+    is_bist_universe,
+    is_binance_universe,
+    is_viop_universe,
+    to_binance_pair,
+)
 
 
 def to_tradingview_symbol(symbol: str, universe: str) -> str:
     sym = symbol.strip().upper()
-    if is_bist_universe(universe):
+    if is_bist_universe(universe) or is_viop_universe(universe):
         if sym.startswith("BIST:"):
             return sym
         return f"BIST:{sym}"

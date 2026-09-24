@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 BENCHMARKS: dict[str, dict[str, str]] = {
     "bist": {"symbol": "XU100.IS", "label": "BIST100"},
+    "viop": {"symbol": "XU030.IS", "label": "XU030"},
     "sp500": {"symbol": "^GSPC", "label": "S&P 500"},
     "nasdaq": {"symbol": "^NDX", "label": "NAS100"},
     "nyse": {"symbol": "^NYA", "label": "NYSE"},
@@ -28,6 +29,8 @@ def get_benchmark_config(universe: str) -> dict[str, str] | None:
         return BENCHMARKS[key]
     if key in ("borsa_istanbul", "istanbul", "borsa"):
         return BENCHMARKS["bist"]
+    if key in ("vadeli", "viop_futures"):
+        return BENCHMARKS["viop"]
     if key in ("binance_spot", "crypto"):
         return BENCHMARKS["binance"]
     if key in ("all", "us"):

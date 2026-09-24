@@ -15,6 +15,7 @@ from app.services.ticker_format import (
     from_yf_ticker,
     is_binance_universe,
     is_bist_universe,
+    is_viop_universe,
     to_yf_ticker,
 )
 
@@ -198,6 +199,12 @@ def fetch_ohlcv_batch(
 
         return fetch_ohlcv_batch_binance(symbols, timeframe)
 
+    if is_viop_universe(universe):
+        from app.services.viop_data import fetch_ohlcv_batch_viop
+
+        frames = fetch_ohlcv_batch_viop(symbols, timeframe, on_progress=on_progress)
+        return {s: f for s, f in frames.items() if len(f) >= 30}
+
     if is_bist_universe(universe):
         from app.services.bist_data import fetch_ohlcv_batch_bist
         from app.services.twelvedata_client import MIN_BARS
@@ -231,7 +238,7 @@ def validate_active(
         return False, "no_data"
 
     close = df["Close"].iloc[-1]
-    if is_bist_universe(universe):
+    if is_bist_universe(universe) or is_viop_universe(universe):
         min_price = 0.5
     elif is_binance_universe(universe):
         min_price = 0.0000001
@@ -245,15 +252,16 @@ def validate_active(
         last_ts = last_ts.tz_convert(None)
     now = pd.Timestamp.now("UTC").tz_localize(None)
     stale_limit = STALE_MULTIPLIER.get(timeframe, timedelta(days=8))
-    if is_bist_universe(universe) and timeframe == "1d":
+    if (is_bist_universe(universe) or is_viop_universe(universe)) and timeframe == "1d":
         stale_limit = timedelta(days=12)
     elif is_binance_universe(universe):
         stale_limit = STALE_MULTIPLIER.get(timeframe, timedelta(days=3)) * 2
     if (now - last_ts) > stale_limit:
         return False, "stale_delisted"
 
-    recent_n = min(5, len(df))
-    if float(df["Volume"].iloc[-recent_n:].sum()) <= 0:
-        return False, "no_volume"
+    if not is_viop_universe(universe):
+        recent_n = min(5, len(df))
+        if float(df["Volume"].iloc[-recent_n:].sum()) <= 0:
+            return False, "no_volume"
 
     return True, None

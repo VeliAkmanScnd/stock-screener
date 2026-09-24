@@ -10,7 +10,7 @@ import pandas as pd
 from app.config import MAX_SYMBOLS_PER_SCAN
 from app.services.batch_data import fetch_ohlcv_batch, sum_volume_window, validate_active
 from app.services.data_fetcher import get_universe_symbols, parse_symbol_list
-from app.services.ticker_format import is_bist_universe, is_binance_universe
+from app.services.ticker_format import is_bist_universe, is_binance_universe, is_viop_universe
 from app.services.indicators import build_indicator_frame, crossover, ema
 from app.services.market_caps import fetch_market_caps
 from app.services.pine_evaluator import PineEvalError, evaluate_pine_al
@@ -86,9 +86,17 @@ def apply_builtin_filters(
         p = f.params
 
         if fid == "market_cap_min":
-            default_min = 10_000_000_000 if is_bist_universe(market_universe) else 300_000_000
+            default_min = (
+                10_000_000_000
+                if is_bist_universe(market_universe) or is_viop_universe(market_universe)
+                else 300_000_000
+            )
             min_val = float(p.get("min_usd", default_min))
-            currency = "TRY" if is_bist_universe(market_universe) else "USD"
+            currency = (
+                "TRY"
+                if is_bist_universe(market_universe) or is_viop_universe(market_universe)
+                else "USD"
+            )
             signals["market_cap"] = market_cap
             signals["market_cap_currency"] = currency
             signals["market_cap_min"] = min_val
@@ -257,7 +265,7 @@ def scan_dataframe(
 
     if market_cap is not None and "market_cap" not in signals:
         signals["market_cap"] = market_cap
-        if is_bist_universe(market):
+        if is_bist_universe(market) or is_viop_universe(market):
             signals["market_cap_currency"] = "TRY"
         elif is_binance_universe(market):
             signals["market_cap_currency"] = "USD"
@@ -273,6 +281,12 @@ def scan_dataframe(
                 snap = merged_triple_snapshot(df, pine_code, overrides)
                 signals.update(snap)
                 pine_ok = bool(snap["merged_triple_buy"])
+            elif pine_source == "bias_ts" and pine_code:
+                from app.services.pine_bias_ts import bias_ts_params_from_script, bias_ts_snapshot
+
+                snap = bias_ts_snapshot(df, **bias_ts_params_from_script(pine_code, overrides))
+                signals.update(snap)
+                pine_ok = bool(snap.get("pine_al"))
             elif pine_source == "candle_green_first" and pine_code:
                 from app.services.pine_fibo import fibo_params_from_script, fibo_trend_snapshot
 

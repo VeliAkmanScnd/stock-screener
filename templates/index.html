@@ -73,6 +73,7 @@
               <option value="nyse">NYSE (aktif hisseler)</option>
               <option value="all_us">NASDAQ + NYSE + S&amp;P 500</option>
               <option value="bist">BIST — Borsa İstanbul</option>
+              <option value="viop">VIOP — vadeli kontratlar</option>
               <option value="binance">Binance Spot (USDT)</option>
               <option value="custom">Özel liste</option>
             </select>
@@ -80,7 +81,7 @@
           </label>
           <label class="field" id="customSymbolsWrap" hidden>
             <span>Semboller (virgül veya satır)</span>
-            <textarea id="customSymbols" rows="5" placeholder="THYAO, AKBNK, GARAN"></textarea>
+            <textarea id="customSymbols" rows="5" placeholder="THYAO, AKBNK veya F_THYAO1026, F_XU0301026"></textarea>
           </label>
           <div class="field custom-list-save-wrap" id="customListSaveWrap" hidden>
             <span>Kayıtlı özel listeler</span>
@@ -113,13 +114,14 @@
             <span>Liste piyasası</span>
             <select id="customSourceUniverse">
               <option value="bist">BIST — Borsa İstanbul</option>
+              <option value="viop">VIOP — vadeli</option>
               <option value="sp500">ABD (S&amp;P 500)</option>
               <option value="nasdaq">NASDAQ</option>
               <option value="nyse">NYSE</option>
               <option value="all_us">ABD (tümü)</option>
               <option value="binance">Binance Spot</option>
             </select>
-            <p class="hint">BIST sembolleri için mutlaka <strong>BIST</strong> seçin (ör. THYAO, AKBNK).</p>
+            <p class="hint">BIST için <strong>BIST</strong>, vadeli kontratlar için <strong>VIOP</strong> seçin (ör. F_THYAO1026).</p>
           </label>
           <label class="field" id="bistProviderWrap" hidden>
             <span>BIST veri kaynağı</span>
@@ -189,6 +191,9 @@
                 <div class="pine-help-tooltip" id="pineHelpTooltip" role="tooltip">
                   <p class="pine-help-bist" id="pineHelpBist" hidden>
                     <strong>BIST:</strong> Fiyat verisi Yahoo Finance (<code>SYMBOL.IS</code>) ile gelir; intraday gecikmeli olabilir.
+                  </p>
+                  <p class="pine-help-bist" id="pineHelpViop" hidden>
+                    <strong>VIOP:</strong> Kontrat listesi borsapy’den gelir. Mumlar dayanak (hisse/endeks) serisidir; prim farkı yoktur. Bias×TS son bar BUY/SELL tarar.
                   </p>
                   <p>
                     TradingView indikatörünüzü .txt olarak yükleyin. AL veya yeşil mum indikatörlerinde koşul kaydedilir.

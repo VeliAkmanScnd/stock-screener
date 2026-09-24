@@ -238,6 +238,12 @@ const SIGNAL_LABELS = {
   pine_al: "Pine AL",
   pine_al_mode: "Pine modu",
   pine_al_error: "Pine hata",
+  bias_ts_buy: "Bias×TS BUY",
+  bias_ts_sell: "Bias×TS SELL",
+  bias_ts_side: "Bias×TS yön",
+  bias_bull: "Bias yeşil",
+  ts_green: "TS yeşil",
+  bias_dist_pct: "Bias uzaklık %",
   market_cap: "Piyasa değeri",
   market_cap_currency: "Piyasa değeri birimi",
   market_cap_min: "Min piyasa değeri",
@@ -345,6 +351,13 @@ function isBinanceMarket(universe) {
   return false;
 }
 
+function isViopMarket(universe) {
+  const u = universe ?? $("#universe")?.value ?? "sp500";
+  if (u === "viop") return true;
+  if (u === "custom") return getCustomSourceUniverse() === "viop";
+  return false;
+}
+
 function effectiveScanMarket(universe, customSource) {
   if (universe === "custom") {
     return customSource || getCustomSourceUniverse() || "sp500";
@@ -357,7 +370,7 @@ function formatPrice(price, universe) {
     return "—";
   }
   const u = universe || $("#universe")?.value || "sp500";
-  if (isBistMarket(u)) {
+  if (isBistMarket(u) || isViopMarket(u)) {
     return new Intl.NumberFormat("tr-TR", {
       style: "currency",
       currency: "TRY",
@@ -382,7 +395,7 @@ function formatPrice(price, universe) {
 
 function toTradingViewSymbol(symbol, universe) {
   const sym = String(symbol).trim().toUpperCase();
-  if (isBistMarket(universe)) {
+  if (isBistMarket(universe) || isViopMarket(universe)) {
     return sym.startsWith("BIST:") ? sym : `BIST:${sym}`;
   }
   if (universe === "binance" || (universe === "custom" && getCustomSourceUniverse() === "binance")) {
@@ -492,7 +505,7 @@ function isBistMarket(universe) {
 }
 
 function getMarketCapFilterMeta() {
-  if (isBistMarket()) {
+  if (isBistMarket() || isViopMarket()) {
     return {
       unit: "TL",
       example: formatGroupedNumber(10000000000),
@@ -560,7 +573,7 @@ function buildFilterItemHtml(f) {
 
   if (f.id === "market_cap_min") {
     const meta = getMarketCapFilterMeta();
-    const def = isBistMarket()
+    const def = isBistMarket() || isViopMarket()
       ? f.defaultParamsBist?.min_usd ?? meta.defaultVal
       : f.defaultParams.min_usd ?? meta.defaultVal;
     itemLabel = marketCapFilterTitle();
@@ -819,6 +832,7 @@ async function loadUniverseInfo() {
     const src = getCustomSourceUniverse();
     const srcLabels = {
       bist: "BIST",
+      viop: "VIOP",
       sp500: "S&P 500",
       nasdaq: "NASDAQ",
       nyse: "NYSE",
@@ -827,7 +841,9 @@ async function loadUniverseInfo() {
     };
     applyMaxSymbols(n, `Özel liste (${srcLabels[src] || src})`);
     const pineHelpBist = $("#pineHelpBist");
+    const pineHelpViop = $("#pineHelpViop");
     if (pineHelpBist) pineHelpBist.hidden = src !== "bist";
+    if (pineHelpViop) pineHelpViop.hidden = src !== "viop";
     return;
   }
 
@@ -836,8 +852,10 @@ async function loadUniverseInfo() {
     const data = await res.json();
     applyMaxSymbols(data.count, data.label, data.fetch_ok !== false, data.message);
     const pineHelpBist = $("#pineHelpBist");
+    const pineHelpViop = $("#pineHelpViop");
     if (pineHelpBist) pineHelpBist.hidden = universe !== "bist";
-    if (data.fetch_ok === false && data.count < 100) {
+    if (pineHelpViop) pineHelpViop.hidden = universe !== "viop";
+    if (data.fetch_ok === false && data.count < (universe === "viop" ? 5 : 100)) {
       setStatus(
         data.message ||
           "Hisse listesi indirilemedi. «Listeyi yenile» ile tekrar deneyin veya özel liste kullanın.",
@@ -1194,6 +1212,9 @@ async function uploadPine() {
     $("#pineConditionBox").hidden = false;
     $("#pineConditionText").textContent = data.al_condition;
   }
+  if (data.al_detected && $("#requirePineAl")) {
+    $("#requirePineAl").checked = true;
+  }
   renderPineParams(data.parameters || [], data.id, false);
   await loadSavedPine();
   $("#savedPine").value = String(data.id);
@@ -1273,17 +1294,21 @@ async function applyScanConfigToUI(cfg) {
   $("#requirePineAl").checked = !!cfg.require_pine_al;
   $("#pineOverride").value = cfg.pine_condition_override || "";
   const pineHelpBist = $("#pineHelpBist");
+  const pineHelpViop = $("#pineHelpViop");
   if (pineHelpBist) pineHelpBist.hidden = cfg.universe !== "bist";
+  if (pineHelpViop) pineHelpViop.hidden = cfg.universe !== "viop";
   syncMarketCapFilterUI();
 
-  const bist =
+  const tryMarket =
     cfg.universe === "bist" ||
-    (cfg.universe === "custom" && cfg.custom_source_universe === "bist");
+    cfg.universe === "viop" ||
+    (cfg.universe === "custom" &&
+      (cfg.custom_source_universe === "bist" || cfg.custom_source_universe === "viop"));
   FILTERS.forEach((f) => {
     const cb = document.querySelector(`.filter-enable[data-id="${f.id}"]`);
     if (cb) cb.checked = false;
     const defs =
-      f.id === "market_cap_min" && bist
+      f.id === "market_cap_min" && tryMarket
         ? f.defaultParamsBist || f.defaultParams
         : f.defaultParams;
     f.fields.forEach(({ key }) => {

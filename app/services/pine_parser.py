@@ -168,6 +168,20 @@ def _finalize_condition(code: str, expr: str, var_name: str | None = None) -> Pi
     return PineALSignal(expr, "plotshape" if not var_name else "variable", var_name)
 
 
+def _extract_bias_ts(code: str) -> PineALSignal | None:
+    from app.services.pine_bias_ts import BIAS_TS_MARKER, bias_ts_display_label, is_bias_ts_script
+
+    if not is_bias_ts_script(code):
+        return None
+    return PineALSignal(
+        condition=BIAS_TS_MARKER,
+        source="bias_ts",
+        variable_name="buy_sig",
+        first_bar_only=False,
+        display_condition=bias_ts_display_label(code),
+    )
+
+
 def _extract_choch_bullish(code: str) -> PineALSignal | None:
     """Market structure scripts: bullish ChoCh flip (BigBeluga-style)."""
     from app.services.pine_choch import CHOCH_BULLISH_MARKER, choch_display_label, is_choch_market_structure_script
@@ -195,6 +209,10 @@ def extract_al_condition(pine_code: str) -> PineALSignal | None:
     5. strategy.entry long with id AL
     """
     code = _strip_comments(pine_code)
+
+    bias_ts = _extract_bias_ts(pine_code)
+    if bias_ts:
+        return bias_ts
 
     if _is_merged_triple(pine_code):
         from app.services.pine_merged_triple import MERGED_TRIPLE_MARKER, merged_triple_display_label

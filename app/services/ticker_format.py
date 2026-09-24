@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import re
+
 BIST_YF_SUFFIX = ".IS"
 BIST_UNIVERSES = frozenset({"bist", "borsa_istanbul", "istanbul", "borsa"})
+VIOP_UNIVERSES = frozenset({"viop", "vadeli", "viop_futures"})
 BINANCE_UNIVERSES = frozenset({"binance", "binance_spot", "crypto"})
 BINANCE_QUOTE = "USDT"
 
@@ -14,6 +17,30 @@ def is_bist_universe(universe: str) -> bool:
 
 def is_binance_universe(universe: str) -> bool:
     return (universe or "").lower() in BINANCE_UNIVERSES
+
+
+def is_viop_universe(universe: str) -> bool:
+    return (universe or "").lower() in VIOP_UNIVERSES
+
+
+def clean_viop_symbol(sym: str) -> str:
+    s = str(sym).strip().upper().replace(" ", "")
+    if s.startswith("BIST:"):
+        s = s.split(":", 1)[1]
+    if s.endswith(BIST_YF_SUFFIX):
+        s = s[: -len(BIST_YF_SUFFIX)]
+    return s
+
+
+def viop_underlying(symbol: str) -> str:
+    """F_THYAO1026 / F_XU0301026 -> THYAO / XU030."""
+    s = clean_viop_symbol(symbol)
+    m = re.fullmatch(r"F_([A-Z0-9]{2,8})\d{4}", s)
+    if m:
+        return m.group(1)
+    if s.startswith("F_") and len(s) > 2:
+        return s[2:]
+    return s
 
 
 def clean_bist_symbol(sym: str) -> str:
@@ -46,8 +73,8 @@ def to_binance_pair(symbol: str) -> str:
 
 
 def to_yf_ticker(symbol: str, universe: str) -> str:
-    if is_bist_universe(universe):
-        base = clean_bist_symbol(symbol)
+    if is_bist_universe(universe) or is_viop_universe(universe):
+        base = viop_underlying(symbol) if is_viop_universe(universe) else clean_bist_symbol(symbol)
         if not base:
             return ""
         return f"{base}{BIST_YF_SUFFIX}"
@@ -60,7 +87,7 @@ def to_yf_ticker(symbol: str, universe: str) -> str:
 
 
 def from_yf_ticker(yf_symbol: str, universe: str) -> str:
-    if is_bist_universe(universe):
+    if is_bist_universe(universe) or is_viop_universe(universe):
         return clean_bist_symbol(yf_symbol)
     if is_binance_universe(universe):
         return clean_binance_symbol(yf_symbol.replace("-USD", ""))

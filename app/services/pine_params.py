@@ -22,7 +22,7 @@ def merge_pine_inputs(pine_code: str, overrides: dict[str, Any] | None = None) -
         return merged
     known = set(merged)
     for key, raw in overrides.items():
-        if key not in known:
+        if key not in known and key != "scan_side":
             continue
         if raw is None:
             continue
@@ -58,6 +58,23 @@ def pine_inputs_for_api(
         d["value"] = effective_param_value(p, saved_defaults)
         d["pine_default"] = d["default"]
         out.append(d)
+    from app.services.pine_bias_ts import is_bias_ts_script
+
+    if is_bias_ts_script(pine_code) and not any(p["name"] == "scan_side" for p in out):
+        saved = (saved_defaults or {}).get("scan_side") or "buy"
+        out.insert(
+            0,
+            {
+                "name": "scan_side",
+                "type": "string",
+                "default": "buy",
+                "value": str(saved).strip().lower() if saved else "buy",
+                "pine_default": "buy",
+                "label": "Tarama yönü",
+                "group": "Sinyal filtreleri",
+                "options": ["buy", "sell", "both"],
+            },
+        )
     return out
 
 

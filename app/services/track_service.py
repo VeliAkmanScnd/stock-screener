@@ -22,6 +22,7 @@ CLOSED_STATUSES = frozenset({"hit_target", "hit_stop", "expired", "manual_close"
 
 UNIVERSE_LABELS: dict[str, str] = {
     "bist": "BIST",
+    "viop": "VIOP",
     "sp500": "S&P 500",
     "nasdaq": "NASDAQ",
     "nyse": "NYSE",

@@ -102,10 +102,16 @@ def api_universe_info(universe: str = "sp500", refresh: bool = False):
         "nyse": "NYSE",
         "all_us": "NASDAQ + NYSE + S&P 500",
         "bist": "BIST (Borsa İstanbul)",
+        "viop": "VIOP (vadeli kontratlar)",
         "binance": "Binance Spot (USDT)",
         "custom": "Özel liste",
     }
-    min_count = 50 if universe == "binance" else 100
+    if universe == "binance":
+        min_count = 50
+    elif universe == "viop":
+        min_count = 5
+    else:
+        min_count = 100
     if universe == "custom":
         return {
             "universe": universe,
@@ -182,7 +188,7 @@ def list_pine_scripts(db: Session = Depends(get_db)):
             al = extract_al_condition(content)
             if al:
                 al_source = al.source
-                if al.source in ("candle_green_first", "merged_triple", "choch_bullish"):
+                if al.source in ("candle_green_first", "merged_triple", "choch_bullish", "bias_ts"):
                     al_condition = al.display_condition
                 else:
                     al_condition = al.display_condition or al.condition
@@ -297,7 +303,7 @@ async def upload_pine(
 
     stored_condition = None
     if al:
-        if al.source in ("candle_green_first", "merged_triple", "choch_bullish"):
+        if al.source in ("candle_green_first", "merged_triple", "choch_bullish", "bias_ts"):
             stored_condition = al.display_condition
         else:
             stored_condition = al.display_condition or al.condition
@@ -313,7 +319,12 @@ async def upload_pine(
 
     params = pine_inputs_for_api(content)
     msg = "AL koşulu otomatik bulundu."
-    if al and al.source == "merged_triple":
+    if al and al.source == "bias_ts":
+        msg = (
+            "Bias × Trend Strength motoru aktif. "
+            "Son barda BUY (veya seçilen yön) taranır. VIOP için evreni VIOP seçin."
+        )
+    elif al and al.source == "merged_triple":
         msg = (
             f"Merged-Triple motoru aktif ({len(params)} parametre). "
             "BUY sinyali tam confluence ile taranır."

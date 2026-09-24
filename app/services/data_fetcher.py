@@ -20,7 +20,14 @@ from app.services.http_ssl import default_ssl_context
 from app.services.bist_symbols import fetch_bist_symbols_live
 from app.services.binance_symbols import fetch_binance_usdt_symbols_live
 from app.services.symbol_filter import nasdaq_listed_row_passes, nyse_otherlisted_row_passes
-from app.services.ticker_format import clean_bist_symbol, clean_binance_symbol, is_bist_universe, is_binance_universe
+from app.services.ticker_format import (
+    clean_bist_symbol,
+    clean_binance_symbol,
+    clean_viop_symbol,
+    is_bist_universe,
+    is_binance_universe,
+    is_viop_universe,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -242,6 +249,14 @@ def get_bist_symbols() -> tuple[str, ...]:
 
 
 @lru_cache(maxsize=1)
+def get_viop_symbols() -> tuple[str, ...]:
+    from app.services.viop_data import fetch_viop_symbols_live
+
+    symbols, _ = _resolve_cached("viop", fetch_viop_symbols_live, "VIOP")
+    return symbols
+
+
+@lru_cache(maxsize=1)
 def get_binance_symbols() -> tuple[str, ...]:
     symbols, _ = _resolve_cached(
         "binance", fetch_binance_usdt_symbols_live, "Binance Spot (USDT)"
@@ -272,6 +287,10 @@ def get_universe_meta(universe: str) -> UniverseMeta:
             _, meta = _resolve_cached("nyse", _fetch_nyse_live, "NYSE")
         elif key == "bist":
             _, meta = _resolve_cached("bist", fetch_bist_symbols_live, "BIST")
+        elif key == "viop":
+            from app.services.viop_data import fetch_viop_symbols_live
+
+            _, meta = _resolve_cached("viop", fetch_viop_symbols_live, "VIOP")
         elif key == "binance":
             _, meta = _resolve_cached(
                 "binance", fetch_binance_usdt_symbols_live, "Binance Spot (USDT)"
@@ -298,6 +317,8 @@ def get_universe_symbols(universe: str) -> list[str]:
         return list(get_nyse_symbols())
     if key == "bist":
         return list(get_bist_symbols())
+    if key == "viop":
+        return list(get_viop_symbols())
     if key == "binance":
         return list(get_binance_symbols())
     if key in ("all", "all_us", "us"):
@@ -316,6 +337,7 @@ def refresh_universe_cache(universe: str | None = None) -> dict[str, int]:
     get_nyse_symbols.cache_clear()
     get_bist_symbols.cache_clear()
     get_binance_symbols.cache_clear()
+    get_viop_symbols.cache_clear()
     get_all_us_symbols.cache_clear()
     for legacy in CACHE_DIR.glob("*.json"):
         if f"_{SYMBOL_CACHE_VERSION}.json" not in legacy.name:
@@ -327,7 +349,7 @@ def refresh_universe_cache(universe: str | None = None) -> dict[str, int]:
     targets = (
         [universe]
         if universe and universe != "all_us"
-        else ["sp500", "nasdaq", "nyse", "bist", "binance", "all_us"]
+        else ["sp500", "nasdaq", "nyse", "bist", "viop", "binance", "all_us"]
     )
     counts: dict[str, int] = {}
     for name in targets:
@@ -358,6 +380,8 @@ def parse_symbol_list(text: str, universe: str = "sp500") -> list[str]:
         except Exception:
             pass
         return parsed
+    if is_viop_universe(universe):
+        return sorted({clean_viop_symbol(s) for s in raw if s.strip()})
     if is_binance_universe(universe):
         return sorted({clean_binance_symbol(s) for s in raw if s.strip()})
     return sorted({_clean_symbol(s) for s in raw if s.strip()})
@@ -375,6 +399,11 @@ def fetch_ohlcv(
         from app.services.bist_data import fetch_time_series_bist
 
         return fetch_time_series_bist(symbol, timeframe)
+
+    if is_viop_universe(universe):
+        from app.services.viop_data import fetch_ohlcv_one_viop
+
+        return fetch_ohlcv_one_viop(symbol, timeframe)
 
     if is_binance_universe(universe):
         from app.services.binance_data import fetch_ohlcv_batch_binance

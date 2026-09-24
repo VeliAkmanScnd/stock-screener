@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.config import MAX_SYMBOLS_PER_SCAN
 from app.database import PineScript
 from app.services.pine_fibo import fibo_display_label
+from app.services.pine_bias_ts import bias_ts_display_label
 from app.services.pine_choch import choch_display_label
 from app.services.pine_params import applied_inputs_summary, parse_saved_input_defaults
 from app.services.pine_parser import extract_al_condition
@@ -69,6 +70,9 @@ def execute_scan_config(
             elif detected.source == "choch_bullish":
                 pine_condition = detected.condition
                 pine_label = choch_display_label(pine_code)
+            elif detected.source == "bias_ts":
+                pine_condition = detected.condition
+                pine_label = bias_ts_display_label(pine_code, pine_input_overrides)
         else:
             pine_source = row.al_source
             pine_condition = pine_condition or row.al_condition
@@ -76,6 +80,8 @@ def execute_scan_config(
             pine_label = fibo_display_label(pine_code)
         if pine_source == "choch_bullish" and pine_code and not pine_label:
             pine_label = choch_display_label(pine_code)
+        if pine_source == "bias_ts" and pine_code and not pine_label:
+            pine_label = bias_ts_display_label(pine_code, pine_input_overrides)
 
     if body.get("require_pine_al") and not pine_condition:
         raise ValueError("Pine AL taraması için script veya koşul gerekli")
