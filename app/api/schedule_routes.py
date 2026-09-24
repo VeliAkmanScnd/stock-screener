@@ -220,11 +220,15 @@ def _row_weekdays(row: ScheduledScan) -> list[int]:
 
 
 
-def _row_to_dict(row: ScheduledScan) -> dict[str, Any]:
+def _row_to_dict(row: ScheduledScan, *, owner_username: str | None = None) -> dict[str, Any]:
 
     return {
 
         "id": row.id,
+
+        "user_id": row.user_id,
+
+        "owner_username": owner_username,
 
         "name": row.name,
 
@@ -268,17 +272,13 @@ def _row_to_dict(row: ScheduledScan) -> dict[str, Any]:
 
 def _get_owned(db: Session, scan_id: int, user: User) -> ScheduledScan:
 
-    row = (
-
-        db.query(ScheduledScan)
-
-        .filter(ScheduledScan.id == scan_id, ScheduledScan.user_id == user.id)
-
-        .first()
-
-    )
+    row = db.query(ScheduledScan).filter(ScheduledScan.id == scan_id).first()
 
     if not row:
+
+        raise HTTPException(404, "Zamanlanmış tarama bulunamadı")
+
+    if row.user_id != user.id and user.role != "admin":
 
         raise HTTPException(404, "Zamanlanmış tarama bulunamadı")
 
@@ -352,19 +352,20 @@ def list_scheduled_scans(
 
 ):
 
-    rows = (
-
-        db.query(ScheduledScan)
-
-        .filter(ScheduledScan.user_id == user.id)
-
-        .order_by(ScheduledScan.created_at.desc())
-
-        .all()
-
+    q = db.query(ScheduledScan)
+    if user.role != "admin":
+        q = q.filter(ScheduledScan.user_id == user.id)
+    rows = q.order_by(ScheduledScan.created_at.desc()).all()
+    owner_ids = {r.user_id for r in rows}
+    owners = (
+        {
+            u.id: u.username
+            for u in db.query(User).filter(User.id.in_(owner_ids)).all()
+        }
+        if owner_ids
+        else {}
     )
-
-    return [_row_to_dict(r) for r in rows]
+    return [_row_to_dict(r, owner_username=owners.get(r.user_id)) for r in rows]
 
 
 

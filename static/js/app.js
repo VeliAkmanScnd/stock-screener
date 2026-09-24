@@ -1731,7 +1731,7 @@ async function loadScheduledScans() {
     scheduledScansById = Object.fromEntries(rows.map((r) => [String(r.id), r]));
     if (!rows.length) {
       tbody.innerHTML =
-        '<tr class="empty"><td colspan="7">Henüz zamanlanmış tarama yok.</td></tr>';
+        '<tr class="empty"><td colspan="8">Henüz zamanlanmış tarama yok.</td></tr>';
       return;
     }
     tbody.innerHTML = rows
@@ -1750,6 +1750,7 @@ async function loadScheduledScans() {
         const status = formatScheduleLastStatus(r);
         return `<tr>
           <td><strong>${r.name}</strong> ${status}</td>
+          <td>${r.owner_username || "—"}</td>
           <td>${SCHEDULE_TYPE_LABELS[r.schedule_type] || r.schedule_type}</td>
           <td>${formatScheduleTime(r)}</td>
           <td>${r.email_to}</td>
@@ -1806,7 +1807,7 @@ async function loadScheduledScans() {
     });
   } catch {
     tbody.innerHTML =
-      '<tr class="empty"><td colspan="7">Liste yüklenemedi.</td></tr>';
+      '<tr class="empty"><td colspan="8">Liste yüklenemedi.</td></tr>';
   }
 }
 
