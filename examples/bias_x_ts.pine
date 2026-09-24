@@ -1,0 +1,125 @@
+//@version=6
+indicator("Bias × Trend Strength", shorttitle="Bias×TS", overlay=true, max_labels_count=500)
+
+// Market Bias (CEREBR) × AlgoAlpha Trend Strength
+// SELL: bias ZATEN kırmızı iken TS kırmızıdan çıksın (siyah/yeşil), sonra tekrar kırmızı olsun.
+// BUY:  bias ZATEN yeşil iken TS yeşilden çıksın, sonra tekrar yeşil olsun.
+// Bias rengi değiştiği barda sinyal YOK — TS o anda kırmızı/yeşil olsa bile.
+
+g_bias = "HA Market Bias"
+g_ts = "Trend Strength"
+g_filt = "Sinyal filtreleri"
+g_al = "Alerts"
+g_disp = "Display"
+
+ha_htf = input.timeframe("", "Zaman aralığı", group=g_bias, tooltip="1 saat = grafikteki Bias×TS ile aynı. Boş = grafik TF. HA EMA grafik TF'sinde hesaplanır, Bias bu TF'de örneklenir.")
+ha_len = input.int(100, "Periyot", group=g_bias)
+ha_len2 = input.int(100, "Belirginleştirme", group=g_bias)
+osc_len = input.int(7, "Oscillator Period", group=g_bias)
+
+lenn = input.int(20, "Periyot", group=g_ts)
+showTsBars = input.bool(true, "Mum rengini TS ile boya", group=g_ts)
+showTsBands = input.bool(false, "TS bantlarını göster", group=g_ts)
+upColor = input.color(#00ffbb, "Up Color", group=g_ts)
+downColor = input.color(#ff1100, "Down Color", group=g_ts)
+
+only_first = input.bool(true, "Sadece ilk Buy / Sell sinyalini göster", group=g_filt, tooltip="Bias rengi değişince bekle ve rejim sıfırlanır. Kırmızı bias döneminde TS önce kırmızıdan çıkmalı, sonra tekrar kırmızı olunca ilk SELL.")
+require_close_side = input.bool(true, "Kapanış bias'ın doğru tarafında olsun", group=g_filt)
+use_dist = input.bool(true, "Bias uzaklık filtresini kullan", group=g_filt)
+max_dist = input.float(5.0, "Maks. bias uzaklığı (%)", minval=0.0, step=0.01, group=g_filt)
+
+enableAlerts = input.bool(true, "Enable Alerts", group=g_al)
+alertOnBuy = input.bool(true, "Alert BUY", group=g_al)
+alertOnSell = input.bool(true, "Alert SELL", group=g_al)
+
+showHa = input.bool(true, "HA Market Bias bandı", group=g_disp)
+showSignals = input.bool(true, "BUY/SELL işaretleri", group=g_disp)
+
+biasRes = ha_htf == "" ? timeframe.period : timeframe.in_seconds(ha_htf) < timeframe.in_seconds(timeframe.period) ? timeframe.period : ha_htf
+
+o = ta.ema(open, ha_len)
+c = ta.ema(close, ha_len)
+h = ta.ema(high, ha_len)
+l = ta.ema(low, ha_len)
+haclose = (o + h + l + c) / 4
+xhaopen = (o + c) / 2
+haopen = na(xhaopen[1]) ? (o + c) / 2 : (xhaopen[1] + haclose[1]) / 2
+hahigh = math.max(h, math.max(haopen, haclose))
+halow = math.min(l, math.min(haopen, haclose))
+o2 = ta.ema(haopen, ha_len2)
+c2 = ta.ema(haclose, ha_len2)
+h2 = ta.ema(hahigh, ha_len2)
+l2 = ta.ema(halow, ha_len2)
+
+bool newHtf = na(time(biasRes)[1]) or time(biasRes) != time(biasRes)[1]
+float o2s = na
+float c2s = na
+float h2s = na
+float l2s = na
+o2s := newHtf ? o2 : o2s[1]
+c2s := newHtf ? c2 : c2s[1]
+h2s := newHtf ? h2 : h2s[1]
+l2s := newHtf ? l2 : l2s[1]
+ha_avg = (h2s + l2s) / 2
+osc_bias = 100.0 * (c2s - o2s)
+osc_smooth = ta.ema(osc_bias, osc_len)
+bias_bull = osc_bias > 0
+bias_bear = osc_bias < 0
+
+src = close
+basis = ta.sma(src, lenn)
+stdev_1 = ta.stdev(src, lenn, true)
+upper = basis + stdev_1
+lower = basis - stdev_1
+float trend = 0.0
+trend := src > basis and src > upper ? 1.0 : src < basis and src < lower ? -1.0 : nz(trend[1], 0.0)
+bool ts_red = src < lower
+bool ts_green = src > upper
+// Bias bu renkteyken TS o rengi terk ettiyse arm; tekrar girince ateşle.
+// Pine v6: nz() bool kabul etmez, 0/1 float tutulur.
+float buy_armed = 0.0
+buy_armed := not bias_bull ? 0.0 : not ts_green ? 1.0 : nz(buy_armed[1], 0.0)
+float sell_armed = 0.0
+sell_armed := not bias_bear ? 0.0 : not ts_red ? 1.0 : nz(sell_armed[1], 0.0)
+ts_buy = buy_armed == 1 and ts_green and not ts_green[1]
+ts_sell = sell_armed == 1 and ts_red and not ts_red[1]
+bool bias_flip_bull = bias_bull and not bias_bull[1]
+bool bias_flip_bear = bias_bear and not bias_bear[1]
+bias_dist_pct = na(ha_avg) or ha_avg == 0 ? na : (close - ha_avg) / math.abs(ha_avg) * 100.0
+buy_extended = use_dist and not na(bias_dist_pct) and bias_dist_pct > max_dist
+sell_extended = use_dist and not na(bias_dist_pct) and bias_dist_pct < -max_dist
+close_above_bias = not na(ha_avg) and close > ha_avg
+close_below_bias = not na(ha_avg) and close < ha_avg
+buy_setup = bias_bull and not buy_extended and (not require_close_side or close_above_bias)
+sell_setup = bias_bear and not sell_extended and (not require_close_side or close_below_bias)
+candidate_buy = buy_setup and ts_buy
+candidate_sell = sell_setup and ts_sell
+float fired = 0.0
+fired := bias_flip_bull or bias_flip_bear ? 0.0 : nz(fired[1], 0.0)
+buy_sig = candidate_buy and (not only_first or fired != 1)
+sell_sig = candidate_sell and (not only_first or fired != -1)
+fired := buy_sig ? 1.0 : sell_sig ? -1.0 : fired
+
+biasCol = osc_bias > 0 and osc_bias >= osc_smooth ? color.new(color.lime, 35) : osc_bias > 0 ? color.new(color.lime, 70) : osc_bias < 0 and osc_bias <= osc_smooth ? color.new(color.red, 35) : osc_bias < 0 ? color.new(color.red, 70) : color.new(color.gray, 70)
+
+p_h = plot(showHa ? h2s : na, "Bias High", display=display.none)
+p_l = plot(showHa ? l2s : na, "Bias Low", display=display.none)
+fill(p_h, p_l, biasCol, "Bias band")
+plot(showHa ? ha_avg : na, "Bias Average", color=biasCol, linewidth=1)
+
+pu = plot(showTsBands ? upper : na, "TS Upper", color=color.new(chart.fg_color, 80))
+pl = plot(showTsBands ? lower : na, "TS Lower", color=color.new(chart.fg_color, 80))
+fill(pu, pl, color.new(chart.fg_color, 90), "TS Fill")
+barcolor(showTsBars ? (src > upper ? upColor : src < lower ? downColor : chart.fg_color) : na)
+
+plotshape(showSignals and buy_sig, title="BUY", style=shape.labelup, location=location.belowbar, color=upColor, text="BUY", textcolor=color.white, size=size.tiny)
+plotshape(showSignals and sell_sig, title="SELL", style=shape.labeldown, location=location.abovebar, color=downColor, text="SELL", textcolor=color.white, size=size.tiny)
+
+alertcondition(buy_sig, "Geçerli Buy", "Bias yeşil + Trend Strength buy")
+alertcondition(sell_sig, "Geçerli Sell", "Bias kırmızı + Trend Strength sell")
+
+if enableAlerts
+    if alertOnBuy and buy_sig
+        alert("BUY " + syminfo.tickerid + " | " + str.tostring(close) + " | Bias yeşil + Trend Strength buy", alert.freq_once_per_bar)
+    if alertOnSell and sell_sig
+        alert("SELL " + syminfo.tickerid + " | " + str.tostring(close) + " | Bias kırmızı + Trend Strength sell", alert.freq_once_per_bar)

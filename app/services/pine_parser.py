@@ -52,6 +52,10 @@ def _input_defaults(code: str) -> dict[str, str]:
 def extract_pine_inputs(code: str) -> list[PineInputParam]:
     """Parse Pine input.* declarations (defaults + labels + groups)."""
     raw = _strip_comments(code)
+    group_vars = {
+        m.group(1): m.group(2)
+        for m in re.finditer(r'^(\w+)\s*=\s*"([^"]+)"\s*$', raw, flags=re.M)
+    }
     params: list[PineInputParam] = []
     seen: set[str] = set()
     pattern = re.compile(
@@ -66,6 +70,11 @@ def extract_pine_inputs(code: str) -> list[PineInputParam]:
         seen.add(name)
         tail = m.group(5) or ""
         gm = re.search(r'group\s*=\s*"([^"]+)"', tail, flags=re.I)
+        if gm:
+            group_name = gm.group(1)
+        else:
+            gvar = re.search(r"group\s*=\s*(\w+)", tail, flags=re.I)
+            group_name = group_vars.get(gvar.group(1), "") if gvar else ""
         opts_m = re.search(r"options\s*=\s*\[([^\]]+)\]", tail, flags=re.I)
         options: list[str] | None = None
         if opts_m:
@@ -83,7 +92,7 @@ def extract_pine_inputs(code: str) -> list[PineInputParam]:
                 kind=m.group(2).lower(),
                 default=m.group(3).strip(),
                 label=m.group(4).strip(),
-                group=gm.group(1) if gm else "",
+                group=group_name,
                 options=options,
                 minval=float(min_m.group(1)) if min_m else None,
                 maxval=float(max_m.group(1)) if max_m else None,

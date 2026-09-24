@@ -869,9 +869,9 @@ async function loadUniverseInfo() {
   }
 }
 
-async function loadSavedPine() {
+async function loadSavedPine(selectId) {
   const sel = $("#savedPine");
-  const prev = sel.value;
+  const prev = selectId != null ? String(selectId) : sel.value;
   const res = await apiFetch("/api/pine/scripts");
   const scripts = await res.json();
   sel.innerHTML = '<option value="">— Seçin —</option>';
@@ -926,10 +926,16 @@ function renderPineInputField(p, value) {
     return `<input type="checkbox" data-pine-input="${p.name}" data-pine-type="bool"${checked} />`;
   }
   if (p.options?.length) {
+    const labels = {
+      buy: "BUY",
+      sell: "SELL",
+      both: "BUY veya SELL",
+    };
     const opts = p.options
       .map((o) => {
         const sel = String(value) === String(o) ? " selected" : "";
-        return `<option value="${o}"${sel}>${o}</option>`;
+        const label = labels[o] || o;
+        return `<option value="${o}"${sel}>${label}</option>`;
       })
       .join("");
     return `<select data-pine-input="${p.name}" data-pine-type="string">${opts}</select>`;
@@ -1215,9 +1221,7 @@ async function uploadPine() {
   if (data.al_detected && $("#requirePineAl")) {
     $("#requirePineAl").checked = true;
   }
-  renderPineParams(data.parameters || [], data.id, false);
-  await loadSavedPine();
-  $("#savedPine").value = String(data.id);
+  await loadSavedPine(data.id);
 }
 
 function collectScanBody() {
