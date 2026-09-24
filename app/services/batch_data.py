@@ -24,8 +24,9 @@ logger = logging.getLogger(__name__)
 YF_CHUNK_SIZE = 100
 OHLCV_COLS = ["Open", "High", "Low", "Close", "Volume"]
 
-# Built from 1h bars via pandas resample (yfinance has no native 4h/8h/12h)
+# Built from 1h bars via pandas resample (yfinance has no native 2h/4h/8h/12h)
 RESAMPLED_TIMEFRAMES: dict[str, str] = {
+    "2h": "2h",
     "4h": "4h",
     "8h": "8h",
     "12h": "12h",
@@ -39,6 +40,7 @@ BAR_MINUTES: dict[str, int] = {
     "15m": 15,
     "30m": 30,
     "1h": 60,
+    "2h": 120,
     "4h": 240,
     "8h": 480,
     "12h": 720,
@@ -53,6 +55,7 @@ STALE_MULTIPLIER: dict[str, timedelta] = {
     "15m": timedelta(days=5),
     "30m": timedelta(days=7),
     "1h": timedelta(days=10),
+    "2h": timedelta(days=12),
     "4h": timedelta(days=14),
     "8h": timedelta(days=18),
     "12h": timedelta(days=21),

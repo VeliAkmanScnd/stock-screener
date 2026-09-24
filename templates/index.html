@@ -147,6 +147,7 @@
               <option value="12h">12 saat</option>
               <option value="8h">8 saat</option>
               <option value="4h">4 saat</option>
+              <option value="2h">2 saat (2H)</option>
               <option value="1h">Saatlik (1H)</option>
               <option value="30m">30 dakika</option>
               <option value="15m">15 dakika</option>
@@ -439,9 +440,16 @@
           <label class="field schedule-period-field">
             <span>Periyot</span>
             <select id="scheduleType" required>
-              <option value="hourly">Saatlik</option>
-              <option value="every_4h">4 saatte bir</option>
-              <option value="daily" selected>Günlük</option>
+              <option value="1d" selected>Günlük (1D)</option>
+              <option value="1wk">Haftalık (1W)</option>
+              <option value="12h">12 saat</option>
+              <option value="8h">8 saat</option>
+              <option value="4h">4 saat</option>
+              <option value="2h">2 saat (2H)</option>
+              <option value="1h">Saatlik (1H)</option>
+              <option value="30m">30 dakika</option>
+              <option value="15m">15 dakika</option>
+              <option value="5m">5 dakika</option>
             </select>
           </label>
           <div class="schedule-time-fields" id="scheduleTimeWrap">
@@ -547,7 +555,7 @@
   </div>
 
   <script src="/static/js/auth.js?v=3"></script>
-  <script src="/static/js/app.js?v=34"></script>
+  <script src="/static/js/app.js?v=35"></script>
   <script src="/static/js/track.js?v=8"></script>
 </body>
 </html>

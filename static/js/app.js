@@ -1242,11 +1242,63 @@ function collectScanBody() {
 }
 
 const SCHEDULE_TYPE_LABELS = {
-  hourly: "Saatlik",
-  every_4h: "4 saatte bir",
-  daily: "Günlük",
-  weekly: "Haftalık",
+  "5m": "5 dakika",
+  "15m": "15 dakika",
+  "30m": "30 dakika",
+  "1h": "Saatlik (1H)",
+  "2h": "2 saat (2H)",
+  "4h": "4 saat",
+  "8h": "8 saat",
+  "12h": "12 saat",
+  "1d": "Günlük (1D)",
+  "1wk": "Haftalık (1W)",
+  hourly: "Saatlik (1H)",
+  every_4h: "4 saat",
+  every_2h: "2 saat (2H)",
+  every_5m: "5 dakika",
+  every_15m: "15 dakika",
+  every_30m: "30 dakika",
+  every_8h: "8 saat",
+  every_12h: "12 saat",
+  daily: "Günlük (1D)",
+  weekly: "Haftalık (1W)",
 };
+
+const SCHEDULE_TYPE_ALIASES = {
+  hourly: "1h",
+  every_4h: "4h",
+  every_2h: "2h",
+  every_5m: "5m",
+  every_15m: "15m",
+  every_30m: "30m",
+  every_8h: "8h",
+  every_12h: "12h",
+  daily: "1d",
+  weekly: "1wk",
+};
+
+const WINDOW_SCHEDULE_TYPES = new Set([
+  "5m",
+  "15m",
+  "30m",
+  "1h",
+  "2h",
+  "4h",
+  "8h",
+  "12h",
+  "hourly",
+  "every_5m",
+  "every_15m",
+  "every_30m",
+  "every_2h",
+  "every_4h",
+  "every_8h",
+  "every_12h",
+]);
+
+function canonicalScheduleType(t) {
+  return SCHEDULE_TYPE_ALIASES[t] || t || "1d";
+}
 
 const SCHEDULE_WEEKDAY_LABELS = ["Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "Paz"];
 
@@ -1371,7 +1423,7 @@ async function applyScanConfigToUI(cfg) {
 
 function fillScheduleFormFromRow(row) {
   $("#scheduleName").value = row.name || "";
-  $("#scheduleType").value = row.schedule_type || "daily";
+  $("#scheduleType").value = canonicalScheduleType(row.schedule_type || "1d");
   const windowed = isWindowScheduleType(row.schedule_type);
   if (windowed) {
     $("#scheduleStartHour").value = row.hour ?? 10;
@@ -1381,12 +1433,11 @@ function fillScheduleFormFromRow(row) {
     $("#scheduleHour").value = row.hour ?? 8;
     $("#scheduleMinute").value = row.minute ?? 30;
   }
-  const days =
-    row.weekdays?.length
-      ? row.weekdays
-      : row.schedule_type === "daily" || windowed
-        ? [0, 1, 2, 3, 4, 5, 6]
-        : [];
+  const days = row.weekdays?.length
+    ? row.weekdays
+    : windowed || ["1d", "1wk"].includes(canonicalScheduleType(row.schedule_type))
+      ? [0, 1, 2, 3, 4, 5, 6]
+      : [];
   setScheduleWeekdays(days);
   $("#scheduleTimezone").value = row.timezone || "Europe/Istanbul";
   $("#scheduleEmail").value = row.email_to || "";
@@ -1405,6 +1456,10 @@ function resetScheduleModalForCreate() {
   }
   if (submitBtn) submitBtn.textContent = "Oluştur";
   $("#scheduleScanForm")?.reset();
+  const tf = $("#timeframe")?.value || "1d";
+  if ($("#scheduleType")) {
+    $("#scheduleType").value = canonicalScheduleType(tf);
+  }
   setScheduleWeekdays([0, 1, 2, 3, 4, 5, 6]);
   updateScheduleFormVisibility();
 }
@@ -1449,31 +1504,23 @@ function formatWeekdaysList(days) {
 function formatScheduleTime(row) {
   const m = String(row.minute).padStart(2, "0");
   const tz = row.timezone || "Europe/Istanbul";
-  if (row.schedule_type === "hourly") {
+  const canon = canonicalScheduleType(row.schedule_type);
+  if (isWindowScheduleType(row.schedule_type)) {
     const start = String(row.hour).padStart(2, "0");
     const end =
       row.end_hour != null ? String(row.end_hour).padStart(2, "0") : "23";
-    let label = `Her saat ${start}:${m}–${end}:${m} (${tz})`;
-    if (row.weekdays?.length && row.weekdays.length < 7) {
-      label = `${formatWeekdaysList(row.weekdays)} · ${label}`;
-    }
-    return label;
-  }
-  if (row.schedule_type === "every_4h") {
-    const start = String(row.hour).padStart(2, "0");
-    const end =
-      row.end_hour != null ? String(row.end_hour).padStart(2, "0") : "23";
-    let label = `4 saatte bir ${start}:${m}–${end}:${m} (${tz})`;
+    const period = SCHEDULE_TYPE_LABELS[canon] || canon;
+    let label = `${period} ${start}:${m}–${end}:${m} (${tz})`;
     if (row.weekdays?.length && row.weekdays.length < 7) {
       label = `${formatWeekdaysList(row.weekdays)} · ${label}`;
     }
     return label;
   }
   const h = String(row.hour).padStart(2, "0");
-  if (row.schedule_type === "weekly") {
+  if (canon === "1wk" && !row.weekdays?.length) {
     return `${SCHEDULE_WEEKDAY_LABELS[row.weekday ?? 0]} ${h}:${m} (${tz})`;
   }
-  if (row.schedule_type === "daily" && row.weekdays?.length) {
+  if ((canon === "1d" || canon === "1wk") && row.weekdays?.length) {
     const dayLabel =
       row.weekdays.length === 7 ? "Her gün" : formatWeekdaysList(row.weekdays);
     return `${dayLabel} ${h}:${m} (${tz})`;
@@ -1482,7 +1529,7 @@ function formatScheduleTime(row) {
 }
 
 function isWindowScheduleType(t) {
-  return t === "hourly" || t === "every_4h";
+  return WINDOW_SCHEDULE_TYPES.has(canonicalScheduleType(t)) || WINDOW_SCHEDULE_TYPES.has(t);
 }
 
 function setDefaultMarketWeekdays() {
@@ -1501,11 +1548,12 @@ function updateScheduleFormVisibility() {
   const windowed = isWindowScheduleType(t);
   if (timeWrap) timeWrap.hidden = windowed;
   if (windowWrap) windowWrap.hidden = !windowed;
-  if (weekdaysWrap) weekdaysWrap.hidden = t !== "daily" && !windowed;
+  const canon = canonicalScheduleType(t);
+  if (weekdaysWrap) weekdaysWrap.hidden = !windowed && canon !== "1d" && canon !== "1wk";
   if (weekdaysLabel) {
     weekdaysLabel.textContent = windowed
-      ? "Günler (BIST için genelde Pzt–Cum)"
-      : "Günler (günlük tarama)";
+      ? "Günler (BIST / VIOP için genelde Pzt–Cum)"
+      : "Günler";
   }
 }
 
@@ -1593,14 +1641,16 @@ function buildSchedulePreviewText() {
       ? parseInt($("#scheduleWindowMinute")?.value || "0", 10)
       : parseInt($("#scheduleMinute")?.value || "30", 10),
     weekdays:
-      t === "daily" || windowed ? getSelectedScheduleWeekdays() : [],
+      windowed || ["1d", "1wk"].includes(canonicalScheduleType(t))
+        ? getSelectedScheduleWeekdays()
+        : [],
     timezone: $("#scheduleTimezone")?.value || "Europe/Istanbul",
   };
   const parts = [
     `Evren: ${body.universe}`,
     `Zaman dilimi (tarama): ${body.timeframe}`,
     `Maks: ${body.max_symbols}`,
-    `Periyot: ${SCHEDULE_TYPE_LABELS[t] || t} — ${formatScheduleTime(previewRow)}`,
+    `Periyot: ${SCHEDULE_TYPE_LABELS[canonicalScheduleType(t)] || t} — ${formatScheduleTime(previewRow)}`,
   ];
   if (body.require_pine_al) parts.push("Pine AL zorunlu");
   if (body.pine_script_id) parts.push(`Pine script #${body.pine_script_id}`);
@@ -1765,9 +1815,12 @@ async function submitScheduleScan(e) {
   const status = $("#scheduleFormStatus");
   const scheduleType = $("#scheduleType").value;
   const windowed = isWindowScheduleType(scheduleType);
+  const canon = canonicalScheduleType(scheduleType);
   const weekdays =
-    scheduleType === "daily" || windowed ? getSelectedScheduleWeekdays() : null;
-  if (scheduleType === "daily" && !weekdays.length) {
+    canon === "1d" || canon === "1wk" || windowed
+      ? getSelectedScheduleWeekdays()
+      : null;
+  if ((canon === "1d" || canon === "1wk" || windowed) && !weekdays.length) {
     if (status) status.textContent = "En az bir gün seçin.";
     return;
   }

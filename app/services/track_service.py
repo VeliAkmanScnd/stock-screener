@@ -16,7 +16,7 @@ from app.utils.datetime_fmt import utc_iso
 
 logger = logging.getLogger(__name__)
 
-INTRADAY_TIMEFRAMES = frozenset({"5m", "15m", "30m", "1h", "4h", "8h", "12h"})
+INTRADAY_TIMEFRAMES = frozenset({"5m", "15m", "30m", "1h", "2h", "4h", "8h", "12h"})
 ACTIVE_STATUS = "active"
 CLOSED_STATUSES = frozenset({"hit_target", "hit_stop", "expired", "manual_close"})
 

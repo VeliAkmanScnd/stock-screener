@@ -39,15 +39,13 @@ from app.services.email_service import send_tv_list_email, smtp_configured
 from app.services.scan_executor import config_to_json, execute_scan_config, scan_body_from_dict
 
 from app.services.schedule_helpers import (
-
+    SCHEDULE_TYPES,
+    is_window_schedule_type,
     normalize_email_storage,
-
+    normalize_schedule_type,
     parse_email_list,
-
     parse_weekdays_field,
-
     weekdays_to_storage,
-
 )
 
 from app.services.schedule_runner import run_scheduled_scan
@@ -59,12 +57,6 @@ from app.utils.datetime_fmt import utc_iso
 
 
 router = APIRouter(prefix="/api/scheduled-scans", tags=["scheduled-scans"])
-
-
-
-SCHEDULE_TYPES = frozenset({"hourly", "every_4h", "daily", "weekly"})
-
-
 
 
 
@@ -218,7 +210,7 @@ def _row_weekdays(row: ScheduledScan) -> list[int]:
 
         return parse_weekdays_field(row.weekdays)
 
-    if row.schedule_type == "weekly" and row.weekday is not None:
+    if normalize_schedule_type(row.schedule_type) == "1wk" and row.weekday is not None:
 
         return [int(row.weekday)]
 
@@ -304,17 +296,14 @@ def _validate_schedule_fields(
     end_hour: int | None,
 ) -> None:
 
-    if schedule_type == "weekly" and weekday is None:
-
-        raise HTTPException(400, "Haftalık tarama için weekday seçin (0=Pazartesi).")
-
-    if schedule_type == "daily" and not weekdays:
-
+    canon = normalize_schedule_type(schedule_type)
+    if canon == "1wk" and weekday is None and not weekdays:
+        raise HTTPException(400, "Haftalık tarama için en az bir gün seçin.")
+    if canon == "1d" and not weekdays:
         raise HTTPException(400, "Günlük tarama için en az bir gün seçin.")
-
-    if schedule_type in ("hourly", "every_4h"):
+    if is_window_schedule_type(canon):
         if end_hour is None:
-            raise HTTPException(400, "Saatlik tarama için bitiş saati gerekli (ör. 18).")
+            raise HTTPException(400, "Bu periyot için bitiş saati gerekli (ör. 18).")
         if end_hour < hour:
             raise HTTPException(400, "Bitiş saati başlangıç saatinden önce olamaz.")
 
@@ -335,15 +324,16 @@ def schedule_config():
         "scheduler": scheduler_status(),
 
         "schedule_types": [
-
-            {"id": "hourly", "label": "Saatlik"},
-
-            {"id": "every_4h", "label": "4 saatte bir"},
-
-            {"id": "daily", "label": "Günlük"},
-
-            {"id": "weekly", "label": "Haftalık"},
-
+            {"id": "1d", "label": "Günlük (1D)"},
+            {"id": "1wk", "label": "Haftalık (1W)"},
+            {"id": "12h", "label": "12 saat"},
+            {"id": "8h", "label": "8 saat"},
+            {"id": "4h", "label": "4 saat"},
+            {"id": "2h", "label": "2 saat (2H)"},
+            {"id": "1h", "label": "Saatlik (1H)"},
+            {"id": "30m", "label": "30 dakika"},
+            {"id": "15m", "label": "15 dakika"},
+            {"id": "5m", "label": "5 dakika"},
         ],
 
     }
@@ -425,7 +415,7 @@ def create_scheduled_scan(
 
         config_json=config_to_json(body.scan_config.model_dump()),
 
-        schedule_type=body.schedule_type,
+        schedule_type=normalize_schedule_type(body.schedule_type),
 
         hour=body.hour,
 
@@ -487,7 +477,7 @@ def update_scheduled_scan(
 
             raise HTTPException(400, "Geçersiz schedule_type")
 
-        row.schedule_type = body.schedule_type
+        row.schedule_type = normalize_schedule_type(body.schedule_type)
 
     if body.hour is not None:
 

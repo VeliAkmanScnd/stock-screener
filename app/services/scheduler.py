@@ -26,7 +26,15 @@ from app.config import TRACK_PRICE_CHECK_TIMEZONE
 
 from app.database import ScheduledScan, SessionLocal
 
-from app.services.schedule_helpers import hour_window_cron, parse_weekdays_field, weekdays_to_cron
+from app.services.schedule_helpers import (
+    WINDOW_INTERVAL_MINUTES,
+    hour_window_cron,
+    is_window_schedule_type,
+    minute_step_cron,
+    normalize_schedule_type,
+    parse_weekdays_field,
+    weekdays_to_cron,
+)
 
 from app.services.scheduler_lock import acquire_scheduler_lock, release_scheduler_lock
 
@@ -64,67 +72,40 @@ def _build_trigger(sched: ScheduledScan) -> CronTrigger:
 
     end_hour = int(sched.end_hour) if sched.end_hour is not None else None
 
-    stype = (sched.schedule_type or "daily").lower()
+    stype = normalize_schedule_type(sched.schedule_type)
 
     days = parse_weekdays_field(sched.weekdays)
 
     day_of_week = weekdays_to_cron(days) if days else None
 
-
-
-    if stype == "hourly":
-
-        cron_hour = hour_window_cron(hour, end_hour) if end_hour is not None else "*"
-
-        kwargs: dict = {"hour": cron_hour, "minute": minute, "timezone": tz}
-
-        if day_of_week:
-
-            kwargs["day_of_week"] = day_of_week
-
-        return CronTrigger(**kwargs)
-
-    if stype == "every_4h":
-
-        if end_hour is not None:
-
-            cron_hour = hour_window_cron(hour, end_hour, step=4)
-
+    if is_window_schedule_type(stype):
+        interval = WINDOW_INTERVAL_MINUTES[stype]
+        if interval < 60:
+            minute_cron = minute_step_cron(interval, minute)
+            cron_hour = hour_window_cron(hour, end_hour) if end_hour is not None else "*"
+            kwargs: dict = {"hour": cron_hour, "minute": minute_cron, "timezone": tz}
         else:
-
-            cron_hour = "*/4"
-
-        kwargs = {"hour": cron_hour, "minute": minute, "timezone": tz}
-
+            step_hours = interval // 60
+            if end_hour is not None:
+                cron_hour = hour_window_cron(hour, end_hour, step=step_hours)
+            else:
+                cron_hour = "*" if step_hours == 1 else f"*/{step_hours}"
+            kwargs = {"hour": cron_hour, "minute": minute, "timezone": tz}
         if day_of_week:
-
             kwargs["day_of_week"] = day_of_week
-
         return CronTrigger(**kwargs)
 
-    if stype == "weekly":
-
+    if stype == "1wk" and not days:
         dow = int(sched.weekday if sched.weekday is not None else 0)
-
         return CronTrigger(day_of_week=dow, hour=hour, minute=minute, timezone=tz)
 
-    if stype == "daily":
-
-        days = parse_weekdays_field(sched.weekdays)
-
-        if days:
-
-            return CronTrigger(
-
-                day_of_week=weekdays_to_cron(days),
-
-                hour=hour,
-
-                minute=minute,
-
-                timezone=tz,
-
-            )
+    if days:
+        return CronTrigger(
+            day_of_week=weekdays_to_cron(days),
+            hour=hour,
+            minute=minute,
+            timezone=tz,
+        )
 
     return CronTrigger(hour=hour, minute=minute, timezone=tz)
 
@@ -136,20 +117,11 @@ def _misfire_grace_seconds(schedule_type: str | None) -> int:
 
     """Allow catch-up window based on cadence."""
 
-    stype = (schedule_type or "daily").lower()
-
-    if stype == "hourly":
-
-        return 3600
-
-    if stype == "every_4h":
-
-        return 4 * 3600
-
-    if stype == "weekly":
-
+    stype = normalize_schedule_type(schedule_type)
+    if stype in WINDOW_INTERVAL_MINUTES:
+        return WINDOW_INTERVAL_MINUTES[stype] * 60
+    if stype == "1wk":
         return 7 * 24 * 3600
-
     return 24 * 3600
 
 
