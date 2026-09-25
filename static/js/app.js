@@ -1250,6 +1250,7 @@ async function uploadPine() {
 }
 
 function collectScanBody() {
+  applyTelegramPaste($("#scanTelegramToken"), $("#scanTelegram"));
   const universe = $("#universe").value;
   return {
     universe,
@@ -1267,6 +1268,29 @@ function collectScanBody() {
     telegram_to: ($("#scanTelegram")?.value || "").trim() || null,
     telegram_bot_token: ($("#scanTelegramToken")?.value || "").trim() || null,
   };
+}
+
+function splitTelegramPaste(raw) {
+  let text = String(raw || "").trim().replace(/\s+/g, "");
+  text = text.replace(/[\u2212\u2013\u2014]/g, "-");
+  const url = text.match(/(?:https?:\/\/)?api\.telegram\.org\/bot([^/\s]+)/i);
+  if (url) text = url[1];
+  if (/^bot\d/i.test(text)) text = text.slice(3);
+  const glued = text.match(/^(\d+:[A-Za-z0-9_-]+?)(-\d{6,})$/);
+  if (glued) return { token: glued[1], chatId: glued[2] };
+  if (/^-?\d{6,}$/.test(text)) return { token: "", chatId: text };
+  if (text.includes(":")) return { token: text, chatId: "" };
+  return { token: "", chatId: "" };
+}
+
+function applyTelegramPaste(tokenEl, chatEl) {
+  if (!tokenEl && !chatEl) return;
+  const fromToken = splitTelegramPaste(tokenEl?.value);
+  const fromChat = splitTelegramPaste(chatEl?.value);
+  const token = fromToken.token || fromChat.token;
+  const chatId = fromToken.chatId || fromChat.chatId;
+  if (token && tokenEl) tokenEl.value = token;
+  if (chatId && chatEl) chatEl.value = chatId;
 }
 
 const SCHEDULE_TYPE_LABELS = {
@@ -1867,6 +1891,7 @@ async function loadScheduledScans() {
 }
 
 async function testScheduleTelegram() {
+  applyTelegramPaste($("#scheduleTelegramToken"), $("#scheduleTelegram"));
   const status = $("#scheduleFormStatus");
   const btn = $("#btnTestTelegram");
   const chatId = ($("#scheduleTelegram")?.value || "").trim();
@@ -1915,6 +1940,7 @@ async function submitScheduleScan(e) {
     if (status) status.textContent = "Bitiş saati başlangıçtan önce olamaz.";
     return;
   }
+  applyTelegramPaste($("#scheduleTelegramToken"), $("#scheduleTelegram"));
   const payload = {
     name: $("#scheduleName").value.trim(),
     schedule_type: scheduleType,
@@ -2204,6 +2230,21 @@ document.addEventListener("DOMContentLoaded", async () => {
   $("#btnScheduleScan")?.addEventListener("click", openScheduleModal);
   $("#btnScheduleCancel")?.addEventListener("click", closeScheduleModal);
   $("#btnTestTelegram")?.addEventListener("click", testScheduleTelegram);
+  [
+    ["scanTelegramToken", "scanTelegram"],
+    ["scheduleTelegramToken", "scheduleTelegram"],
+  ].forEach(([tokenId, chatId]) => {
+    const tokenEl = $("#" + tokenId);
+    const chatEl = $("#" + chatId);
+    ["change", "paste", "blur"].forEach((ev) => {
+      tokenEl?.addEventListener(ev, () =>
+        setTimeout(() => applyTelegramPaste(tokenEl, chatEl), 0)
+      );
+      chatEl?.addEventListener(ev, () =>
+        setTimeout(() => applyTelegramPaste(tokenEl, chatEl), 0)
+      );
+    });
+  });
   $("#scheduleScanForm")?.addEventListener("submit", submitScheduleScan);
   $("#scheduleType")?.addEventListener("change", () => {
     if (isWindowScheduleType($("#scheduleType").value) && !editingScheduleId) {

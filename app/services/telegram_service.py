@@ -36,9 +36,45 @@ def telegram_configured() -> bool:
     return bool(_bot_token() and parse_chat_ids(TELEGRAM_CHAT_ID))
 
 
+def split_telegram_paste(raw: str | None) -> tuple[str | None, str | None]:
+    """Split 'TOKEN-5005450345' or a getUpdates URL into (token, chat_id)."""
+    if not raw or not str(raw).strip():
+        return None, None
+    text = (
+        str(raw)
+        .strip()
+        .replace(" ", "")
+        .replace("\u2212", "-")
+        .replace("\u2013", "-")
+        .replace("\u2014", "-")
+    )
+    url = re.search(r"(?:https?://)?api\.telegram\.org/bot([^/\s]+)", text, re.I)
+    if url:
+        text = url.group(1)
+    if text.lower().startswith("bot") and len(text) > 3 and text[3].isdigit():
+        text = text[3:]
+    glued = re.fullmatch(r"(\d+:[A-Za-z0-9_-]+?)(-\d{6,})", text)
+    if glued:
+        return _normalize_telegram_bot_token(glued.group(1)), glued.group(2)
+    if re.fullmatch(r"-?\d{6,}", text):
+        return None, text
+    if ":" in text:
+        return _normalize_telegram_bot_token(text), None
+    return None, None
+
+
+def merge_telegram_credentials(
+    token: str | None, chat: str | None
+) -> tuple[str | None, str | None]:
+    t1, c1 = split_telegram_paste(token)
+    t2, c2 = split_telegram_paste(chat)
+    return t1 or t2, c2 or c1
+
+
 def parse_chat_ids(raw: str | None) -> list[str]:
     if not raw or not str(raw).strip():
         return []
+    _token, glued_chat = split_telegram_paste(raw)
     text = (
         str(raw)
         .strip()
@@ -48,7 +84,10 @@ def parse_chat_ids(raw: str | None) -> list[str]:
     )
     text = re.sub(r"-\s+", "-", text)
     parts = re.split(r"[,;\s]+", text)
-    return [p for p in parts if re.fullmatch(r"-?\d+", p)]
+    ids = [p for p in parts if re.fullmatch(r"-?\d+", p)]
+    if not ids and glued_chat:
+        return [glued_chat]
+    return ids
 
 
 def normalize_telegram_storage(raw: str | None) -> str | None:
@@ -236,6 +275,7 @@ def send_telegram_scan_result(
     bot_token: str | None = None,
 ) -> int:
     """Send scan results. VIOP/BIST: one card per match, no file, skip if empty."""
+    bot_token, extra_chat_ids = merge_telegram_credentials(bot_token, extra_chat_ids)
     chats = _resolve_chats(extra_chat_ids, bot_token)
     card_market = None
     if _is_viop_scan(universe, custom_source_universe, results):
