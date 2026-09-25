@@ -13,6 +13,36 @@ from app.database import SessionLocal
 ProgressCallback = Callable[[str, int, int, str], None]
 
 
+def _attach_telegram(result: dict[str, Any]) -> dict[str, Any]:
+    """Send manual-scan results to Telegram when .env is configured."""
+    from app.services.telegram_service import send_telegram_scan_result, telegram_configured
+
+    if not telegram_configured():
+        result["telegram_sent"] = False
+        result["telegram_error"] = (
+            "Telegram yapılandırılmamış (.env: TELEGRAM_BOT_TOKEN ve TELEGRAM_CHAT_ID)"
+        )
+        return result
+    try:
+        name = result.get("pine_label") or (
+            f"{result.get('universe') or 'tarama'} {result.get('timeframe') or ''}".strip()
+        )
+        send_telegram_scan_result(
+            name=str(name),
+            universe=str(result.get("universe") or ""),
+            timeframe=str(result.get("timeframe") or ""),
+            match_count=int(result.get("count") or 0),
+            tv_list_text=str(result.get("tradingview_text") or ""),
+            filename="tv_scan.txt",
+        )
+        result["telegram_sent"] = True
+        result["telegram_error"] = None
+    except Exception as exc:
+        result["telegram_sent"] = False
+        result["telegram_error"] = str(exc)
+    return result
+
+
 @dataclass
 class ScanJob:
     id: str
@@ -102,6 +132,7 @@ def start_scan_job(body: dict[str, Any]) -> str:
 
             progress = make_progress_callback(job_id)
             result = execute_scan_config(body, db, progress_callback=progress)
+            result = _attach_telegram(result)
             _update(
                 job_id,
                 status="done",

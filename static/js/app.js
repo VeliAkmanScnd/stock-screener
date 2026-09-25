@@ -1981,6 +1981,11 @@ async function runScan() {
     } else if (data.pine_label) {
       msg += ` · ${data.pine_label}`;
     }
+    if (data.telegram_sent) {
+      msg += " · Telegram gönderildi";
+    } else if (data.telegram_error) {
+      msg += ` · Telegram: ${data.telegram_error}`;
+    }
     setScanProgress(100, msg);
     setStatus(msg, "ok");
   } catch (e) {
