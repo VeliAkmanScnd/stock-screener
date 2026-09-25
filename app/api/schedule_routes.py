@@ -546,7 +546,9 @@ def update_scheduled_scan(
 
     if body.telegram_bot_token is not None:
 
-        row.telegram_bot_token = (body.telegram_bot_token or "").strip() or None
+        new_token = (body.telegram_bot_token or "").strip()
+        if new_token:
+            row.telegram_bot_token = new_token
 
     if body.notify_telegram is not None:
 

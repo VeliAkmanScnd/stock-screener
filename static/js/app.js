@@ -1908,7 +1908,11 @@ async function testScheduleTelegram() {
       if (status) status.textContent = data?.detail || text?.slice(0, 200) || "Telegram test başarısız";
       return;
     }
-    if (status) status.textContent = data?.message || "Telegram test mesajı gönderildi.";
+    if (status) {
+      status.textContent =
+        (data?.message || "Telegram test mesajı gönderildi.") +
+        " Kaydet’e basmazsanız asıl tarama eski bot/grup ile gider.";
+    }
   } catch (err) {
     if (status) status.textContent = err.message;
   } finally {
@@ -1953,13 +1957,14 @@ async function submitScheduleScan(e) {
     timezone: $("#scheduleTimezone").value.trim() || "Europe/Istanbul",
     email_to: $("#scheduleEmail").value.trim(),
     telegram_to: ($("#scheduleTelegram")?.value || "").trim() || null,
-    telegram_bot_token: ($("#scheduleTelegramToken")?.value || "").trim() || null,
     notify_telegram: $("#scheduleNotifyTelegram")?.checked !== false,
     enabled: editingScheduleId
       ? scheduledScansById[editingScheduleId]?.enabled !== false
       : true,
     scan_config: collectScanBody(),
   };
+  const savedToken = ($("#scheduleTelegramToken")?.value || "").trim();
+  if (savedToken) payload.telegram_bot_token = savedToken;
   if (!payload.name) {
     if (status) status.textContent = "Preset adı gerekli.";
     return;

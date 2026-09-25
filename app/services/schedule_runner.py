@@ -190,6 +190,10 @@ def run_scheduled_scan(scheduled_id: int, *, force: bool = False) -> None:
                     bot_token=getattr(sched, "telegram_bot_token", None),
                 )
                 telegram_sent = sent > 0 or match_count == 0
+                if match_count > 0 and sent == 0:
+                    notify_errors.append(
+                        "telegram: eşleşme vardı ama mesaj üretilmedi (token/chat id kaydı veya fiyat)"
+                    )
             except Exception as exc:
                 notify_errors.append(f"telegram: {exc}")
                 logger.exception("Telegram failed for schedule %s", scheduled_id)

@@ -248,12 +248,21 @@ def _is_bist_scan(universe: str, custom_source_universe: str | None) -> bool:
 
 
 def _resolve_chats(extra_chat_ids: str | None, bot_token: str | None = None) -> list[str]:
+    override = parse_chat_ids(extra_chat_ids)
+    scan_token = _normalize_telegram_bot_token(bot_token or "")
+    default_chats = parse_chat_ids(TELEGRAM_CHAT_ID)
+    if override and not scan_token:
+        if set(override) != set(default_chats):
+            raise RuntimeError(
+                "Bu taramanın chat id’si .env grubundan farklı. "
+                "Aynı forma o grubun bot token’ını yazıp Kaydet’e basın; "
+                "yalnızca «Telegram dene» yetmez."
+            )
     if not _bot_token(bot_token):
         raise RuntimeError(
-            "Telegram yapılandırılmamış. .env veya taramaya TELEGRAM_BOT_TOKEN ekleyin."
+            "Telegram yapılandırılmamış. .env veya taramaya bot token ekleyin."
         )
-    override = parse_chat_ids(extra_chat_ids)
-    chats = override or parse_chat_ids(TELEGRAM_CHAT_ID)
+    chats = override or default_chats
     if not chats:
         raise RuntimeError(
             "Telegram chat id yok. Taramadaki Telegram alanını veya .env TELEGRAM_CHAT_ID değerini doldurun."
@@ -285,6 +294,11 @@ def send_telegram_scan_result(
     if card_market:
         cards = _signal_cards(results, market=card_market)
         if not cards:
+            if results or match_count > 0:
+                raise RuntimeError(
+                    "Telegram kartı üretilemedi (sonuçta fiyat yok). "
+                    "E-posta gitmiş olabilir; Telegram atlandı."
+                )
             logger.info("%s Telegram skipped: no matches", card_market.upper())
             return 0
         sent = 0
