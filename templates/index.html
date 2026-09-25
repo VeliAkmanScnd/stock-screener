@@ -158,6 +158,11 @@
             <span id="maxSymbolsLabel">Maks. taranacak hisse</span>
             <input type="number" id="maxSymbols" value="1" min="1" max="20000" />
           </label>
+          <label class="check" for="notifyTelegram">
+            <input type="checkbox" id="notifyTelegram" name="notify_telegram" checked />
+            <span>Sonucu Telegram’a gönder</span>
+          </label>
+          <p class="hint" id="notifyTelegramHint">İşaretliyken tarama bitince .env’deki sohbete mesaj gider.</p>
           <button type="button" class="btn primary full universe-scan-btn" id="btnScan">
             <span class="btn-label">Taramayı Başlat</span>
             <span class="spinner" hidden></span>
@@ -499,6 +504,10 @@
           <input type="text" id="scheduleEmail" required placeholder="you@example.com; partner@example.com" autocomplete="email" />
           <span class="hint">Birden fazla adres için noktalı virgül (;) kullanın.</span>
         </label>
+        <label class="check" for="scheduleNotifyTelegram">
+          <input type="checkbox" id="scheduleNotifyTelegram" name="notify_telegram" checked />
+          <span>Sonucu Telegram’a gönder</span>
+        </label>
         <label class="field">
           <span>Telegram chat id (isteğe bağlı)</span>
           <input type="text" id="scheduleTelegram" placeholder=".env varsayılanı veya 123456789" autocomplete="off" />
@@ -561,7 +570,7 @@
   </div>
 
   <script src="/static/js/auth.js?v=3"></script>
-  <script src="/static/js/app.js?v=38"></script>
+  <script src="/static/js/app.js?v=39"></script>
   <script src="/static/js/track.js?v=8"></script>
 </body>
 </html>

@@ -170,7 +170,10 @@ def run_scheduled_scan(scheduled_id: int, *, force: bool = False) -> None:
                 logger.exception("Email failed for schedule %s", scheduled_id)
 
         telegram_sent = False
-        if telegram_configured() or (getattr(sched, "telegram_to", None) or "").strip():
+        notify_telegram = bool(getattr(sched, "notify_telegram", True))
+        if notify_telegram and (
+            telegram_configured() or (getattr(sched, "telegram_to", None) or "").strip()
+        ):
             try:
                 send_telegram_scan_result(
                     name=sched.name,

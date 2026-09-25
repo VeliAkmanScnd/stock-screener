@@ -107,6 +107,8 @@ class ScheduledScanCreate(BaseModel):
 
     telegram_to: str | None = None
 
+    notify_telegram: bool = True
+
     enabled: bool = True
 
     scan_config: ScanBody
@@ -171,6 +173,8 @@ class ScheduledScanUpdate(BaseModel):
     email_to: str | None = None
 
     telegram_to: str | None = None
+
+    notify_telegram: bool | None = None
 
     enabled: bool | None = None
 
@@ -265,6 +269,7 @@ def _row_to_dict(row: ScheduledScan, *, owner_username: str | None = None) -> di
 
         "email_to": row.email_to,
         "telegram_to": row.telegram_to,
+        "notify_telegram": bool(getattr(row, "notify_telegram", True)),
 
         "enabled": row.enabled,
 
@@ -451,6 +456,7 @@ def create_scheduled_scan(
 
         email_to=body.email_to,
         telegram_to=body.telegram_to,
+        notify_telegram=body.notify_telegram,
 
         enabled=body.enabled,
 
@@ -531,6 +537,10 @@ def update_scheduled_scan(
     if body.telegram_to is not None:
 
         row.telegram_to = body.telegram_to
+
+    if body.notify_telegram is not None:
+
+        row.notify_telegram = body.notify_telegram
 
     if body.enabled is not None:
 

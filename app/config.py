@@ -56,8 +56,18 @@ SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "").strip()
 SMTP_FROM = os.getenv("SMTP_FROM", "").strip()
 SMTP_USE_TLS = os.getenv("SMTP_USE_TLS", "true").strip().lower() in ("1", "true", "yes")
 
-# Telegram — optional; scheduled scan results (in addition to email)
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+def _normalize_telegram_bot_token(raw: str) -> str:
+    """BotFather token is '123:ABC'. API URLs use /bot123:ABC — strip a pasted 'bot' prefix."""
+    token = (raw or "").strip()
+    if token.lower().startswith("bot") and ":" in token:
+        rest = token[3:]
+        if rest[:1].isdigit():
+            return rest
+    return token
+
+
+# Telegram — optional; scan results (manual + scheduled)
+TELEGRAM_BOT_TOKEN = _normalize_telegram_bot_token(os.getenv("TELEGRAM_BOT_TOKEN", ""))
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()
 
 # Performance tracking (TP/SL watchlist)

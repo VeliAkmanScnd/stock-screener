@@ -13,10 +13,15 @@ from app.database import SessionLocal
 ProgressCallback = Callable[[str, int, int, str], None]
 
 
-def _attach_telegram(result: dict[str, Any]) -> dict[str, Any]:
-    """Send manual-scan results to Telegram when .env is configured."""
+def _attach_telegram(result: dict[str, Any], *, notify: bool) -> dict[str, Any]:
+    """Send manual-scan results to Telegram when requested and .env is configured."""
     from app.services.telegram_service import send_telegram_scan_result, telegram_configured
 
+    if not notify:
+        result["telegram_sent"] = False
+        result["telegram_skipped"] = True
+        result["telegram_error"] = None
+        return result
     if not telegram_configured():
         result["telegram_sent"] = False
         result["telegram_error"] = (
@@ -132,7 +137,7 @@ def start_scan_job(body: dict[str, Any]) -> str:
 
             progress = make_progress_callback(job_id)
             result = execute_scan_config(body, db, progress_callback=progress)
-            result = _attach_telegram(result)
+            result = _attach_telegram(result, notify=bool(body.get("notify_telegram", True)))
             _update(
                 job_id,
                 status="done",

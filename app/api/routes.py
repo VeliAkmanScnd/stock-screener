@@ -53,6 +53,7 @@ class ScanBody(BaseModel):
     pine_input_overrides: dict[str, Any] = Field(default_factory=dict)
     max_symbols: int = 100
     bist_data_provider: str | None = None
+    notify_telegram: bool = True
 
 
 class TradingViewExportBody(BaseModel):
@@ -69,6 +70,7 @@ def api_data_providers():
         tradingview_auth_configured,
     )
     from app.services.twelvedata_client import is_configured as td_configured
+    from app.services.telegram_service import telegram_configured
 
     daily_provider = active_provider_label("1d")
     return {
@@ -81,6 +83,7 @@ def api_data_providers():
         "tradingview_auth_configured": tradingview_auth_configured(),
         "twelvedata_configured": td_configured(),
         "bist_td_fallback": BIST_TD_FALLBACK,
+        "telegram_configured": telegram_configured(),
         "us_provider": "yfinance",
         "verda_note": (
             "BIST: tarama öncesi veri kaynağını seçebilirsiniz. borsapy + TradingView canlı "

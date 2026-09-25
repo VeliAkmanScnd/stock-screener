@@ -158,9 +158,34 @@ async function loadBistProviderOptions() {
     });
     if (current) sel.value = current;
     updateBistProviderHint();
+    updateNotifyTelegramHint(data.telegram_configured);
   } catch {
     /* ignore */
   }
+}
+
+const NOTIFY_TG_KEY = "notifyTelegram";
+
+function restoreNotifyTelegramPref() {
+  const el = $("#notifyTelegram");
+  if (!el) return;
+  const saved = localStorage.getItem(NOTIFY_TG_KEY);
+  if (saved === "0") el.checked = false;
+  else if (saved === "1") el.checked = true;
+}
+
+function persistNotifyTelegramPref() {
+  const el = $("#notifyTelegram");
+  if (!el) return;
+  localStorage.setItem(NOTIFY_TG_KEY, el.checked ? "1" : "0");
+}
+
+function updateNotifyTelegramHint(configured) {
+  const hint = $("#notifyTelegramHint");
+  if (!hint) return;
+  hint.textContent = configured
+    ? "İşaretliyken tarama bitince .env’deki sohbete mesaj gider."
+    : "Telegram .env’de yok veya sunucu yeniden başlatılmadı. İşaretli olsa da mesaj gitmez.";
 }
 
 function updateBistProviderHint() {
@@ -1238,6 +1263,7 @@ function collectScanBody() {
     require_pine_al: $("#requirePineAl").checked,
     max_symbols: parseInt($("#maxSymbols").value, 10) || 80,
     bist_data_provider: getSelectedBistProvider(),
+    notify_telegram: $("#notifyTelegram")?.checked !== false,
   };
 }
 
@@ -1442,6 +1468,9 @@ function fillScheduleFormFromRow(row) {
   $("#scheduleTimezone").value = row.timezone || "Europe/Istanbul";
   $("#scheduleEmail").value = row.email_to || "";
   if ($("#scheduleTelegram")) $("#scheduleTelegram").value = row.telegram_to || "";
+  if ($("#scheduleNotifyTelegram")) {
+    $("#scheduleNotifyTelegram").checked = row.notify_telegram !== false;
+  }
   updateScheduleFormVisibility();
 }
 
@@ -1462,6 +1491,9 @@ function resetScheduleModalForCreate() {
     $("#scheduleType").value = canonicalScheduleType(tf);
   }
   setScheduleWeekdays([0, 1, 2, 3, 4, 5, 6]);
+  if ($("#scheduleNotifyTelegram")) {
+    $("#scheduleNotifyTelegram").checked = $("#notifyTelegram")?.checked !== false;
+  }
   updateScheduleFormVisibility();
 }
 
@@ -1852,6 +1884,7 @@ async function submitScheduleScan(e) {
     timezone: $("#scheduleTimezone").value.trim() || "Europe/Istanbul",
     email_to: $("#scheduleEmail").value.trim(),
     telegram_to: ($("#scheduleTelegram")?.value || "").trim() || null,
+    notify_telegram: $("#scheduleNotifyTelegram")?.checked !== false,
     enabled: editingScheduleId
       ? scheduledScansById[editingScheduleId]?.enabled !== false
       : true,
@@ -1983,6 +2016,8 @@ async function runScan() {
     }
     if (data.telegram_sent) {
       msg += " · Telegram gönderildi";
+    } else if (data.telegram_skipped) {
+      msg += " · Telegram kapalı";
     } else if (data.telegram_error) {
       msg += ` · Telegram: ${data.telegram_error}`;
     }
@@ -2061,6 +2096,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   renderFilters();
   loadUniverseInfo();
   loadBistProviderOptions();
+  restoreNotifyTelegramPref();
+  $("#notifyTelegram")?.addEventListener("change", persistNotifyTelegramPref);
   loadSavedPine();
   loadScheduleConfig().then(() => loadScheduledScans());
   syncCustomSourceUI();
