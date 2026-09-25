@@ -8,7 +8,7 @@ from io import BytesIO
 
 import httpx
 
-from app.config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+from app.config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, _normalize_telegram_bot_token
 from app.services.http_ssl import default_ssl_context
 
 logger = logging.getLogger(__name__)
@@ -17,8 +17,12 @@ _TG_API = "https://api.telegram.org"
 _MSG_LIMIT = 3900
 
 
+def _bot_token() -> str:
+    return _normalize_telegram_bot_token(TELEGRAM_BOT_TOKEN)
+
+
 def telegram_configured() -> bool:
-    return bool(TELEGRAM_BOT_TOKEN and parse_chat_ids(TELEGRAM_CHAT_ID))
+    return bool(_bot_token() and parse_chat_ids(TELEGRAM_CHAT_ID))
 
 
 def parse_chat_ids(raw: str | None) -> list[str]:
@@ -42,7 +46,7 @@ def _html_escape(text: str) -> str:
 
 
 def _api_url(method: str) -> str:
-    return f"{_TG_API}/bot{TELEGRAM_BOT_TOKEN}/{method}"
+    return f"{_TG_API}/bot{_bot_token()}/{method}"
 
 
 def _raise_if_failed(data: dict, context: str) -> None:
@@ -103,7 +107,7 @@ def send_telegram_scan_result(
     filename: str = "tradingview_list.txt",
 ) -> int:
     """Send summary (+ TV list file when there are matches) to all configured chats."""
-    if not TELEGRAM_BOT_TOKEN:
+    if not _bot_token():
         raise RuntimeError(
             "Telegram yapılandırılmamış. .env içine TELEGRAM_BOT_TOKEN ve TELEGRAM_CHAT_ID ekleyin."
         )

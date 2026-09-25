@@ -1601,8 +1601,15 @@ function formatScheduleLastStatus(row) {
       : ' title="E-posta gönderilemedi"';
     return `<span class="status-pill warn"${err}>e-posta yok</span>`;
   }
+  if (row.last_status === "success_no_telegram") {
+    const err = row.last_error
+      ? ` title="${escapeHtml(row.last_error)}"`
+      : ' title="Telegram gönderilemedi"';
+    return `<span class="status-pill warn"${err}>telegram yok</span>`;
+  }
   if (row.last_status === "success") {
-    return `<span class="status-pill ok" title="E-posta gönderildi">tamam</span>`;
+    const err = row.last_error ? ` title="${escapeHtml(row.last_error)}"` : ' title="Bildirim gönderildi"';
+    return `<span class="status-pill ok"${err}>tamam</span>`;
   }
   return "";
 }
@@ -1845,6 +1852,30 @@ async function loadScheduledScans() {
   } catch {
     tbody.innerHTML =
       '<tr class="empty"><td colspan="8">Liste yüklenemedi.</td></tr>';
+  }
+}
+
+async function testScheduleTelegram() {
+  const status = $("#scheduleFormStatus");
+  const btn = $("#btnTestTelegram");
+  const chatId = ($("#scheduleTelegram")?.value || "").trim();
+  if (btn) btn.disabled = true;
+  if (status) status.textContent = "Telegram test gönderiliyor…";
+  try {
+    const res = await apiFetch("/api/scheduled-scans/test-telegram", {
+      method: "POST",
+      body: JSON.stringify({ chat_id: chatId || null }),
+    });
+    const { data, text } = await parseJsonResponse(res);
+    if (!res.ok) {
+      if (status) status.textContent = data?.detail || text?.slice(0, 200) || "Telegram test başarısız";
+      return;
+    }
+    if (status) status.textContent = data?.message || "Telegram test mesajı gönderildi.";
+  } catch (err) {
+    if (status) status.textContent = err.message;
+  } finally {
+    if (btn) btn.disabled = false;
   }
 }
 
@@ -2159,6 +2190,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   $("#btnScan").addEventListener("click", runScan);
   $("#btnScheduleScan")?.addEventListener("click", openScheduleModal);
   $("#btnScheduleCancel")?.addEventListener("click", closeScheduleModal);
+  $("#btnTestTelegram")?.addEventListener("click", testScheduleTelegram);
   $("#scheduleScanForm")?.addEventListener("submit", submitScheduleScan);
   $("#scheduleType")?.addEventListener("change", () => {
     if (isWindowScheduleType($("#scheduleType").value) && !editingScheduleId) {

@@ -510,7 +510,12 @@
         </label>
         <label class="field">
           <span>Telegram chat id (isteğe bağlı)</span>
-          <input type="text" id="scheduleTelegram" placeholder=".env varsayılanı veya 123456789" autocomplete="off" />
+          <div class="custom-list-save-row">
+            <input type="text" id="scheduleTelegram" placeholder=".env varsayılanı veya 123456789" autocomplete="off" />
+            <button type="button" class="btn secondary" id="btnTestTelegram" title="Bu sohbete test mesajı gönder">
+              Telegram dene
+            </button>
+          </div>
           <span class="hint">Boş bırakırsanız .env’deki TELEGRAM_CHAT_ID kullanılır. Grup için -100… olabilir.</span>
         </label>
         <div class="schedule-preview" id="schedulePreview"></div>
@@ -570,7 +575,7 @@
   </div>
 
   <script src="/static/js/auth.js?v=3"></script>
-  <script src="/static/js/app.js?v=39"></script>
+  <script src="/static/js/app.js?v=40"></script>
   <script src="/static/js/track.js?v=8"></script>
 </body>
 </html>

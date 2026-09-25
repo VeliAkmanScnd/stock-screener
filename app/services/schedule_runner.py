@@ -201,8 +201,10 @@ def run_scheduled_scan(scheduled_id: int, *, force: bool = False) -> None:
         sched.last_run_at = run_row.finished_at
         if notify_error and not email_sent and not telegram_sent:
             sched.last_status = "success_no_email"
-        elif notify_error:
-            sched.last_status = "success_no_email" if not email_sent else "success"
+        elif notify_error and not email_sent:
+            sched.last_status = "success_no_email"
+        elif notify_error and not telegram_sent:
+            sched.last_status = "success_no_telegram"
         else:
             sched.last_status = "success"
         sched.last_match_count = match_count
