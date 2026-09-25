@@ -26,8 +26,10 @@ _VIOP_TP_PCT = 0.04
 _VIOP_SL_PCT = 0.03
 
 
-def _bot_token() -> str:
-    return _normalize_telegram_bot_token(TELEGRAM_BOT_TOKEN)
+def _bot_token(override: str | None = None) -> str:
+    return _normalize_telegram_bot_token(override or "") or _normalize_telegram_bot_token(
+        TELEGRAM_BOT_TOKEN
+    )
 
 
 def telegram_configured() -> bool:
@@ -54,8 +56,8 @@ def _html_escape(text: str) -> str:
     )
 
 
-def _api_url(method: str) -> str:
-    return f"{_TG_API}/bot{_bot_token()}/{method}"
+def _api_url(method: str, token: str | None = None) -> str:
+    return f"{_TG_API}/bot{_bot_token(token)}/{method}"
 
 
 def _raise_if_failed(data: dict, context: str) -> None:
@@ -65,9 +67,16 @@ def _raise_if_failed(data: dict, context: str) -> None:
     raise RuntimeError(f"{context}: {desc}")
 
 
-def _post(method: str, *, json: dict | None = None, data: dict | None = None, files=None) -> dict:
+def _post(
+    method: str,
+    *,
+    json: dict | None = None,
+    data: dict | None = None,
+    files=None,
+    bot_token: str | None = None,
+) -> dict:
     with httpx.Client(timeout=45, verify=default_ssl_context()) as client:
-        res = client.post(_api_url(method), json=json, data=data, files=files)
+        res = client.post(_api_url(method, bot_token), json=json, data=data, files=files)
         try:
             payload = res.json()
         except Exception:
@@ -77,7 +86,9 @@ def _post(method: str, *, json: dict | None = None, data: dict | None = None, fi
         return payload
 
 
-def send_telegram_text(chat_id: str, text: str, *, parse_mode: str | None = "HTML") -> None:
+def send_telegram_text(
+    chat_id: str, text: str, *, parse_mode: str | None = "HTML", bot_token: str | None = None
+) -> None:
     payload: dict[str, object] = {
         "chat_id": chat_id,
         "text": text,
@@ -85,7 +96,7 @@ def send_telegram_text(chat_id: str, text: str, *, parse_mode: str | None = "HTM
     }
     if parse_mode:
         payload["parse_mode"] = parse_mode
-    _post("sendMessage", json=payload)
+    _post("sendMessage", json=payload, bot_token=bot_token)
 
 
 def send_telegram_document(
@@ -94,6 +105,7 @@ def send_telegram_document(
     filename: str,
     content: str,
     caption: str | None = None,
+    bot_token: str | None = None,
 ) -> None:
     files = {
         "document": (filename, BytesIO(content.encode("utf-8")), "text/plain"),
@@ -101,7 +113,7 @@ def send_telegram_document(
     data: dict[str, str] = {"chat_id": str(chat_id)}
     if caption:
         data["caption"] = caption[:1024]
-    _post("sendDocument", data=data, files=files)
+    _post("sendDocument", data=data, files=files, bot_token=bot_token)
 
 
 def _tr_price(value: float) -> str:
@@ -188,10 +200,10 @@ def _is_bist_scan(universe: str, custom_source_universe: str | None) -> bool:
     return is_bist_universe(universe) or is_bist_universe(custom_source_universe or "")
 
 
-def _resolve_chats(extra_chat_ids: str | None) -> list[str]:
-    if not _bot_token():
+def _resolve_chats(extra_chat_ids: str | None, bot_token: str | None = None) -> list[str]:
+    if not _bot_token(bot_token):
         raise RuntimeError(
-            "Telegram yapılandırılmamış. .env içine TELEGRAM_BOT_TOKEN ekleyin."
+            "Telegram yapılandırılmamış. .env veya taramaya TELEGRAM_BOT_TOKEN ekleyin."
         )
     override = parse_chat_ids(extra_chat_ids)
     chats = override or parse_chat_ids(TELEGRAM_CHAT_ID)
@@ -213,9 +225,10 @@ def send_telegram_scan_result(
     filename: str = "tradingview_list.txt",
     results: list[dict] | None = None,
     custom_source_universe: str | None = None,
+    bot_token: str | None = None,
 ) -> int:
     """Send scan results. VIOP/BIST: one card per match, no file, skip if empty."""
-    chats = _resolve_chats(extra_chat_ids)
+    chats = _resolve_chats(extra_chat_ids, bot_token)
     card_market = None
     if _is_viop_scan(universe, custom_source_universe, results):
         card_market = "viop"
@@ -229,7 +242,7 @@ def send_telegram_scan_result(
         sent = 0
         for chat_id in chats:
             for card in cards:
-                send_telegram_text(chat_id, card, parse_mode=None)
+                send_telegram_text(chat_id, card, parse_mode=None, bot_token=bot_token)
                 sent += 1
         logger.info(
             "%s Telegram sent %d card(s) to %d chat(s)",
@@ -262,7 +275,7 @@ def send_telegram_scan_result(
 
     sent = 0
     for chat_id in chats:
-        send_telegram_text(chat_id, text)
+        send_telegram_text(chat_id, text, bot_token=bot_token)
         if symbols:
             caption = f"{name} — {match_count} eşleşme"
             send_telegram_document(
@@ -270,6 +283,7 @@ def send_telegram_scan_result(
                 filename=filename,
                 content=tv_list_text if tv_list_text.endswith("\n") else f"{tv_list_text}\n",
                 caption=caption,
+                bot_token=bot_token,
             )
         sent += 1
     logger.info("Telegram scan result sent to %d chat(s)", sent)

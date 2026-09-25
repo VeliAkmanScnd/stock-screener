@@ -14,7 +14,11 @@ ProgressCallback = Callable[[str, int, int, str], None]
 
 
 def _attach_telegram(
-    result: dict[str, Any], *, notify: bool, extra_chat_ids: str | None = None
+    result: dict[str, Any],
+    *,
+    notify: bool,
+    extra_chat_ids: str | None = None,
+    extra_bot_token: str | None = None,
 ) -> dict[str, Any]:
     """Send manual-scan results to Telegram when requested and a bot token exists."""
     from app.config import TELEGRAM_BOT_TOKEN
@@ -25,9 +29,10 @@ def _attach_telegram(
         result["telegram_skipped"] = True
         result["telegram_error"] = None
         return result
-    if not TELEGRAM_BOT_TOKEN:
+    bot_token = (extra_bot_token or TELEGRAM_BOT_TOKEN or "").strip() or None
+    if not bot_token:
         result["telegram_sent"] = False
-        result["telegram_error"] = "Telegram yapılandırılmamış (.env: TELEGRAM_BOT_TOKEN)"
+        result["telegram_error"] = "Telegram yapılandırılmamış (.env veya tarama bot token)"
         return result
     try:
         name = result.get("pine_label") or (
@@ -43,6 +48,7 @@ def _attach_telegram(
             results=list(result.get("results") or []),
             custom_source_universe=result.get("custom_source_universe"),
             extra_chat_ids=extra_chat_ids,
+            bot_token=bot_token,
         )
         result["telegram_sent"] = sent > 0
         result["telegram_error"] = None
@@ -145,6 +151,7 @@ def start_scan_job(body: dict[str, Any]) -> str:
                 result,
                 notify=bool(body.get("notify_telegram", True)),
                 extra_chat_ids=body.get("telegram_to"),
+                extra_bot_token=body.get("telegram_bot_token"),
             )
             _update(
                 job_id,

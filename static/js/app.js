@@ -1265,6 +1265,7 @@ function collectScanBody() {
     bist_data_provider: getSelectedBistProvider(),
     notify_telegram: $("#notifyTelegram")?.checked !== false,
     telegram_to: ($("#scanTelegram")?.value || "").trim() || null,
+    telegram_bot_token: ($("#scanTelegramToken")?.value || "").trim() || null,
   };
 }
 
@@ -1469,6 +1470,9 @@ function fillScheduleFormFromRow(row) {
   $("#scheduleTimezone").value = row.timezone || "Europe/Istanbul";
   $("#scheduleEmail").value = row.email_to || "";
   if ($("#scheduleTelegram")) $("#scheduleTelegram").value = row.telegram_to || "";
+  if ($("#scheduleTelegramToken")) {
+    $("#scheduleTelegramToken").value = row.telegram_bot_token || "";
+  }
   if ($("#scheduleNotifyTelegram")) {
     $("#scheduleNotifyTelegram").checked = row.notify_telegram !== false;
   }
@@ -1497,6 +1501,9 @@ function resetScheduleModalForCreate() {
   }
   if ($("#scheduleTelegram") && $("#scanTelegram")) {
     $("#scheduleTelegram").value = $("#scanTelegram").value || "";
+  }
+  if ($("#scheduleTelegramToken") && $("#scanTelegramToken")) {
+    $("#scheduleTelegramToken").value = $("#scanTelegramToken").value || "";
   }
   updateScheduleFormVisibility();
 }
@@ -1863,12 +1870,13 @@ async function testScheduleTelegram() {
   const status = $("#scheduleFormStatus");
   const btn = $("#btnTestTelegram");
   const chatId = ($("#scheduleTelegram")?.value || "").trim();
+  const botToken = ($("#scheduleTelegramToken")?.value || "").trim();
   if (btn) btn.disabled = true;
   if (status) status.textContent = "Telegram test gönderiliyor…";
   try {
     const res = await apiFetch("/api/scheduled-scans/test-telegram", {
       method: "POST",
-      body: JSON.stringify({ chat_id: chatId || null }),
+      body: JSON.stringify({ chat_id: chatId || null, bot_token: botToken || null }),
     });
     const { data, text } = await parseJsonResponse(res);
     if (!res.ok) {
@@ -1919,6 +1927,7 @@ async function submitScheduleScan(e) {
     timezone: $("#scheduleTimezone").value.trim() || "Europe/Istanbul",
     email_to: $("#scheduleEmail").value.trim(),
     telegram_to: ($("#scheduleTelegram")?.value || "").trim() || null,
+    telegram_bot_token: ($("#scheduleTelegramToken")?.value || "").trim() || null,
     notify_telegram: $("#scheduleNotifyTelegram")?.checked !== false,
     enabled: editingScheduleId
       ? scheduledScansById[editingScheduleId]?.enabled !== false

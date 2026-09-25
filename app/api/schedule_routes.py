@@ -107,6 +107,8 @@ class ScheduledScanCreate(BaseModel):
 
     telegram_to: str | None = None
 
+    telegram_bot_token: str | None = None
+
     notify_telegram: bool = True
 
     enabled: bool = True
@@ -173,6 +175,8 @@ class ScheduledScanUpdate(BaseModel):
     email_to: str | None = None
 
     telegram_to: str | None = None
+
+    telegram_bot_token: str | None = None
 
     notify_telegram: bool | None = None
 
@@ -269,6 +273,7 @@ def _row_to_dict(row: ScheduledScan, *, owner_username: str | None = None) -> di
 
         "email_to": row.email_to,
         "telegram_to": row.telegram_to,
+        "telegram_bot_token": row.telegram_bot_token,
         "notify_telegram": bool(getattr(row, "notify_telegram", True)),
 
         "enabled": row.enabled,
@@ -456,6 +461,7 @@ def create_scheduled_scan(
 
         email_to=body.email_to,
         telegram_to=body.telegram_to,
+        telegram_bot_token=(body.telegram_bot_token or "").strip() or None,
         notify_telegram=body.notify_telegram,
 
         enabled=body.enabled,
@@ -537,6 +543,10 @@ def update_scheduled_scan(
     if body.telegram_to is not None:
 
         row.telegram_to = body.telegram_to
+
+    if body.telegram_bot_token is not None:
+
+        row.telegram_bot_token = (body.telegram_bot_token or "").strip() or None
 
     if body.notify_telegram is not None:
 
@@ -755,6 +765,7 @@ def test_schedule_email(
 
 class TestTelegramBody(BaseModel):
     chat_id: str | None = None
+    bot_token: str | None = None
 
 
 @router.post("/test-telegram")
@@ -762,10 +773,17 @@ def test_schedule_telegram(
     body: TestTelegramBody,
     user: User = Depends(get_current_user),
 ):
+    from app.config import TELEGRAM_BOT_TOKEN
+
+    if not (body.bot_token or "").strip() and not TELEGRAM_BOT_TOKEN:
+        raise HTTPException(
+            400,
+            "Telegram yapılandırılmamış. Bot token girin veya .env TELEGRAM_BOT_TOKEN ekleyin.",
+        )
     if not telegram_configured() and not (body.chat_id or "").strip():
         raise HTTPException(
             400,
-            "Telegram yapılandırılmamış. .env içine TELEGRAM_BOT_TOKEN ve TELEGRAM_CHAT_ID ekleyin.",
+            "Telegram chat id yok. Taramadaki chat id veya .env TELEGRAM_CHAT_ID gerekli.",
         )
     try:
         send_telegram_scan_result(
@@ -775,6 +793,7 @@ def test_schedule_telegram(
             match_count=1,
             tv_list_text="",
             extra_chat_ids=body.chat_id,
+            bot_token=(body.bot_token or "").strip() or None,
             results=[
                 {
                     "symbol": "F_AEFES1026",

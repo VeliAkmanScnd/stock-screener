@@ -172,7 +172,9 @@ def run_scheduled_scan(scheduled_id: int, *, force: bool = False) -> None:
         telegram_sent = False
         notify_telegram = bool(getattr(sched, "notify_telegram", True))
         if notify_telegram and (
-            telegram_configured() or (getattr(sched, "telegram_to", None) or "").strip()
+            telegram_configured()
+            or (getattr(sched, "telegram_to", None) or "").strip()
+            or (getattr(sched, "telegram_bot_token", None) or "").strip()
         ):
             try:
                 sent = send_telegram_scan_result(
@@ -185,6 +187,7 @@ def run_scheduled_scan(scheduled_id: int, *, force: bool = False) -> None:
                     filename=f"tv_{sched.id}_{run_row.id}.txt",
                     results=list(payload.get("results") or []),
                     custom_source_universe=payload.get("custom_source_universe"),
+                    bot_token=getattr(sched, "telegram_bot_token", None),
                 )
                 telegram_sent = sent > 0 or match_count == 0
             except Exception as exc:

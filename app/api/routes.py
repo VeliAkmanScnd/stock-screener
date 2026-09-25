@@ -55,6 +55,7 @@ class ScanBody(BaseModel):
     bist_data_provider: str | None = None
     notify_telegram: bool = True
     telegram_to: str | None = None
+    telegram_bot_token: str | None = None
 
 
 class TradingViewExportBody(BaseModel):

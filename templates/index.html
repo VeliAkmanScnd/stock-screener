@@ -163,9 +163,13 @@
             <span>Sonucu Telegram’a gönder</span>
           </label>
           <label class="field" id="scanTelegramWrap">
+            <span>Telegram bot token (isteğe bağlı)</span>
+            <input type="password" id="scanTelegramToken" placeholder="BotFather token — boşsa .env" autocomplete="off" />
+          </label>
+          <label class="field">
             <span>Telegram chat id (isteğe bağlı)</span>
             <input type="text" id="scanTelegram" placeholder=".env grubu veya yeni grup id" autocomplete="off" />
-            <p class="hint" id="notifyTelegramHint">Doluysa yalnızca bu gruba gider. Boşsa .env TELEGRAM_CHAT_ID kullanılır.</p>
+            <p class="hint" id="notifyTelegramHint">Yeni bot için: gruba yazın, sonra https://api.telegram.org/botTOKEN/getUpdates</p>
           </label>
           <button type="button" class="btn primary full universe-scan-btn" id="btnScan">
             <span class="btn-label">Taramayı Başlat</span>
@@ -513,6 +517,10 @@
           <span>Sonucu Telegram’a gönder</span>
         </label>
         <label class="field">
+          <span>Telegram bot token (isteğe bağlı)</span>
+          <input type="password" id="scheduleTelegramToken" placeholder="BotFather token — boşsa .env" autocomplete="off" />
+        </label>
+        <label class="field">
           <span>Telegram chat id (isteğe bağlı)</span>
           <div class="custom-list-save-row">
             <input type="text" id="scheduleTelegram" placeholder=".env varsayılanı veya 123456789" autocomplete="off" />
@@ -520,7 +528,7 @@
               Telegram dene
             </button>
           </div>
-          <span class="hint">Doluysa mesaj yalnızca bu gruba gider. Boşsa .env TELEGRAM_CHAT_ID kullanılır.</span>
+          <span class="hint">Token ve chat id doluysa o bot/grup kullanılır. Chat id için: https://api.telegram.org/botTOKEN/getUpdates</span>
         </label>
         <div class="schedule-preview" id="schedulePreview"></div>
         <p class="auth-status" id="scheduleFormStatus"></p>
@@ -579,7 +587,7 @@
   </div>
 
   <script src="/static/js/auth.js?v=3"></script>
-  <script src="/static/js/app.js?v=41"></script>
+  <script src="/static/js/app.js?v=42"></script>
   <script src="/static/js/track.js?v=8"></script>
 </body>
 </html>
