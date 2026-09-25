@@ -54,6 +54,7 @@ class ScanBody(BaseModel):
     max_symbols: int = 100
     bist_data_provider: str | None = None
     notify_telegram: bool = True
+    telegram_to: str | None = None
 
 
 class TradingViewExportBody(BaseModel):

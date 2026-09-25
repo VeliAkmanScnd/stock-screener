@@ -184,7 +184,7 @@ function updateNotifyTelegramHint(configured) {
   const hint = $("#notifyTelegramHint");
   if (!hint) return;
   hint.textContent = configured
-    ? "İşaretliyken tarama bitince .env’deki sohbete mesaj gider."
+    ? "Doluysa yalnızca bu gruba gider. Boşsa .env TELEGRAM_CHAT_ID kullanılır."
     : "Telegram .env’de yok veya sunucu yeniden başlatılmadı. İşaretli olsa da mesaj gitmez.";
 }
 
@@ -1264,6 +1264,7 @@ function collectScanBody() {
     max_symbols: parseInt($("#maxSymbols").value, 10) || 80,
     bist_data_provider: getSelectedBistProvider(),
     notify_telegram: $("#notifyTelegram")?.checked !== false,
+    telegram_to: ($("#scanTelegram")?.value || "").trim() || null,
   };
 }
 
@@ -1493,6 +1494,9 @@ function resetScheduleModalForCreate() {
   setScheduleWeekdays([0, 1, 2, 3, 4, 5, 6]);
   if ($("#scheduleNotifyTelegram")) {
     $("#scheduleNotifyTelegram").checked = $("#notifyTelegram")?.checked !== false;
+  }
+  if ($("#scheduleTelegram") && $("#scanTelegram")) {
+    $("#scheduleTelegram").value = $("#scanTelegram").value || "";
   }
   updateScheduleFormVisibility();
 }

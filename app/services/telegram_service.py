@@ -11,7 +11,9 @@ import httpx
 from app.config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, _normalize_telegram_bot_token
 from app.services.http_ssl import default_ssl_context
 from app.services.ticker_format import (
+    clean_bist_symbol,
     clean_viop_symbol,
+    is_bist_universe,
     is_viop_universe,
     to_viop_continuous_symbol,
 )
@@ -118,7 +120,9 @@ def _signal_direction(signals: dict | None) -> str:
     return "AL"
 
 
-def format_viop_telegram_card(symbol: str, price: float, direction: str) -> str:
+def format_signal_telegram_card(
+    symbol: str, price: float, direction: str, *, market: str = "viop"
+) -> str:
     yon = "SAT" if str(direction).strip().upper() == "SAT" else "AL"
     if yon == "AL":
         tp = price * (1 + _VIOP_TP_PCT)
@@ -126,7 +130,12 @@ def format_viop_telegram_card(symbol: str, price: float, direction: str) -> str:
     else:
         tp = price * (1 - _VIOP_TP_PCT)
         sl = price * (1 + _VIOP_SL_PCT)
-    contract = to_viop_continuous_symbol(symbol)
+    if market == "bist":
+        contract = clean_bist_symbol(symbol)
+        if contract.startswith("BIST:"):
+            contract = contract.split(":", 1)[1]
+    else:
+        contract = to_viop_continuous_symbol(symbol)
     return (
         f"Kontrat\t: {contract}\n"
         f"Fiyat\t: {_tr_price(price)}\n"
@@ -136,7 +145,11 @@ def format_viop_telegram_card(symbol: str, price: float, direction: str) -> str:
     )
 
 
-def _viop_cards(results: list[dict] | None) -> list[str]:
+def format_viop_telegram_card(symbol: str, price: float, direction: str) -> str:
+    return format_signal_telegram_card(symbol, price, direction, market="viop")
+
+
+def _signal_cards(results: list[dict] | None, *, market: str) -> list[str]:
     cards: list[str] = []
     for row in results or []:
         try:
@@ -148,7 +161,11 @@ def _viop_cards(results: list[dict] | None) -> list[str]:
         symbol = str(row.get("symbol") or "").strip()
         if not symbol:
             continue
-        cards.append(format_viop_telegram_card(symbol, price, _signal_direction(row.get("signals"))))
+        cards.append(
+            format_signal_telegram_card(
+                symbol, price, _signal_direction(row.get("signals")), market=market
+            )
+        )
     return cards
 
 
@@ -159,20 +176,29 @@ def _is_viop_scan(
 ) -> bool:
     if is_viop_universe(universe) or is_viop_universe(custom_source_universe or ""):
         return True
+    if is_bist_universe(universe) or is_bist_universe(custom_source_universe or ""):
+        return False
     return any(
         clean_viop_symbol(str(row.get("symbol") or "")).startswith("F_")
         for row in (results or [])
     )
 
 
+def _is_bist_scan(universe: str, custom_source_universe: str | None) -> bool:
+    return is_bist_universe(universe) or is_bist_universe(custom_source_universe or "")
+
+
 def _resolve_chats(extra_chat_ids: str | None) -> list[str]:
     if not _bot_token():
         raise RuntimeError(
-            "Telegram yapılandırılmamış. .env içine TELEGRAM_BOT_TOKEN ve TELEGRAM_CHAT_ID ekleyin."
+            "Telegram yapılandırılmamış. .env içine TELEGRAM_BOT_TOKEN ekleyin."
         )
-    chats = list(dict.fromkeys(parse_chat_ids(TELEGRAM_CHAT_ID) + parse_chat_ids(extra_chat_ids)))
+    override = parse_chat_ids(extra_chat_ids)
+    chats = override or parse_chat_ids(TELEGRAM_CHAT_ID)
     if not chats:
-        raise RuntimeError("Telegram chat id yok. TELEGRAM_CHAT_ID veya taramadaki Telegram alanını doldurun.")
+        raise RuntimeError(
+            "Telegram chat id yok. Taramadaki Telegram alanını veya .env TELEGRAM_CHAT_ID değerini doldurun."
+        )
     return chats
 
 
@@ -188,19 +214,29 @@ def send_telegram_scan_result(
     results: list[dict] | None = None,
     custom_source_universe: str | None = None,
 ) -> int:
-    """Send scan results. VIOP: one card per match, no file, skip if empty."""
+    """Send scan results. VIOP/BIST: one card per match, no file, skip if empty."""
     chats = _resolve_chats(extra_chat_ids)
+    card_market = None
     if _is_viop_scan(universe, custom_source_universe, results):
-        cards = _viop_cards(results)
+        card_market = "viop"
+    elif _is_bist_scan(universe, custom_source_universe):
+        card_market = "bist"
+    if card_market:
+        cards = _signal_cards(results, market=card_market)
         if not cards:
-            logger.info("VIOP Telegram skipped: no matches")
+            logger.info("%s Telegram skipped: no matches", card_market.upper())
             return 0
         sent = 0
         for chat_id in chats:
             for card in cards:
                 send_telegram_text(chat_id, card, parse_mode=None)
                 sent += 1
-        logger.info("VIOP Telegram sent %d card(s) to %d chat(s)", len(cards), len(chats))
+        logger.info(
+            "%s Telegram sent %d card(s) to %d chat(s)",
+            card_market.upper(),
+            len(cards),
+            len(chats),
+        )
         return sent
 
     if match_count <= 0 and not (results or []):

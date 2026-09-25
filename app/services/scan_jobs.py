@@ -13,20 +13,21 @@ from app.database import SessionLocal
 ProgressCallback = Callable[[str, int, int, str], None]
 
 
-def _attach_telegram(result: dict[str, Any], *, notify: bool) -> dict[str, Any]:
-    """Send manual-scan results to Telegram when requested and .env is configured."""
-    from app.services.telegram_service import send_telegram_scan_result, telegram_configured
+def _attach_telegram(
+    result: dict[str, Any], *, notify: bool, extra_chat_ids: str | None = None
+) -> dict[str, Any]:
+    """Send manual-scan results to Telegram when requested and a bot token exists."""
+    from app.config import TELEGRAM_BOT_TOKEN
+    from app.services.telegram_service import send_telegram_scan_result
 
     if not notify:
         result["telegram_sent"] = False
         result["telegram_skipped"] = True
         result["telegram_error"] = None
         return result
-    if not telegram_configured():
+    if not TELEGRAM_BOT_TOKEN:
         result["telegram_sent"] = False
-        result["telegram_error"] = (
-            "Telegram yapılandırılmamış (.env: TELEGRAM_BOT_TOKEN ve TELEGRAM_CHAT_ID)"
-        )
+        result["telegram_error"] = "Telegram yapılandırılmamış (.env: TELEGRAM_BOT_TOKEN)"
         return result
     try:
         name = result.get("pine_label") or (
@@ -41,6 +42,7 @@ def _attach_telegram(result: dict[str, Any], *, notify: bool) -> dict[str, Any]:
             filename="tv_scan.txt",
             results=list(result.get("results") or []),
             custom_source_universe=result.get("custom_source_universe"),
+            extra_chat_ids=extra_chat_ids,
         )
         result["telegram_sent"] = sent > 0
         result["telegram_error"] = None
@@ -139,7 +141,11 @@ def start_scan_job(body: dict[str, Any]) -> str:
 
             progress = make_progress_callback(job_id)
             result = execute_scan_config(body, db, progress_callback=progress)
-            result = _attach_telegram(result, notify=bool(body.get("notify_telegram", True)))
+            result = _attach_telegram(
+                result,
+                notify=bool(body.get("notify_telegram", True)),
+                extra_chat_ids=body.get("telegram_to"),
+            )
             _update(
                 job_id,
                 status="done",

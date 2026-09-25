@@ -162,7 +162,11 @@
             <input type="checkbox" id="notifyTelegram" name="notify_telegram" checked />
             <span>Sonucu Telegram’a gönder</span>
           </label>
-          <p class="hint" id="notifyTelegramHint">İşaretliyken tarama bitince .env’deki sohbete mesaj gider.</p>
+          <label class="field" id="scanTelegramWrap">
+            <span>Telegram chat id (isteğe bağlı)</span>
+            <input type="text" id="scanTelegram" placeholder=".env grubu veya yeni grup id" autocomplete="off" />
+            <p class="hint" id="notifyTelegramHint">Doluysa yalnızca bu gruba gider. Boşsa .env TELEGRAM_CHAT_ID kullanılır.</p>
+          </label>
           <button type="button" class="btn primary full universe-scan-btn" id="btnScan">
             <span class="btn-label">Taramayı Başlat</span>
             <span class="spinner" hidden></span>
@@ -516,7 +520,7 @@
               Telegram dene
             </button>
           </div>
-          <span class="hint">Boş bırakırsanız .env’deki TELEGRAM_CHAT_ID kullanılır. Grup için -100… olabilir.</span>
+          <span class="hint">Doluysa mesaj yalnızca bu gruba gider. Boşsa .env TELEGRAM_CHAT_ID kullanılır.</span>
         </label>
         <div class="schedule-preview" id="schedulePreview"></div>
         <p class="auth-status" id="scheduleFormStatus"></p>
@@ -575,7 +579,7 @@
   </div>
 
   <script src="/static/js/auth.js?v=3"></script>
-  <script src="/static/js/app.js?v=40"></script>
+  <script src="/static/js/app.js?v=41"></script>
   <script src="/static/js/track.js?v=8"></script>
 </body>
 </html>
