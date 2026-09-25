@@ -226,4 +226,4 @@ def bias_ts_display_label(pine_code: str, overrides: dict | None = None) -> str:
     title = _parse_indicator_title(pine_code)
     p = bias_ts_params_from_script(pine_code, overrides)
     side = {"buy": "BUY", "sell": "SELL", "both": "BUY veya SELL"}.get(p["side"], "BUY")
-    return f"BiasxTS {side} (son bar) — {title}"
+    return f"BiasxTS {side} (kapanan son bar) — {title}"

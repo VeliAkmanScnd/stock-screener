@@ -8,6 +8,7 @@ from typing import Any, Callable
 import pandas as pd
 
 from app.config import MAX_SYMBOLS_PER_SCAN
+from app.services.bar_close import drop_unclosed_bar
 from app.services.batch_data import fetch_ohlcv_batch, sum_volume_window, validate_active
 from app.services.data_fetcher import get_universe_symbols, parse_symbol_list
 from app.services.ticker_format import is_bist_universe, is_binance_universe, is_viop_universe
@@ -248,8 +249,9 @@ def scan_dataframe(
     pine_source: str | None = None,
     pine_code: str | None = None,
 ) -> ScanResult:
-    df = build_indicator_frame(df)
     market = scan_market_universe(req)
+    df = drop_unclosed_bar(df, req.timeframe, universe=market)
+    df = build_indicator_frame(df)
     has_filters = any(f.enabled for f in req.filters)
     matched, signals = (
         apply_builtin_filters(

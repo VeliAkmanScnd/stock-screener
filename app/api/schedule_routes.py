@@ -798,8 +798,8 @@ def test_schedule_telegram(
             bot_token=(body.bot_token or "").strip() or None,
             results=[
                 {
-                    "symbol": "F_AEFES1026",
-                    "price": 19.07,
+                    "symbol": "TER",
+                    "price": 391.84,
                     "signals": {"bias_ts_buy": True},
                 }
             ],

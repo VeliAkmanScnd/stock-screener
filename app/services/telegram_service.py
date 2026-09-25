@@ -12,9 +12,12 @@ from app.config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, _normalize_telegram
 from app.services.http_ssl import default_ssl_context
 from app.services.ticker_format import (
     clean_bist_symbol,
+    clean_us_symbol,
     clean_viop_symbol,
+    is_binance_universe,
     is_bist_universe,
     is_viop_universe,
+    to_binance_pair,
     to_viop_continuous_symbol,
 )
 
@@ -193,8 +196,12 @@ def format_signal_telegram_card(
         contract = clean_bist_symbol(symbol)
         if contract.startswith("BIST:"):
             contract = contract.split(":", 1)[1]
-    else:
+    elif market == "viop":
         contract = to_viop_continuous_symbol(symbol)
+    elif market == "binance":
+        contract = to_binance_pair(symbol) or str(symbol).strip().upper()
+    else:
+        contract = clean_us_symbol(symbol)
     return (
         f"Kontrat\t: {contract}\n"
         f"Fiyat\t: {_tr_price(price)}\n"
@@ -247,6 +254,21 @@ def _is_bist_scan(universe: str, custom_source_universe: str | None) -> bool:
     return is_bist_universe(universe) or is_bist_universe(custom_source_universe or "")
 
 
+def _card_market(
+    universe: str,
+    custom_source_universe: str | None,
+    results: list[dict] | None = None,
+) -> str:
+    src = custom_source_universe or universe
+    if _is_viop_scan(universe, custom_source_universe, results):
+        return "viop"
+    if _is_bist_scan(universe, custom_source_universe):
+        return "bist"
+    if is_binance_universe(src):
+        return "binance"
+    return "us"
+
+
 def _resolve_chats(extra_chat_ids: str | None, bot_token: str | None = None) -> list[str]:
     override = parse_chat_ids(extra_chat_ids)
     scan_token = _normalize_telegram_bot_token(bot_token or "")
@@ -283,70 +305,23 @@ def send_telegram_scan_result(
     custom_source_universe: str | None = None,
     bot_token: str | None = None,
 ) -> int:
-    """Send scan results. VIOP/BIST: one card per match, no file, skip if empty."""
+    """One Telegram card per match; no file, no title. Skip if empty."""
     bot_token, extra_chat_ids = merge_telegram_credentials(bot_token, extra_chat_ids)
     chats = _resolve_chats(extra_chat_ids, bot_token)
-    card_market = None
-    if _is_viop_scan(universe, custom_source_universe, results):
-        card_market = "viop"
-    elif _is_bist_scan(universe, custom_source_universe):
-        card_market = "bist"
-    if card_market:
-        cards = _signal_cards(results, market=card_market)
-        if not cards:
-            if results or match_count > 0:
-                raise RuntimeError(
-                    "Telegram kartı üretilemedi (sonuçta fiyat yok). "
-                    "E-posta gitmiş olabilir; Telegram atlandı."
-                )
-            logger.info("%s Telegram skipped: no matches", card_market.upper())
-            return 0
-        sent = 0
-        for chat_id in chats:
-            for card in cards:
-                send_telegram_text(chat_id, card, parse_mode=None, bot_token=bot_token)
-                sent += 1
-        logger.info(
-            "%s Telegram sent %d card(s) to %d chat(s)",
-            card_market.upper(),
-            len(cards),
-            len(chats),
-        )
-        return sent
-
-    if match_count <= 0 and not (results or []):
+    market = _card_market(universe, custom_source_universe, results)
+    cards = _signal_cards(results, market=market)
+    if not cards:
+        if results or match_count > 0:
+            raise RuntimeError(
+                "Telegram kartı üretilemedi (sonuçta fiyat yok). "
+                "E-posta gitmiş olabilir; Telegram atlandı."
+            )
         logger.info("Telegram skipped: no matches")
         return 0
-
-    header = (
-        f"<b>TradeLABtr tarama</b>\n"
-        f"{_html_escape(name)}\n\n"
-        f"Evren: {_html_escape(str(universe))}\n"
-        f"Zaman dilimi: {_html_escape(str(timeframe))}\n"
-        f"Eşleşme: {match_count}"
-    )
-    symbols = [ln.strip() for ln in (tv_list_text or "").splitlines() if ln.strip() and not ln.startswith("#")]
-    if symbols:
-        preview = "\n".join(symbols[:40])
-        more = f"\n… +{len(symbols) - 40} sembol (dosyada)" if len(symbols) > 40 else ""
-        text = f"{header}\n\n<pre>{_html_escape(preview)}{more}</pre>"
-    else:
-        text = f"{header}\n\nEşleşme yok."
-    if len(text) > _MSG_LIMIT:
-        text = text[: _MSG_LIMIT - 1] + "…"
-
     sent = 0
     for chat_id in chats:
-        send_telegram_text(chat_id, text, bot_token=bot_token)
-        if symbols:
-            caption = f"{name} — {match_count} eşleşme"
-            send_telegram_document(
-                chat_id,
-                filename=filename,
-                content=tv_list_text if tv_list_text.endswith("\n") else f"{tv_list_text}\n",
-                caption=caption,
-                bot_token=bot_token,
-            )
-        sent += 1
-    logger.info("Telegram scan result sent to %d chat(s)", sent)
+        for card in cards:
+            send_telegram_text(chat_id, card, parse_mode=None, bot_token=bot_token)
+            sent += 1
+    logger.info("Telegram sent %d card(s) to %d chat(s)", len(cards), len(chats))
     return sent
