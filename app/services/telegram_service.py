@@ -39,8 +39,16 @@ def telegram_configured() -> bool:
 def parse_chat_ids(raw: str | None) -> list[str]:
     if not raw or not str(raw).strip():
         return []
-    parts = re.split(r"[,;\s]+", str(raw).strip())
-    return [p for p in parts if p]
+    text = (
+        str(raw)
+        .strip()
+        .replace("\u2212", "-")
+        .replace("\u2013", "-")
+        .replace("\u2014", "-")
+    )
+    text = re.sub(r"-\s+", "-", text)
+    parts = re.split(r"[,;\s]+", text)
+    return [p for p in parts if re.fullmatch(r"-?\d+", p)]
 
 
 def normalize_telegram_storage(raw: str | None) -> str | None:
