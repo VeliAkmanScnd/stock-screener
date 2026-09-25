@@ -32,15 +32,17 @@ def _attach_telegram(result: dict[str, Any], *, notify: bool) -> dict[str, Any]:
         name = result.get("pine_label") or (
             f"{result.get('universe') or 'tarama'} {result.get('timeframe') or ''}".strip()
         )
-        send_telegram_scan_result(
+        sent = send_telegram_scan_result(
             name=str(name),
             universe=str(result.get("universe") or ""),
             timeframe=str(result.get("timeframe") or ""),
             match_count=int(result.get("count") or 0),
             tv_list_text=str(result.get("tradingview_text") or ""),
             filename="tv_scan.txt",
+            results=list(result.get("results") or []),
+            custom_source_universe=result.get("custom_source_universe"),
         )
-        result["telegram_sent"] = True
+        result["telegram_sent"] = sent > 0
         result["telegram_error"] = None
     except Exception as exc:
         result["telegram_sent"] = False

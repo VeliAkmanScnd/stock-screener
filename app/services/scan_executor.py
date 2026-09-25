@@ -128,6 +128,7 @@ def execute_scan_config(
         {
             "count": len(results),
             "universe": body["universe"],
+            "custom_source_universe": body.get("custom_source_universe"),
             "timeframe": body["timeframe"],
             "pine_label": pine_label,
             "pine_source": pine_source,

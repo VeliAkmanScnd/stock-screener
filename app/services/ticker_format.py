@@ -43,6 +43,17 @@ def viop_underlying(symbol: str) -> str:
     return s
 
 
+def to_viop_continuous_symbol(symbol: str) -> str:
+    """F_AEFES1026 / AEFES -> AEFES1! (TradingView continuous)."""
+    s = clean_viop_symbol(symbol)
+    if s.endswith("1!"):
+        return s
+    und = viop_underlying(s)
+    if und.endswith("1!"):
+        return und
+    return f"{und}1!" if und else s
+
+
 def clean_bist_symbol(sym: str) -> str:
     s = str(sym).strip().upper()
     if s.endswith(BIST_YF_SUFFIX):

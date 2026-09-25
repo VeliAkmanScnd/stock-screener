@@ -10,11 +10,18 @@ import httpx
 
 from app.config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, _normalize_telegram_bot_token
 from app.services.http_ssl import default_ssl_context
+from app.services.ticker_format import (
+    clean_viop_symbol,
+    is_viop_universe,
+    to_viop_continuous_symbol,
+)
 
 logger = logging.getLogger(__name__)
 
 _TG_API = "https://api.telegram.org"
 _MSG_LIMIT = 3900
+_VIOP_TP_PCT = 0.04
+_VIOP_SL_PCT = 0.03
 
 
 def _bot_token() -> str:
@@ -68,16 +75,15 @@ def _post(method: str, *, json: dict | None = None, data: dict | None = None, fi
         return payload
 
 
-def send_telegram_text(chat_id: str, text: str, *, parse_mode: str = "HTML") -> None:
-    _post(
-        "sendMessage",
-        json={
-            "chat_id": chat_id,
-            "text": text,
-            "parse_mode": parse_mode,
-            "disable_web_page_preview": True,
-        },
-    )
+def send_telegram_text(chat_id: str, text: str, *, parse_mode: str | None = "HTML") -> None:
+    payload: dict[str, object] = {
+        "chat_id": chat_id,
+        "text": text,
+        "disable_web_page_preview": True,
+    }
+    if parse_mode:
+        payload["parse_mode"] = parse_mode
+    _post("sendMessage", json=payload)
 
 
 def send_telegram_document(
@@ -96,6 +102,80 @@ def send_telegram_document(
     _post("sendDocument", data=data, files=files)
 
 
+def _tr_price(value: float) -> str:
+    return f"{float(value):.2f}".replace(".", ",")
+
+
+def _signal_direction(signals: dict | None) -> str:
+    sig = signals or {}
+    buy = bool(sig.get("bias_ts_buy"))
+    sell = bool(sig.get("bias_ts_sell"))
+    if buy and sell:
+        side = str(sig.get("bias_ts_side") or "buy").strip().lower()
+        return "SAT" if side == "sell" else "AL"
+    if sell:
+        return "SAT"
+    return "AL"
+
+
+def format_viop_telegram_card(symbol: str, price: float, direction: str) -> str:
+    yon = "SAT" if str(direction).strip().upper() == "SAT" else "AL"
+    if yon == "AL":
+        tp = price * (1 + _VIOP_TP_PCT)
+        sl = price * (1 - _VIOP_SL_PCT)
+    else:
+        tp = price * (1 - _VIOP_TP_PCT)
+        sl = price * (1 + _VIOP_SL_PCT)
+    contract = to_viop_continuous_symbol(symbol)
+    return (
+        f"Kontrat\t: {contract}\n"
+        f"Fiyat\t: {_tr_price(price)}\n"
+        f"Yön\t\t: {yon}\n"
+        f"Kar AL\t: {_tr_price(tp)}\n"
+        f"Stop\t\t: {_tr_price(sl)}"
+    )
+
+
+def _viop_cards(results: list[dict] | None) -> list[str]:
+    cards: list[str] = []
+    for row in results or []:
+        try:
+            price = float(row.get("price"))
+        except (TypeError, ValueError):
+            continue
+        if price != price or price <= 0:
+            continue
+        symbol = str(row.get("symbol") or "").strip()
+        if not symbol:
+            continue
+        cards.append(format_viop_telegram_card(symbol, price, _signal_direction(row.get("signals"))))
+    return cards
+
+
+def _is_viop_scan(
+    universe: str,
+    custom_source_universe: str | None,
+    results: list[dict] | None = None,
+) -> bool:
+    if is_viop_universe(universe) or is_viop_universe(custom_source_universe or ""):
+        return True
+    return any(
+        clean_viop_symbol(str(row.get("symbol") or "")).startswith("F_")
+        for row in (results or [])
+    )
+
+
+def _resolve_chats(extra_chat_ids: str | None) -> list[str]:
+    if not _bot_token():
+        raise RuntimeError(
+            "Telegram yapılandırılmamış. .env içine TELEGRAM_BOT_TOKEN ve TELEGRAM_CHAT_ID ekleyin."
+        )
+    chats = list(dict.fromkeys(parse_chat_ids(TELEGRAM_CHAT_ID) + parse_chat_ids(extra_chat_ids)))
+    if not chats:
+        raise RuntimeError("Telegram chat id yok. TELEGRAM_CHAT_ID veya taramadaki Telegram alanını doldurun.")
+    return chats
+
+
 def send_telegram_scan_result(
     *,
     name: str,
@@ -105,15 +185,27 @@ def send_telegram_scan_result(
     tv_list_text: str,
     extra_chat_ids: str | None = None,
     filename: str = "tradingview_list.txt",
+    results: list[dict] | None = None,
+    custom_source_universe: str | None = None,
 ) -> int:
-    """Send summary (+ TV list file when there are matches) to all configured chats."""
-    if not _bot_token():
-        raise RuntimeError(
-            "Telegram yapılandırılmamış. .env içine TELEGRAM_BOT_TOKEN ve TELEGRAM_CHAT_ID ekleyin."
-        )
-    chats = list(dict.fromkeys(parse_chat_ids(TELEGRAM_CHAT_ID) + parse_chat_ids(extra_chat_ids)))
-    if not chats:
-        raise RuntimeError("Telegram chat id yok. TELEGRAM_CHAT_ID veya taramadaki Telegram alanını doldurun.")
+    """Send scan results. VIOP: one card per match, no file, skip if empty."""
+    chats = _resolve_chats(extra_chat_ids)
+    if _is_viop_scan(universe, custom_source_universe, results):
+        cards = _viop_cards(results)
+        if not cards:
+            logger.info("VIOP Telegram skipped: no matches")
+            return 0
+        sent = 0
+        for chat_id in chats:
+            for card in cards:
+                send_telegram_text(chat_id, card, parse_mode=None)
+                sent += 1
+        logger.info("VIOP Telegram sent %d card(s) to %d chat(s)", len(cards), len(chats))
+        return sent
+
+    if match_count <= 0 and not (results or []):
+        logger.info("Telegram skipped: no matches")
+        return 0
 
     header = (
         f"<b>TradeLABtr tarama</b>\n"

@@ -175,7 +175,7 @@ def run_scheduled_scan(scheduled_id: int, *, force: bool = False) -> None:
             telegram_configured() or (getattr(sched, "telegram_to", None) or "").strip()
         ):
             try:
-                send_telegram_scan_result(
+                sent = send_telegram_scan_result(
                     name=sched.name,
                     universe=str(payload.get("universe") or ""),
                     timeframe=str(payload.get("timeframe") or ""),
@@ -183,8 +183,10 @@ def run_scheduled_scan(scheduled_id: int, *, force: bool = False) -> None:
                     tv_list_text=tv_text or "",
                     extra_chat_ids=getattr(sched, "telegram_to", None),
                     filename=f"tv_{sched.id}_{run_row.id}.txt",
+                    results=list(payload.get("results") or []),
+                    custom_source_universe=payload.get("custom_source_universe"),
                 )
-                telegram_sent = True
+                telegram_sent = sent > 0 or match_count == 0
             except Exception as exc:
                 notify_errors.append(f"telegram: {exc}")
                 logger.exception("Telegram failed for schedule %s", scheduled_id)

@@ -770,12 +770,18 @@ def test_schedule_telegram(
     try:
         send_telegram_scan_result(
             name="Telegram test",
-            universe="test",
+            universe="viop",
             timeframe="1d",
             match_count=1,
-            tv_list_text="# test\nBINANCE:BTCUSDT\n",
+            tv_list_text="",
             extra_chat_ids=body.chat_id,
-            filename="telegram_test.txt",
+            results=[
+                {
+                    "symbol": "F_AEFES1026",
+                    "price": 19.07,
+                    "signals": {"bias_ts_buy": True},
+                }
+            ],
         )
     except Exception as exc:
         raise HTTPException(500, str(exc)) from exc
