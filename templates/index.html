@@ -6,7 +6,7 @@
   <title>TradeLABtr Stock Screener</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/css/style.css?v=31" />
+  <link rel="stylesheet" href="/static/css/style.css?v=32" />
   <link rel="stylesheet" href="/static/css/auth.css?v=1" />
 </head>
 <body>
@@ -24,6 +24,7 @@
           <button type="button" class="app-tab active" id="tabScan">Tarama</button>
           <button type="button" class="app-tab" id="tabTrack">İzleme</button>
           <button type="button" class="app-tab" id="tabPerf">Performans</button>
+          <button type="button" class="app-tab" id="tabHelp">Yardım</button>
           <button type="button" class="app-tab" id="tabAdmin" hidden>Kullanıcılar</button>
         </div>
         <span class="header-user-name" id="headerUsername"></span>
@@ -535,6 +536,24 @@
         </div>
       </section>
     </main>
+
+    <main class="layout help-panel hidden" id="helpPanel">
+      <aside class="card help-nav" aria-label="Yardım başlıkları">
+        <h2>Yardım</h2>
+        <p class="hint">Başlık seçin. Her döküman indirilebilir; hepsini zip olarak da alabilirsiniz.</p>
+        <nav class="help-topic-list" id="helpTopicList"></nav>
+        <a class="btn secondary btn-sm help-download-all" id="helpDownloadAll" href="/api/help/download.zip">Tümünü indir (.zip)</a>
+      </aside>
+      <article class="card help-article-card">
+        <div class="help-article-head">
+          <h2 id="helpArticleTitle">Döküman</h2>
+          <a class="btn secondary btn-sm" id="helpDownloadOne" href="#" download>Bu başlığı indir</a>
+        </div>
+        <div class="help-article" id="helpArticle">
+          <p class="hint">Soldan bir başlık seçin.</p>
+        </div>
+      </article>
+    </main>
   </div>
 
   <div class="modal-overlay" id="scheduleScanModal" hidden>
@@ -682,9 +701,10 @@
     </div>
   </div>
 
-  <script src="/static/js/auth.js?v=4"></script>
+  <script src="/static/js/auth.js?v=5"></script>
   <script src="/static/js/app.js?v=45"></script>
   <script src="/static/js/track.js?v=11"></script>
   <script src="/static/js/perf.js?v=2"></script>
+  <script src="/static/js/help.js?v=1"></script>
 </body>
 </html>

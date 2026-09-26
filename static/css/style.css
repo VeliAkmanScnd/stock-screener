@@ -1560,3 +1560,105 @@ body {
   color: var(--muted);
   border: 1px solid var(--border);
 }
+
+.help-panel {
+  display: grid;
+  grid-template-columns: minmax(14rem, 18rem) 1fr;
+  gap: 1rem;
+  align-items: start;
+}
+
+.help-topic-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 0.75rem 0 1rem;
+}
+
+.help-topic-btn {
+  text-align: left;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: inherit;
+  border-radius: 10px;
+  padding: 0.55rem 0.7rem;
+  cursor: pointer;
+}
+
+.help-topic-btn strong {
+  display: block;
+  font-size: 0.86rem;
+}
+
+.help-topic-btn span {
+  display: block;
+  font-size: 0.72rem;
+  color: var(--muted);
+  margin-top: 0.15rem;
+}
+
+.help-topic-btn.active {
+  border-color: var(--accent, #f59e0b);
+}
+
+.help-download-all {
+  display: inline-block;
+  text-decoration: none;
+}
+
+.help-article-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.65rem;
+  margin-bottom: 0.75rem;
+}
+
+.help-article h1,
+.help-article h2,
+.help-article h3 {
+  margin: 1.1rem 0 0.45rem;
+}
+
+.help-article h1 {
+  font-size: 1.25rem;
+}
+
+.help-article p,
+.help-article li {
+  line-height: 1.55;
+}
+
+.help-article ul,
+.help-article ol {
+  padding-left: 1.2rem;
+}
+
+.help-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.75rem 0 1rem;
+  font-size: 0.85rem;
+}
+
+.help-table th,
+.help-table td {
+  border: 1px solid var(--border);
+  padding: 0.4rem 0.5rem;
+  text-align: left;
+}
+
+.help-article pre {
+  overflow-x: auto;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 0.8rem;
+}
+
+@media (max-width: 800px) {
+  .help-panel {
+    grid-template-columns: 1fr;
+  }
+}
