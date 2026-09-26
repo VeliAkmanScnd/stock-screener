@@ -6,7 +6,7 @@
   <title>TradeLABtr Stock Screener</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/css/style.css?v=32" />
+  <link rel="stylesheet" href="/static/css/style.css?v=33" />
   <link rel="stylesheet" href="/static/css/auth.css?v=1" />
 </head>
 <body>
@@ -287,7 +287,7 @@
         <div class="scheduled-scans-head">
           <div>
             <h2>Zamanlanmış taramalar</h2>
-            <p class="hint" id="scheduledScansHint">Otomatik tarama + TV listesi e-postası (SMTP .env gerekli).</p>
+            <p class="hint" id="scheduledScansHint">Otomatik tarama; sonuç e-posta, Telegram veya ikisine gidebilir.</p>
           </div>
         </div>
         <div class="table-wrap">
@@ -298,7 +298,7 @@
                 <th>Kullanıcı</th>
                 <th>Periyot</th>
                 <th>Saat</th>
-                <th>E-posta</th>
+                <th>Bildirim</th>
                 <th>Son çalışma</th>
                 <th>Sonraki çalışma</th>
                 <th>İşlem</th>
@@ -559,7 +559,7 @@
   <div class="modal-overlay" id="scheduleScanModal" hidden>
     <div class="modal-card modal-card-wide">
       <h2 id="scheduleModalTitle">Zamanlanmış tarama oluştur</h2>
-      <p class="hint" id="scheduleModalHint">Mevcut evren, filtreler, Pine ayarları ve zaman dilimi kaydedilir. TV listesi e-postası yalnızca tarama <strong>çalıştığında</strong> gönderilir (Şimdi veya planlanan saatte).</p>
+      <p class="hint" id="scheduleModalHint">Mevcut evren, filtreler, Pine ayarları ve zaman dilimi kaydedilir. Sonuçlar seçtiğiniz kanala (e-posta ve/veya Telegram) tarama <strong>çalıştığında</strong> gider.</p>
       <form id="scheduleScanForm">
         <label class="field">
           <span>Preset adı</span>
@@ -622,20 +622,27 @@
           <span>Saat dilimi</span>
           <input type="text" id="scheduleTimezone" value="Europe/Istanbul" />
         </label>
-        <label class="field">
-          <span>E-posta (TV listesi)</span>
-          <input type="text" id="scheduleEmail" required placeholder="you@example.com; partner@example.com" autocomplete="email" />
-          <span class="hint">Birden fazla adres için noktalı virgül (;) kullanın.</span>
-        </label>
-        <label class="check" for="scheduleNotifyTelegram">
-          <input type="checkbox" id="scheduleNotifyTelegram" name="notify_telegram" checked />
-          <span>Sonucu Telegram’a gönder</span>
-        </label>
-        <label class="field">
+        <div class="schedule-notify-group">
+          <p class="hint">Sonuçları nereye göndermek istediğinizi seçin. En az bir kanal gerekir.</p>
+          <label class="check" for="scheduleNotifyEmail">
+            <input type="checkbox" id="scheduleNotifyEmail" name="notify_email" />
+            <span>E-posta ile gönder</span>
+          </label>
+          <label class="field" id="scheduleEmailWrap">
+            <span>E-posta (TV listesi)</span>
+            <input type="text" id="scheduleEmail" placeholder="you@example.com; partner@example.com" autocomplete="email" />
+            <span class="hint">Birden fazla adres için noktalı virgül (;) kullanın. SMTP .env gerekir.</span>
+          </label>
+          <label class="check" for="scheduleNotifyTelegram">
+            <input type="checkbox" id="scheduleNotifyTelegram" name="notify_telegram" checked />
+            <span>Telegram ile gönder</span>
+          </label>
+        </div>
+        <label class="field" id="scheduleTelegramTokenWrap">
           <span>Telegram bot token (isteğe bağlı)</span>
           <input type="text" id="scheduleTelegramToken" placeholder="8847144155:AAH...  (bot yazmadan)" autocomplete="off" />
         </label>
-        <label class="field">
+        <label class="field" id="scheduleTelegramWrap">
           <span>Telegram chat id (isteğe bağlı)</span>
           <div class="custom-list-save-row">
             <input type="text" id="scheduleTelegram" placeholder="-5005450345" autocomplete="off" />
@@ -702,7 +709,7 @@
   </div>
 
   <script src="/static/js/auth.js?v=5"></script>
-  <script src="/static/js/app.js?v=45"></script>
+  <script src="/static/js/app.js?v=47"></script>
   <script src="/static/js/track.js?v=11"></script>
   <script src="/static/js/perf.js?v=2"></script>
   <script src="/static/js/help.js?v=1"></script>

@@ -535,6 +535,22 @@ body {
 
 .check input { margin-top: 0.15rem; accent-color: var(--orange); }
 
+.schedule-notify-group {
+  display: grid;
+  gap: 0.15rem;
+  margin: 0.35rem 0 0.55rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+}
+
+.schedule-notify-group .field[aria-disabled="true"],
+.field[aria-disabled="true"] {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
 .pine-condition {
   background: var(--bg);
   border: 1px dashed var(--border);

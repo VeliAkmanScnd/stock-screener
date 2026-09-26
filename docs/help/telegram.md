@@ -48,6 +48,6 @@ Token ve id’yi yapıştırırken `TOKEN-5005…` tek satır olursa uygulama ay
 
 ## E-posta
 
-SMTP `.env` ile kurulur. Zamanlanmış tarama TV listesini e-postaya ekleyebilir. Birden fazla adres için `;` kullanın.
+SMTP `.env` ile kurulur. Zamanlanmış taramada e-posta isteğe bağlıdır; kanal olarak e-posta, Telegram veya ikisi seçilir. Birden fazla adres için `;` kullanın.
 
 Telegram gitti, e-posta gitmedi (veya tersi) durumları zamanlanmış tablodaki `last_status` ile görünür (`success_no_telegram` gibi).

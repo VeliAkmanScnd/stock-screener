@@ -142,7 +142,8 @@ def run_scheduled_scan(scheduled_id: int, *, force: bool = False) -> None:
         email_sent = False
         notify_errors: list[str] = []
 
-        if sched.email_to:
+        notify_email = bool(getattr(sched, "notify_email", True))
+        if notify_email and (sched.email_to or "").strip():
             try:
                 subject = (
                     f"TradeLABtr tarama: {sched.name} — {match_count} eşleşme"
@@ -208,11 +209,13 @@ def run_scheduled_scan(scheduled_id: int, *, force: bool = False) -> None:
         run_row.error_message = notify_error
 
         sched.last_run_at = run_row.finished_at
-        if notify_error and not email_sent and not telegram_sent:
+        email_failed = notify_email and not email_sent
+        telegram_failed = notify_telegram and not telegram_sent
+        if notify_error and email_failed and telegram_failed:
             sched.last_status = "success_no_email"
-        elif notify_error and not email_sent:
+        elif notify_error and email_failed:
             sched.last_status = "success_no_email"
-        elif notify_error and not telegram_sent:
+        elif notify_error and telegram_failed:
             sched.last_status = "success_no_telegram"
         else:
             sched.last_status = "success"

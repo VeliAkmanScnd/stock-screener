@@ -256,6 +256,18 @@ async function parseJsonResponse(res) {
   }
 }
 
+function formatApiDetail(detail) {
+  if (!detail) return "";
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    return detail
+      .map((item) => (typeof item === "string" ? item : item?.msg || ""))
+      .filter(Boolean)
+      .join(" ");
+  }
+  return "";
+}
+
 const SIGNAL_LABELS = {
   mom_10: "Momentum (10)",
   first_green_bar: "İlk yeşil mum",
@@ -1497,6 +1509,9 @@ function fillScheduleFormFromRow(row) {
   if ($("#scheduleTelegramToken")) {
     $("#scheduleTelegramToken").value = row.telegram_bot_token || "";
   }
+  if ($("#scheduleNotifyEmail")) {
+    $("#scheduleNotifyEmail").checked = row.notify_email !== false;
+  }
   if ($("#scheduleNotifyTelegram")) {
     $("#scheduleNotifyTelegram").checked = row.notify_telegram !== false;
   }
@@ -1511,7 +1526,7 @@ function resetScheduleModalForCreate() {
   if (title) title.textContent = "Zamanlanmış tarama oluştur";
   if (hint) {
     hint.innerHTML =
-      "Mevcut evren, filtreler, Pine ayarları ve zaman dilimi kaydedilir. TV listesi e-postası yalnızca tarama <strong>çalıştığında</strong> gönderilir (Şimdi veya planlanan saatte).";
+      "Mevcut evren, filtreler, Pine ayarları ve zaman dilimi kaydedilir. Sonuçlar seçtiğiniz kanala tarama <strong>çalıştığında</strong> gider (Şimdi veya planlanan saatte).";
   }
   if (submitBtn) submitBtn.textContent = "Oluştur";
   $("#scheduleScanForm")?.reset();
@@ -1520,8 +1535,18 @@ function resetScheduleModalForCreate() {
     $("#scheduleType").value = canonicalScheduleType(tf);
   }
   setScheduleWeekdays([0, 1, 2, 3, 4, 5, 6]);
+  if ($("#scheduleNotifyEmail")) {
+    $("#scheduleNotifyEmail").checked = false;
+  }
   if ($("#scheduleNotifyTelegram")) {
     $("#scheduleNotifyTelegram").checked = $("#notifyTelegram")?.checked !== false;
+  }
+  if (
+    !$("#scheduleNotifyEmail")?.checked &&
+    !$("#scheduleNotifyTelegram")?.checked &&
+    $("#scheduleNotifyTelegram")
+  ) {
+    $("#scheduleNotifyTelegram").checked = true;
   }
   if ($("#scheduleTelegram") && $("#scanTelegram")) {
     $("#scheduleTelegram").value = $("#scanTelegram").value || "";
@@ -1540,7 +1565,7 @@ function setScheduleModalEditMode(row) {
   if (title) title.textContent = "Zamanlanmış tarama düzenle";
   if (hint) {
     hint.innerHTML =
-      "Zamanlama ve e-posta buradan güncellenir. <strong>Kaydet</strong> ayrıca üstteki evren, filtreler ve Pine ayarlarını da bu taramaya yazar.";
+      "Zamanlama ve bildirim kanalları (e-posta / Telegram) buradan güncellenir. <strong>Kaydet</strong> ayrıca üstteki evren, filtreler ve Pine ayarlarını da bu taramaya yazar.";
   }
   if (submitBtn) submitBtn.textContent = "Kaydet";
   fillScheduleFormFromRow(row);
@@ -1607,6 +1632,23 @@ function setDefaultMarketWeekdays() {
   });
 }
 
+function setScheduleFieldEnabled(wrapId, enabled) {
+  const wrap = $(wrapId);
+  if (!wrap) return;
+  wrap.setAttribute("aria-disabled", enabled ? "false" : "true");
+  wrap.querySelectorAll("input, button, textarea, select").forEach((el) => {
+    el.disabled = !enabled;
+  });
+}
+
+function toggleScheduleNotifyFields() {
+  const emailOn = $("#scheduleNotifyEmail")?.checked === true;
+  const telegramOn = $("#scheduleNotifyTelegram")?.checked === true;
+  setScheduleFieldEnabled("#scheduleEmailWrap", emailOn);
+  setScheduleFieldEnabled("#scheduleTelegramTokenWrap", telegramOn);
+  setScheduleFieldEnabled("#scheduleTelegramWrap", telegramOn);
+}
+
 function updateScheduleFormVisibility() {
   const t = $("#scheduleType")?.value || "daily";
   const timeWrap = $("#scheduleTimeWrap");
@@ -1623,6 +1665,18 @@ function updateScheduleFormVisibility() {
       ? "Günler (BIST / VIOP için genelde Pzt–Cum)"
       : "Günler";
   }
+  toggleScheduleNotifyFields();
+}
+
+function formatScheduleNotify(row) {
+  const parts = [];
+  if (row.notify_email !== false) {
+    parts.push(row.email_to ? escapeHtml(row.email_to) : "E-posta");
+  }
+  if (row.notify_telegram !== false) {
+    parts.push("Telegram");
+  }
+  return parts.join(" · ") || "—";
 }
 
 function formatScheduleLastStatus(row) {
@@ -1682,15 +1736,15 @@ async function pollScheduledScanRun(scanId, attempt = 0) {
       );
     } else {
       let msg = `Zamanlanmış tarama tamamlandı: ${latest.match_count ?? 0} eşleşme.`;
-      if (latest.email_sent) {
+      if (latest.error_message) {
+        msg += ` Bildirim: ${latest.error_message}`;
+        setStatus(msg, latest.email_sent ? "ok" : "error");
+      } else if (latest.email_sent) {
         msg += " TV listesi e-posta ile gönderildi.";
         setStatus(msg, "ok");
-      } else if (latest.error_message) {
-        msg += ` E-posta gönderilemedi: ${latest.error_message}`;
-        setStatus(msg, "error");
       } else {
-        msg += " E-posta gönderilmedi.";
-        setStatus(msg, "error");
+        msg += " Seçilen bildirim kanalına gönderildi.";
+        setStatus(msg, "ok");
       }
     }
     loadScheduledScans();
@@ -1832,7 +1886,7 @@ async function loadScheduledScans() {
           <td>${r.owner_username || "—"}</td>
           <td>${SCHEDULE_TYPE_LABELS[r.schedule_type] || r.schedule_type}</td>
           <td>${formatScheduleTime(r)}</td>
-          <td>${r.email_to}</td>
+          <td>${formatScheduleNotify(r)}</td>
           <td>${last}</td>
           <td>${next}</td>
           <td class="scheduled-actions">
@@ -1945,6 +1999,16 @@ async function submitScheduleScan(e) {
     return;
   }
   applyTelegramPaste($("#scheduleTelegramToken"), $("#scheduleTelegram"));
+  const notifyEmail = $("#scheduleNotifyEmail")?.checked === true;
+  const notifyTelegram = $("#scheduleNotifyTelegram")?.checked === true;
+  if (!notifyEmail && !notifyTelegram) {
+    if (status) status.textContent = "E-posta veya Telegram’dan en az birini seçin.";
+    return;
+  }
+  if (notifyEmail && !$("#scheduleEmail").value.trim()) {
+    if (status) status.textContent = "E-posta seçiliyse en az bir adres girin.";
+    return;
+  }
   const payload = {
     name: $("#scheduleName").value.trim(),
     schedule_type: scheduleType,
@@ -1957,7 +2021,8 @@ async function submitScheduleScan(e) {
     timezone: $("#scheduleTimezone").value.trim() || "Europe/Istanbul",
     email_to: $("#scheduleEmail").value.trim(),
     telegram_to: ($("#scheduleTelegram")?.value || "").trim() || null,
-    notify_telegram: $("#scheduleNotifyTelegram")?.checked !== false,
+    notify_email: notifyEmail,
+    notify_telegram: notifyTelegram,
     enabled: editingScheduleId
       ? scheduledScansById[editingScheduleId]?.enabled !== false
       : true,
@@ -1980,14 +2045,17 @@ async function submitScheduleScan(e) {
     });
     const { data, text } = await parseJsonResponse(res);
     if (!res.ok) {
-      if (status) status.textContent = data?.detail || text?.slice(0, 200) || "Hata";
+      if (status) {
+        status.textContent =
+          formatApiDetail(data?.detail) || text?.slice(0, 200) || "Hata";
+      }
       return;
     }
     closeScheduleModal();
     setStatus(
       isEdit
         ? "Zamanlanmış tarama güncellendi."
-        : "Zamanlanmış tarama oluşturuldu. E-posta, tarama çalıştığında gönderilir — listeden «Şimdi» ile test edebilirsiniz.",
+        : "Zamanlanmış tarama oluşturuldu. Seçilen bildirim, tarama çalıştığında gönderilir — listeden «Şimdi» ile test edebilirsiniz.",
       "ok",
     );
     loadScheduledScans();
@@ -2254,6 +2322,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
   });
   $("#scheduleScanForm")?.addEventListener("submit", submitScheduleScan);
+  $("#scheduleNotifyEmail")?.addEventListener("change", toggleScheduleNotifyFields);
+  $("#scheduleNotifyTelegram")?.addEventListener("change", toggleScheduleNotifyFields);
   $("#scheduleType")?.addEventListener("change", () => {
     if (isWindowScheduleType($("#scheduleType").value) && !editingScheduleId) {
       setDefaultMarketWeekdays();

@@ -20,7 +20,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from fastapi.responses import PlainTextResponse
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from sqlalchemy.orm import Session
 
@@ -103,11 +103,13 @@ class ScheduledScanCreate(BaseModel):
 
     timezone: str = DEFAULT_SCHEDULE_TIMEZONE
 
-    email_to: str
+    email_to: str = ""
 
     telegram_to: str | None = None
 
     telegram_bot_token: str | None = None
+
+    notify_email: bool = False
 
     notify_telegram: bool = True
 
@@ -123,6 +125,10 @@ class ScheduledScanCreate(BaseModel):
 
     def validate_email_to(cls, value: str) -> str:
 
+        if not (value or "").strip():
+
+            return ""
+
         try:
 
             emails = parse_email_list(value)
@@ -133,9 +139,17 @@ class ScheduledScanCreate(BaseModel):
 
         if not emails:
 
-            raise ValueError("En az bir e-posta adresi gerekli.")
+            return ""
 
         return normalize_email_storage(emails)
+
+    @model_validator(mode="after")
+    def validate_notify_choice(self):
+        if not self.notify_email and not self.notify_telegram:
+            raise ValueError("E-posta veya Telegram’dan en az birini seçin.")
+        if self.notify_email and not (self.email_to or "").strip():
+            raise ValueError("E-posta seçiliyse en az bir adres girin.")
+        return self
 
     @field_validator("telegram_to")
     @classmethod
@@ -178,6 +192,8 @@ class ScheduledScanUpdate(BaseModel):
 
     telegram_bot_token: str | None = None
 
+    notify_email: bool | None = None
+
     notify_telegram: bool | None = None
 
     enabled: bool | None = None
@@ -196,6 +212,10 @@ class ScheduledScanUpdate(BaseModel):
 
             return None
 
+        if not str(value).strip():
+
+            return ""
+
         try:
 
             emails = parse_email_list(value)
@@ -206,7 +226,7 @@ class ScheduledScanUpdate(BaseModel):
 
         if not emails:
 
-            raise ValueError("En az bir e-posta adresi gerekli.")
+            return ""
 
         return normalize_email_storage(emails)
 
@@ -274,6 +294,7 @@ def _row_to_dict(row: ScheduledScan, *, owner_username: str | None = None) -> di
         "email_to": row.email_to,
         "telegram_to": row.telegram_to,
         "telegram_bot_token": row.telegram_bot_token,
+        "notify_email": bool(getattr(row, "notify_email", True)),
         "notify_telegram": bool(getattr(row, "notify_telegram", True)),
 
         "enabled": row.enabled,
@@ -459,9 +480,10 @@ def create_scheduled_scan(
 
         timezone=body.timezone or DEFAULT_SCHEDULE_TIMEZONE,
 
-        email_to=body.email_to,
+        email_to=body.email_to or "",
         telegram_to=body.telegram_to,
         telegram_bot_token=(body.telegram_bot_token or "").strip() or None,
+        notify_email=body.notify_email,
         notify_telegram=body.notify_telegram,
 
         enabled=body.enabled,
@@ -550,6 +572,10 @@ def update_scheduled_scan(
         if new_token:
             row.telegram_bot_token = new_token
 
+    if body.notify_email is not None:
+
+        row.notify_email = body.notify_email
+
     if body.notify_telegram is not None:
 
         row.notify_telegram = body.notify_telegram
@@ -569,6 +595,19 @@ def update_scheduled_scan(
         row.hour,
         row.end_hour,
     )
+
+    notify_email = bool(getattr(row, "notify_email", True))
+    notify_telegram = bool(getattr(row, "notify_telegram", True))
+    if not notify_email and not notify_telegram:
+        raise HTTPException(
+            status_code=400,
+            detail="E-posta veya Telegram’dan en az birini seçin.",
+        )
+    if notify_email and not (row.email_to or "").strip():
+        raise HTTPException(
+            status_code=400,
+            detail="E-posta seçiliyse en az bir adres girin.",
+        )
 
     db.commit()
 

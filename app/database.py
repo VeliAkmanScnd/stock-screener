@@ -51,9 +51,10 @@ class ScheduledScan(Base):
     weekday = Column(Integer, nullable=True)  # legacy weekly (0=Mon .. 6=Sun)
     weekdays = Column(Text, nullable=True)  # comma-separated 0..6 for daily multi-day
     timezone = Column(String(64), nullable=False, default="Europe/Istanbul")
-    email_to = Column(Text, nullable=False)
+    email_to = Column(Text, nullable=False, default="")
     telegram_to = Column(Text, nullable=True)
     telegram_bot_token = Column(Text, nullable=True)
+    notify_email = Column(Boolean, nullable=False, default=True)
     notify_telegram = Column(Boolean, nullable=False, default=True)
     enabled = Column(Boolean, nullable=False, default=True)
     last_run_at = Column(DateTime, nullable=True)
@@ -174,6 +175,13 @@ def _migrate_db() -> None:
             conn.execute(
                 text(
                     "ALTER TABLE scheduled_scans ADD COLUMN notify_telegram BOOLEAN "
+                    "NOT NULL DEFAULT 1"
+                )
+            )
+        if sched_cols and "notify_email" not in sched_cols:
+            conn.execute(
+                text(
+                    "ALTER TABLE scheduled_scans ADD COLUMN notify_email BOOLEAN "
                     "NOT NULL DEFAULT 1"
                 )
             )
