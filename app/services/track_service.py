@@ -11,7 +11,8 @@ from sqlalchemy.orm import Session
 from app.config import DEFAULT_SCHEDULE_TIMEZONE, TRACK_DEFAULT_STOP_PCT, TRACK_DEFAULT_TARGET_PCT
 from app.database import TrackBenchmarkLog, TrackPosition, TrackPriceLog, TrackUserSettings
 from app.services.track_benchmarks import benchmark_meta, fetch_benchmark_price, fetch_benchmark_prices
-from app.services.track_prices import fetch_latest_prices
+from app.services.track_levels import levels_for_timeframe, realized_r
+from app.services.track_prices import fetch_latest_prices, fetch_latest_quotes
 from app.utils.datetime_fmt import utc_iso
 
 logger = logging.getLogger(__name__)
@@ -360,6 +361,7 @@ def position_to_dict(row: TrackPosition) -> dict[str, Any]:
         "benchmark_entry_price": row.benchmark_entry_price,
         "benchmark_current_price": row.benchmark_current_price,
         "benchmark_change_pct": bm_chg,
+        "realized_r": realized_r(row),
         "created_at": utc_iso(row.created_at),
     }
 
@@ -434,8 +436,11 @@ def ingest_scan_results(
         if already_open:
             continue
 
-        target_pct = float(settings.target_pct)
-        stop_pct = float(settings.stop_pct)
+        if getattr(settings, "use_tf_level_benchmarks", True):
+            target_pct, stop_pct = levels_for_timeframe(timeframe)
+        else:
+            target_pct = float(settings.target_pct)
+            stop_pct = float(settings.stop_pct)
         target_price, stop_price = calc_levels(entry, target_pct, stop_pct, direction)
         row = TrackPosition(
             user_id=user_id,
@@ -724,34 +729,42 @@ def update_active_prices(db: Session, user_id: int | None = None) -> dict[str, i
             log_benchmark(db, universe, bm_px, at=now)
 
         symbols = list({r.symbol for r in group})
-        prices = fetch_latest_prices(symbols, universe)
+        need_1h = {r.symbol for r in group if (r.timeframe or "") in INTRADAY_TIMEFRAMES}
+        quotes = fetch_latest_quotes([s for s in symbols if s not in need_1h], universe, interval="1d")
+        if need_1h:
+            quotes.update(fetch_latest_quotes(list(need_1h), universe, interval="1h"))
         for row in group:
             if bm_px is not None:
                 _ensure_position_benchmark(db, row, universe, bm_px)
 
-            price = prices.get(row.symbol)
-            if price is None:
+            quote = quotes.get(row.symbol)
+            if quote is None:
                 continue
+            price = quote["last"]
+            high = quote.get("high", price)
+            low = quote.get("low", price)
             checked += 1
             row.current_price = price
             row.last_checked_at = now
-            _update_extrema(row, price)
+            _update_extrema(row, high)
+            _update_extrema(row, low)
             log_price(db, row.id, price, at=now)
 
             settings = get_or_create_settings(db, row.user_id)
             if not settings.auto_close_on_tp_sl:
                 continue
+            stop_px = high if _position_direction(row) == "SAT" else low
+            target_px = low if _position_direction(row) == "SAT" else high
             if row.status == ACTIVE_STATUS:
-                if _hit_stop(row, price):
-                    _mark_sl(row, price, now)
+                if _hit_stop(row, stop_px):
+                    _mark_sl(row, stop_px, now)
                     closed += 1
-                elif _hit_target(row, price):
-                    _mark_tp(row, price, now)
+                elif _hit_target(row, target_px):
+                    _mark_tp(row, target_px, now)
                     hit_tp += 1
-            elif row.status == AFTER_TP_STATUS and row.first_sl_at is None and _hit_stop(row, price):
-                if row.first_sl_at is None:
-                    row.first_sl_at = now
-                    row.hours_to_sl = _hours_between(row.entry_at, now)
+            elif row.status == AFTER_TP_STATUS and row.first_sl_at is None and _hit_stop(row, stop_px):
+                row.first_sl_at = now
+                row.hours_to_sl = _hours_between(row.entry_at, now)
 
     archived = archive_expired_watches(db, user_id=user_id, commit=False)
     db.commit()

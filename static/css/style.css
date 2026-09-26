@@ -1515,3 +1515,48 @@ body {
   align-items: end;
   margin: 0.75rem 0 1rem;
 }
+
+.tf-bench-wrap {
+  margin: 0.75rem 0 1rem;
+}
+
+.tf-bench-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.tf-bench-chip {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 6.5rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--card, #1c1f26) 92%, white 8%);
+}
+
+.tf-bench-chip.featured {
+  border-color: var(--accent, #f59e0b);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent, #f59e0b) 35%, transparent);
+}
+
+.tf-bench-chip strong {
+  font-size: 0.8rem;
+}
+
+.tf-bench-chip span {
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+.perf-badge {
+  display: inline-block;
+  margin-left: 0.35rem;
+  padding: 0.05rem 0.35rem;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  color: var(--muted);
+  border: 1px solid var(--border);
+}

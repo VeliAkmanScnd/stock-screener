@@ -9,6 +9,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.database import TrackPosition
+from app.services.track_levels import MIN_SAMPLE_FOR_RANK, level_benchmarks_for_api, realized_r
 from app.services.track_service import (
     WATCH_STATUSES,
     _hours_between,
@@ -29,18 +30,27 @@ TIMEFRAME_LABELS = {
     "1wk": "1 hafta",
 }
 
+GROUP_BY_OPTIONS = frozenset({"timeframe", "scan", "indicator", "scan_tf"})
+
 
 def _group_key(row: TrackPosition, group_by: str) -> str:
+    scan = (row.source_label or "Adsız tarama").strip() or "Adsız tarama"
+    tf = (row.timeframe or "—").strip() or "—"
     if group_by == "scan":
-        return (row.source_label or "Adsız tarama").strip() or "Adsız tarama"
+        return scan
     if group_by == "indicator":
         return (row.indicator_label or "Teknik filtreler").strip() or "Teknik filtreler"
-    return (row.timeframe or "—").strip() or "—"
+    if group_by == "scan_tf":
+        return f"{scan} · {tf}"
+    return tf
 
 
 def _group_label(key: str, group_by: str) -> str:
     if group_by == "timeframe":
         return TIMEFRAME_LABELS.get(key, key)
+    if group_by == "scan_tf" and " · " in key:
+        scan, tf = key.rsplit(" · ", 1)
+        return f"{scan} · {TIMEFRAME_LABELS.get(tf, tf)}"
     return key
 
 
@@ -70,6 +80,19 @@ def _parse_dt(value: str | None) -> datetime | None:
     return dt
 
 
+def _dedupe_first_symbol(rows: list[TrackPosition]) -> list[TrackPosition]:
+    ordered = sorted(rows, key=lambda r: r.entry_at or datetime.min.replace(tzinfo=timezone.utc))
+    seen: set[tuple[str, str]] = set()
+    kept: list[TrackPosition] = []
+    for row in ordered:
+        key = ((row.symbol or "").upper(), (row.universe or "").lower())
+        if key in seen:
+            continue
+        seen.add(key)
+        kept.append(row)
+    return kept
+
+
 def performance_report(
     db: Session,
     user_id: int,
@@ -78,8 +101,9 @@ def performance_report(
     date_from: str | None = None,
     date_to: str | None = None,
     include_positions: bool = False,
+    dedupe: str | None = None,
 ) -> dict[str, Any]:
-    group_by = group_by if group_by in {"timeframe", "scan", "indicator"} else "timeframe"
+    group_by = group_by if group_by in GROUP_BY_OPTIONS else "timeframe"
     start = _parse_dt(date_from)
     end = _parse_dt(date_to)
     q = db.query(TrackPosition).filter(TrackPosition.user_id == user_id)
@@ -91,18 +115,27 @@ def performance_report(
         q = q.filter(TrackPosition.entry_at <= end)
 
     rows = q.order_by(TrackPosition.entry_at.desc()).all()
+    if (dedupe or "").lower() == "symbol":
+        rows = _dedupe_first_symbol(rows)
+
     buckets: dict[str, list[TrackPosition]] = defaultdict(list)
     for row in rows:
         buckets[_group_key(row, group_by)].append(row)
 
     groups: list[dict[str, Any]] = []
     for key, items in buckets.items():
-        n = len(items)
+        settled = [r for r in items if r.status not in WATCH_STATUSES]
+        open_n = len(items) - len(settled)
+        r_values = [v for r in settled if (v := realized_r(r)) is not None]
+        wins = [v for v in r_values if v > 0]
+        losses = [v for v in r_values if v < 0]
         tp_n = sum(1 for r in items if r.first_tp_at or r.status in {"after_tp", "opposite_signal", "hit_target"})
         sl_n = sum(1 for r in items if r.first_sl_at or r.status == "hit_stop")
-        opp_n = sum(1 for r in items if r.status == "opposite_signal")
-        arch_n = sum(1 for r in items if r.status == "archived")
-        open_n = sum(1 for r in items if r.status in WATCH_STATUSES)
+        n = len(items)
+        settled_n = len(settled)
+        win_rate = (tp_n / settled_n * 100) if settled_n else 0.0
+        sl_rate = (sl_n / settled_n * 100) if settled_n else 0.0
+        expected = _avg(r_values)
         mfes: list[float] = []
         maes: list[float] = []
         tp_hours: list[float] = []
@@ -122,41 +155,58 @@ def performance_report(
                 hours = _hours_between(row.entry_at, row.exit_at)
                 if hours is not None:
                     hold.append(hours)
-        win_rate = (tp_n / n * 100) if n else 0.0
-        sl_rate = (sl_n / n * 100) if n else 0.0
-        avg_mfe = _avg(mfes) or 0.0
-        score = win_rate * 2 + avg_mfe - sl_rate
+        rank_ready = settled_n >= MIN_SAMPLE_FOR_RANK
         groups.append(
             {
                 "key": key,
                 "label": _group_label(key, group_by),
                 "count": n,
                 "open_count": open_n,
-                "settled_count": n - open_n,
+                "settled_count": settled_n,
                 "tp_count": tp_n,
                 "sl_count": sl_n,
-                "opposite_count": opp_n,
-                "archived_count": arch_n,
+                "opposite_count": sum(1 for r in items if r.status == "opposite_signal"),
+                "archived_count": sum(1 for r in items if r.status == "archived"),
                 "win_rate": round(win_rate, 2),
                 "sl_rate": round(sl_rate, 2),
-                "avg_mfe_pct": avg_mfe,
+                "expected_r": expected,
+                "avg_win_r": _avg(wins),
+                "avg_loss_r": _avg([-v for v in losses]) if losses else None,
+                "avg_mfe_pct": _avg(mfes) or 0.0,
                 "avg_mae_pct": _avg(maes) or 0.0,
                 "avg_hours_to_tp": _avg(tp_hours),
                 "avg_hours_to_sl": _avg(sl_hours),
                 "avg_hold_hours": _avg(hold),
-                "score": round(score, 3),
+                "rank_ready": rank_ready,
+                "insufficient": not rank_ready,
             }
         )
 
-    groups.sort(key=lambda g: (g["score"], g["win_rate"], g["avg_mfe_pct"], g["count"]), reverse=True)
-    for index, item in enumerate(groups, 1):
-        item["rank"] = index
+    groups.sort(
+        key=lambda g: (
+            g["rank_ready"],
+            g["expected_r"] if g["expected_r"] is not None else -999,
+            g["settled_count"],
+            g["avg_mfe_pct"],
+        ),
+        reverse=True,
+    )
+    rank = 0
+    for item in groups:
+        if item["rank_ready"]:
+            rank += 1
+            item["rank"] = rank
+        else:
+            item["rank"] = None
 
     out: dict[str, Any] = {
         "group_by": group_by,
         "date_from": date_from,
         "date_to": date_to,
+        "dedupe": dedupe,
         "total": len(rows),
+        "min_sample": MIN_SAMPLE_FOR_RANK,
+        "level_benchmarks": level_benchmarks_for_api(),
         "groups": groups,
     }
     if include_positions:

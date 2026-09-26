@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.api.auth_deps import get_current_user
 from app.database import TrackPosition, User, get_db
+from app.services.track_levels import level_benchmarks_for_api
 from app.services.track_reports import performance_report
 from app.services.track_service import (
     WATCH_STATUSES,
@@ -40,6 +41,7 @@ class TrackSettingsUpdate(BaseModel):
     auto_close_on_tp_sl: bool | None = None
     auto_close_weekend_intraday: bool | None = None
     weekend_close_hour: int | None = Field(default=None, ge=0, le=23)
+    use_tf_level_benchmarks: bool | None = None
 
 
 class TrackPositionUpdate(BaseModel):
@@ -70,6 +72,8 @@ def _settings_dict(row) -> dict[str, Any]:
         "auto_close_on_tp_sl": row.auto_close_on_tp_sl,
         "auto_close_weekend_intraday": row.auto_close_weekend_intraday,
         "weekend_close_hour": row.weekend_close_hour,
+        "use_tf_level_benchmarks": getattr(row, "use_tf_level_benchmarks", True),
+        "level_benchmarks": level_benchmarks_for_api(),
         "updated_at": utc_iso(row.updated_at),
     }
 
@@ -98,6 +102,8 @@ def patch_settings(
         row.auto_close_weekend_intraday = body.auto_close_weekend_intraday
     if body.weekend_close_hour is not None:
         row.weekend_close_hour = body.weekend_close_hour
+    if body.use_tf_level_benchmarks is not None:
+        row.use_tf_level_benchmarks = body.use_tf_level_benchmarks
     db.commit()
     db.refresh(row)
     return _settings_dict(row)
@@ -289,6 +295,7 @@ def track_performance_report(
     date_from: str | None = None,
     date_to: str | None = None,
     include_positions: bool = True,
+    dedupe: str | None = None,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -299,4 +306,5 @@ def track_performance_report(
         date_from=date_from,
         date_to=date_to,
         include_positions=include_positions,
+        dedupe=dedupe,
     )

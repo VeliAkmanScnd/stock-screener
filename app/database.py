@@ -88,6 +88,7 @@ class TrackUserSettings(Base):
     auto_close_on_tp_sl = Column(Boolean, nullable=False, default=True)
     auto_close_weekend_intraday = Column(Boolean, nullable=False, default=False)
     weekend_close_hour = Column(Integer, nullable=False, default=23)
+    use_tf_level_benchmarks = Column(Boolean, nullable=False, default=True)
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
@@ -213,6 +214,16 @@ def _migrate_db() -> None:
             for name, sql in extras.items():
                 if name not in pos_cols:
                     conn.execute(text(sql))
+        settings_cols = {
+            row[1] for row in conn.execute(text("PRAGMA table_info(track_user_settings)"))
+        }
+        if settings_cols and "use_tf_level_benchmarks" not in settings_cols:
+            conn.execute(
+                text(
+                    "ALTER TABLE track_user_settings ADD COLUMN "
+                    "use_tf_level_benchmarks BOOLEAN NOT NULL DEFAULT 1"
+                )
+            )
         conn.commit()
 
 

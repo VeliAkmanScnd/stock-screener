@@ -6,7 +6,7 @@
   <title>TradeLABtr Stock Screener</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/css/style.css?v=29" />
+  <link rel="stylesheet" href="/static/css/style.css?v=31" />
   <link rel="stylesheet" href="/static/css/auth.css?v=1" />
 </head>
 <body>
@@ -373,14 +373,22 @@
     <main class="layout track-panel hidden" id="trackPanel">
       <section class="card track-settings-card">
         <h2>İzleme ayarları</h2>
-        <p class="hint">Varsayılan hedef +8% / stop −5%. Eşleşmeler saat başı güncellenir; TP sonrası aynı periyotta ters sinyale kadar, en fazla 10 işlem günü izlenir.</p>
+        <p class="hint">Yeni eşleşmeler periyot benchmark’ına göre TP/SL alır (15m +2/−1.5, 1s +3/−2, 1g +8/−5). Saat başı high/low güncellenir; TP sonrası ters sinyale veya 10 işlem gününe kadar izlenir.</p>
+        <div class="tf-bench-wrap">
+          <p class="hint">Periyot TP/SL benchmark</p>
+          <div class="tf-bench-grid" id="trackLevelBenchmarks"></div>
+        </div>
         <form id="trackSettingsForm" class="track-settings-form">
+          <label class="field track-check">
+            <input type="checkbox" id="trackUseTfBench" checked />
+            <span>Periyoda göre TP/SL benchmark kullan</span>
+          </label>
           <label class="field">
-            <span>Hedef %</span>
+            <span>Özel hedef %</span>
             <input type="number" id="trackTargetPct" min="0.1" max="100" step="0.1" value="8" />
           </label>
           <label class="field">
-            <span>Stop %</span>
+            <span>Özel stop %</span>
             <input type="number" id="trackStopPct" min="0.1" max="100" step="0.1" value="5" />
           </label>
           <label class="field track-check">
@@ -444,13 +452,18 @@
     <main class="layout track-panel hidden" id="perfPanel">
       <section class="card">
         <h2>Performans raporu</h2>
-        <p class="hint">Sınıflandırma: zaman dilimi, kaydedilmiş tarama adı veya indikatör. Sıra, TP oranı ve maksimum getiri (MFE) birleşimine göredir. Geçmiş tarih aralığı seçilebilir.</p>
+        <p class="hint">Sıra, kapanmış işlemlerin beklenen R değerine göredir. 20 kapanmış işlemden az gruplar «yetersiz» işaretlenir ve sıralanmaz. Ters sinyal, o periyottaki tarama tekrar çalışıp aksi yön basınca gelir.</p>
+        <div class="tf-bench-wrap">
+          <p class="hint">Periyot TP/SL benchmark — yeni izlemeler buna göre açılır</p>
+          <div class="tf-bench-grid" id="perfLevelBenchmarks"></div>
+        </div>
         <form id="perfReportForm" class="perf-filters">
           <label class="field">
             <span>Sınıflandır</span>
             <select id="perfGroupBy">
               <option value="timeframe" selected>Zaman dilimi</option>
               <option value="scan">Tarama adı</option>
+              <option value="scan_tf">Tarama × periyot</option>
               <option value="indicator">İndikatör / filtre</option>
             </select>
           </label>
@@ -462,6 +475,10 @@
             <span>Bitiş</span>
             <input type="date" id="perfDateTo" />
           </label>
+          <label class="field track-check">
+            <input type="checkbox" id="perfDedupeSymbol" />
+            <span>Sembol başına ilk sinyal</span>
+          </label>
           <button type="submit" class="btn primary">Raporu getir</button>
         </form>
         <p class="auth-status" id="perfReportStatus"></p>
@@ -471,8 +488,11 @@
               <tr>
                 <th>#</th>
                 <th>Grup</th>
-                <th>Adet</th>
+                <th>Kapanan</th>
                 <th>Açık</th>
+                <th>Beklenen R</th>
+                <th>Ort. kazanç R</th>
+                <th>Ort. kayıp R</th>
                 <th>TP</th>
                 <th>SL</th>
                 <th>Ters sinyal</th>
@@ -480,11 +500,10 @@
                 <th>Ort. max %</th>
                 <th>Ort. TP süre</th>
                 <th>Ort. SL süre</th>
-                <th>Ort. süre</th>
               </tr>
             </thead>
             <tbody id="perfReportBody">
-              <tr class="empty"><td colspan="12">Rapor için tarih seçip getirin; boş bırakılırsa tüm geçmiş gelir.</td></tr>
+              <tr class="empty"><td colspan="14">Rapor için tarih seçip getirin; boş bırakılırsa tüm geçmiş gelir.</td></tr>
             </tbody>
           </table>
         </div>
@@ -503,13 +522,14 @@
                 <th>Filtre</th>
                 <th>Giriş</th>
                 <th>Max %</th>
+                <th>R</th>
                 <th>TP süre</th>
                 <th>SL süre</th>
                 <th>Durum</th>
               </tr>
             </thead>
             <tbody id="perfHistoryBody">
-              <tr class="empty"><td colspan="10">Kayıt yok.</td></tr>
+              <tr class="empty"><td colspan="11">Kayıt yok.</td></tr>
             </tbody>
           </table>
         </div>
@@ -664,7 +684,7 @@
 
   <script src="/static/js/auth.js?v=4"></script>
   <script src="/static/js/app.js?v=45"></script>
-  <script src="/static/js/track.js?v=9"></script>
-  <script src="/static/js/perf.js?v=1"></script>
+  <script src="/static/js/track.js?v=11"></script>
+  <script src="/static/js/perf.js?v=2"></script>
 </body>
 </html>

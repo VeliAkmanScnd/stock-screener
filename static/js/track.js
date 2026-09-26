@@ -95,6 +95,26 @@ function fmtBenchmarkPrice(v) {
   return n.toFixed(4);
 }
 
+function renderLevelBenchmarks(selector, rows) {
+  const host = document.querySelector(selector);
+  if (!host) return;
+  if (!rows.length) {
+    host.innerHTML = "";
+    return;
+  }
+  host.innerHTML = rows
+    .map((b) => {
+      const feat = b.featured ? " featured" : "";
+      const tag = b.featured ? '<span class="perf-badge">önerilen</span>' : "";
+      return `<div class="tf-bench-chip${feat}">
+        <strong>${b.label}${tag}</strong>
+        <span>+${b.target_pct}% / −${b.stop_pct}%</span>
+        <span>${b.r_multiple != null ? `${b.r_multiple}R` : ""}</span>
+      </div>`;
+    })
+    .join("");
+}
+
 function fmtPct(v) {
   if (v == null || Number.isNaN(v)) return "—";
   const sign = v > 0 ? "+" : "";
@@ -144,6 +164,8 @@ async function loadTrackSettings() {
     const s = await res.json();
     if (track$("#trackTargetPct")) track$("#trackTargetPct").value = s.target_pct;
     if (track$("#trackStopPct")) track$("#trackStopPct").value = s.stop_pct;
+    if (track$("#trackUseTfBench")) track$("#trackUseTfBench").checked = s.use_tf_level_benchmarks !== false;
+    renderLevelBenchmarks("#trackLevelBenchmarks", s.level_benchmarks || []);
     if (track$("#trackAutoTrack")) track$("#trackAutoTrack").checked = !!s.auto_track_enabled;
     if (track$("#trackAutoCloseTpSl")) track$("#trackAutoCloseTpSl").checked = !!s.auto_close_on_tp_sl;
     if (track$("#trackAutoWeekend")) track$("#trackAutoWeekend").checked = !!s.auto_close_weekend_intraday;
@@ -159,6 +181,7 @@ async function saveTrackSettings(e) {
   const payload = {
     target_pct: parseFloat(track$("#trackTargetPct").value) || 8,
     stop_pct: parseFloat(track$("#trackStopPct").value) || 5,
+    use_tf_level_benchmarks: !!track$("#trackUseTfBench")?.checked,
     auto_track_enabled: track$("#trackAutoTrack").checked,
     auto_close_on_tp_sl: track$("#trackAutoCloseTpSl").checked,
     auto_close_weekend_intraday: track$("#trackAutoWeekend").checked,
