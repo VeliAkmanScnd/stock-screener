@@ -119,6 +119,15 @@ class TrackPosition(Base):
     benchmark_symbol = Column(String(32), nullable=True)
     benchmark_entry_price = Column(Float, nullable=True)
     benchmark_current_price = Column(Float, nullable=True)
+    direction = Column(String(8), nullable=False, default="AL")
+    indicator_label = Column(String(255), nullable=True)
+    max_price = Column(Float, nullable=True)
+    min_price = Column(Float, nullable=True)
+    first_tp_at = Column(DateTime, nullable=True)
+    first_sl_at = Column(DateTime, nullable=True)
+    hours_to_tp = Column(Float, nullable=True)
+    hours_to_sl = Column(Float, nullable=True)
+    archived_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
@@ -190,6 +199,20 @@ def _migrate_db() -> None:
                 conn.execute(text("ALTER TABLE track_positions ADD COLUMN benchmark_entry_price REAL"))
             if "benchmark_current_price" not in pos_cols:
                 conn.execute(text("ALTER TABLE track_positions ADD COLUMN benchmark_current_price REAL"))
+            extras = {
+                "direction": "ALTER TABLE track_positions ADD COLUMN direction VARCHAR(8) DEFAULT 'AL'",
+                "indicator_label": "ALTER TABLE track_positions ADD COLUMN indicator_label TEXT",
+                "max_price": "ALTER TABLE track_positions ADD COLUMN max_price REAL",
+                "min_price": "ALTER TABLE track_positions ADD COLUMN min_price REAL",
+                "first_tp_at": "ALTER TABLE track_positions ADD COLUMN first_tp_at DATETIME",
+                "first_sl_at": "ALTER TABLE track_positions ADD COLUMN first_sl_at DATETIME",
+                "hours_to_tp": "ALTER TABLE track_positions ADD COLUMN hours_to_tp REAL",
+                "hours_to_sl": "ALTER TABLE track_positions ADD COLUMN hours_to_sl REAL",
+                "archived_at": "ALTER TABLE track_positions ADD COLUMN archived_at DATETIME",
+            }
+            for name, sql in extras.items():
+                if name not in pos_cols:
+                    conn.execute(text(sql))
         conn.commit()
 
 

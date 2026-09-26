@@ -2074,6 +2074,9 @@ async function runScan() {
       !!(data.results?.length || data.tradingview_symbols?.length)
     );
     let msg = `Tamamlandı — ${data.count} eşleşme`;
+    if (data.track_added != null) {
+      msg += ` · izlemeye ${data.track_added}`;
+    }
     if (data.stats) {
       const s = data.stats;
       msg += ` · taranan ${s.scanned}/${s.requested}`;

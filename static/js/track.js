@@ -39,10 +39,13 @@ function formatTrackEntryPlain(iso) {
 const TRACK_COLUMNS = [
   { key: "symbol", label: "Sembol", type: "text", getValue: (r) => r.symbol || "", getDisplay: (r) => `${r.symbol} (${r.universe})` },
   { key: "source", label: "Kaynak", type: "text", getValue: (r) => getTrackSourceText(r) },
+  { key: "direction", label: "Yön", type: "text", getValue: (r) => r.direction || "AL" },
+  { key: "indicator", label: "Filtre", type: "text", getValue: (r) => r.indicator_label || "—" },
   { key: "entry_at", label: "Eklenme", type: "text", getValue: (r) => formatTrackEntryPlain(r.entry_at) },
   { key: "entry_price", label: "Giriş", type: "number", getValue: (r) => r.entry_price },
   { key: "current_price", label: "Güncel", type: "number", getValue: (r) => r.current_price },
   { key: "change_pct", label: "%", type: "number", getValue: (r) => r.change_pct },
+  { key: "mfe_pct", label: "Max %", type: "number", getValue: (r) => r.mfe_pct },
   {
     key: "benchmark",
     label: "Endeks",
@@ -61,6 +64,9 @@ const TRACK_STATUS_LABELS = {
   expired: "Süre doldu",
   manual_close: "Manuel",
   active: "Aktif",
+  after_tp: "TP sonrası",
+  opposite_signal: "Ters sinyal",
+  archived: "Arşiv",
 };
 
 const TRACK_TZ = "Europe/Istanbul";
@@ -182,7 +188,9 @@ function buildTrackRowActions(row, isActive) {
       ${chartBtn}
     </div>`;
   }
+  const phase = row.status === "after_tp" ? '<span class="hint">TP sonrası</span>' : "";
   return `<div class="track-action-col">
+    ${phase}
     <button type="button" class="btn secondary btn-sm" data-track-edit="${row.id}">TP/SL</button>
     <button type="button" class="btn secondary btn-sm" data-track-close="${row.id}">Kaldır</button>
     ${chartBtn}
@@ -588,8 +596,8 @@ function renderTrackTableBody(rows, isActive) {
   if (!trackAllRows.length) {
     tbody.innerHTML =
       trackView === "active"
-        ? '<tr class="empty"><td colspan="12">Henüz izlenen pozisyon yok. Zamanlanmış tarama veya «İzlemeye ekle» kullanın.</td></tr>'
-        : '<tr class="empty"><td colspan="12">Kapalı kayıt yok.</td></tr>';
+        ? '<tr class="empty"><td colspan="15">Henüz izlenen pozisyon yok. Zamanlanmış tarama veya «İzlemeye ekle» kullanın.</td></tr>'
+        : '<tr class="empty"><td colspan="15">Kapalı kayıt yok.</td></tr>';
     updateTrackFilterToolbar();
     updateTrackHeaderFilterStates();
     updateTrackBulkActions();
@@ -597,7 +605,7 @@ function renderTrackTableBody(rows, isActive) {
   }
 
   if (!rows.length) {
-    tbody.innerHTML = '<tr class="empty"><td colspan="12">Filtreye uygun kayıt yok.</td></tr>';
+    tbody.innerHTML = '<tr class="empty"><td colspan="15">Filtreye uygun kayıt yok.</td></tr>';
     updateTrackFilterToolbar();
     updateTrackHeaderFilterStates();
     updateTrackBulkActions();
@@ -615,14 +623,17 @@ function renderTrackTableBody(rows, isActive) {
           <td class="track-check-cell"><input type="checkbox" class="track-row-select" data-track-select="${r.id}" ${checked} /></td>
           <td><strong>${r.symbol}</strong><br><span class="hint">${r.universe}</span></td>
           <td class="track-source-cell">${src}</td>
+          <td>${r.direction || "AL"}</td>
+          <td class="track-source-cell">${r.indicator_label || "—"}</td>
           <td class="track-entry-cell">${formatTrackEntryAt(r.entry_at)}</td>
           <td>${fmtPrice(r.entry_price, r.universe)}</td>
           <td>${fmtPrice(r.current_price, r.universe)}</td>
           <td class="${pctClass(r.change_pct)}">${chg}</td>
+          <td class="${pctClass(r.mfe_pct)}">${fmtPct(r.mfe_pct)}</td>
           <td>${fmtBenchmarkPrice(r.benchmark_current_price)}<br><span class="hint">${bmLabel}</span></td>
           <td class="${pctClass(r.benchmark_change_pct)}">${bmChg}</td>
-          <td>${fmtPrice(r.target_price, r.universe)}<br><span class="hint">+${r.target_pct}%</span></td>
-          <td>${fmtPrice(r.stop_price, r.universe)}<br><span class="hint">−${r.stop_pct}%</span></td>
+          <td>${fmtPrice(r.target_price, r.universe)}<br><span class="hint">${r.direction === "SAT" ? "−" : "+"}${r.target_pct}%</span></td>
+          <td>${fmtPrice(r.stop_price, r.universe)}<br><span class="hint">${r.direction === "SAT" ? "+" : "−"}${r.stop_pct}%</span></td>
           <td class="scheduled-actions">${buildTrackRowActions(r, isActive)}</td>
         </tr>`;
     })
@@ -723,7 +734,7 @@ async function loadTrackPositions() {
     renderTrackTable();
   } catch {
     trackAllRows = [];
-    tbody.innerHTML = '<tr class="empty"><td colspan="12">Liste yüklenemedi.</td></tr>';
+    tbody.innerHTML = '<tr class="empty"><td colspan="15">Liste yüklenemedi.</td></tr>';
     updateTrackFilterToolbar();
   }
 }
@@ -921,7 +932,7 @@ async function refreshTrackPrices() {
     const res = await apiFetch("/api/track/refresh-prices", { method: "POST" });
     const data = await res.json();
     if (status) {
-      status.textContent = `Güncellendi: ${data.checked ?? 0} pozisyon, ${data.closed ?? 0} TP/SL ile kapandı.`;
+      status.textContent = `Güncellendi: ${data.checked ?? 0} pozisyon, ${data.closed ?? 0} stop, ${data.hit_tp ?? 0} TP, ${data.archived ?? 0} arşiv.`;
     }
     loadTrackPositions();
   } catch (e) {
@@ -1024,7 +1035,9 @@ async function ingestLastScanToTrack() {
   const payload = {
     universe: lastScanData.universe || $("#universe").value,
     timeframe: lastScanData.timeframe || $("#timeframe").value,
-    source_label: "Manuel tarama",
+    source_label: lastScanData.pine_label || "Manuel tarama",
+    pine_label: lastScanData.pine_label || null,
+    filters: lastScanData.filters || [],
     results: lastScanData.results,
   };
   try {

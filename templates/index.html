@@ -6,7 +6,7 @@
   <title>TradeLABtr Stock Screener</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/css/style.css?v=28" />
+  <link rel="stylesheet" href="/static/css/style.css?v=29" />
   <link rel="stylesheet" href="/static/css/auth.css?v=1" />
 </head>
 <body>
@@ -23,6 +23,7 @@
         <div class="app-tabs">
           <button type="button" class="app-tab active" id="tabScan">Tarama</button>
           <button type="button" class="app-tab" id="tabTrack">İzleme</button>
+          <button type="button" class="app-tab" id="tabPerf">Performans</button>
           <button type="button" class="app-tab" id="tabAdmin" hidden>Kullanıcılar</button>
         </div>
         <span class="header-user-name" id="headerUsername"></span>
@@ -372,7 +373,7 @@
     <main class="layout track-panel hidden" id="trackPanel">
       <section class="card track-settings-card">
         <h2>İzleme ayarları</h2>
-        <p class="hint">Varsayılan hedef +8% / stop −5%. Zamanlanmış taramalar eşleşmeleri otomatik ekler (ayrı satır / kaynak).</p>
+        <p class="hint">Varsayılan hedef +8% / stop −5%. Eşleşmeler saat başı güncellenir; TP sonrası aynı periyotta ters sinyale kadar, en fazla 10 işlem günü izlenir.</p>
         <form id="trackSettingsForm" class="track-settings-form">
           <label class="field">
             <span>Hedef %</span>
@@ -388,7 +389,7 @@
           </label>
           <label class="field track-check">
             <input type="checkbox" id="trackAutoCloseTpSl" checked />
-            <span>TP/SL otomatik kapat</span>
+            <span>SL’de kapat; TP sonrası ters sinyale kadar izle</span>
           </label>
           <label class="field track-check">
             <input type="checkbox" id="trackAutoWeekend" />
@@ -407,7 +408,7 @@
         <div class="track-list-head">
           <div>
             <h2>Performans izleme</h2>
-            <p class="hint" id="trackListHint">Aktif pozisyonlar — fiyatlar saatlik güncellenir (Pzt–Cum 10:00–23:50).</p>
+            <p class="hint" id="trackListHint">Aktif pozisyonlar — fiyatlar saat başı güncellenir (Pzt–Cum 10:00–23:00).</p>
           </div>
           <div class="track-list-actions">
             <button type="button" class="btn secondary btn-sm" id="btnTrackRefresh">Fiyatları güncelle</button>
@@ -432,11 +433,86 @@
               <tr id="trackTableHeadRow"></tr>
             </thead>
             <tbody id="trackPositionsBody">
-              <tr class="empty"><td colspan="12">Henüz izlenen pozisyon yok.</td></tr>
+              <tr class="empty"><td colspan="15">Henüz izlenen pozisyon yok.</td></tr>
             </tbody>
           </table>
         </div>
         <p class="auth-status" id="trackListStatus"></p>
+      </section>
+    </main>
+
+    <main class="layout track-panel hidden" id="perfPanel">
+      <section class="card">
+        <h2>Performans raporu</h2>
+        <p class="hint">Sınıflandırma: zaman dilimi, kaydedilmiş tarama adı veya indikatör. Sıra, TP oranı ve maksimum getiri (MFE) birleşimine göredir. Geçmiş tarih aralığı seçilebilir.</p>
+        <form id="perfReportForm" class="perf-filters">
+          <label class="field">
+            <span>Sınıflandır</span>
+            <select id="perfGroupBy">
+              <option value="timeframe" selected>Zaman dilimi</option>
+              <option value="scan">Tarama adı</option>
+              <option value="indicator">İndikatör / filtre</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Başlangıç</span>
+            <input type="date" id="perfDateFrom" />
+          </label>
+          <label class="field">
+            <span>Bitiş</span>
+            <input type="date" id="perfDateTo" />
+          </label>
+          <button type="submit" class="btn primary">Raporu getir</button>
+        </form>
+        <p class="auth-status" id="perfReportStatus"></p>
+        <div class="table-wrap">
+          <table class="scheduled-scans-table track-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Grup</th>
+                <th>Adet</th>
+                <th>Açık</th>
+                <th>TP</th>
+                <th>SL</th>
+                <th>Ters sinyal</th>
+                <th>TP %</th>
+                <th>Ort. max %</th>
+                <th>Ort. TP süre</th>
+                <th>Ort. SL süre</th>
+                <th>Ort. süre</th>
+              </tr>
+            </thead>
+            <tbody id="perfReportBody">
+              <tr class="empty"><td colspan="12">Rapor için tarih seçip getirin; boş bırakılırsa tüm geçmiş gelir.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+      <section class="card">
+        <h2>Geçmiş kayıtlar</h2>
+        <p class="hint">Aynı filtrelere göre tekil izleme satırları. Max %, TP/SL süreleri ve arşiv durumu burada tutulur.</p>
+        <div class="table-wrap">
+          <table class="scheduled-scans-table track-table">
+            <thead>
+              <tr>
+                <th>Sembol</th>
+                <th>Yön</th>
+                <th>Periyot</th>
+                <th>Tarama</th>
+                <th>Filtre</th>
+                <th>Giriş</th>
+                <th>Max %</th>
+                <th>TP süre</th>
+                <th>SL süre</th>
+                <th>Durum</th>
+              </tr>
+            </thead>
+            <tbody id="perfHistoryBody">
+              <tr class="empty"><td colspan="10">Kayıt yok.</td></tr>
+            </tbody>
+          </table>
+        </div>
       </section>
     </main>
   </div>
@@ -586,8 +662,9 @@
     </div>
   </div>
 
-  <script src="/static/js/auth.js?v=3"></script>
-  <script src="/static/js/app.js?v=44"></script>
-  <script src="/static/js/track.js?v=8"></script>
+  <script src="/static/js/auth.js?v=4"></script>
+  <script src="/static/js/app.js?v=45"></script>
+  <script src="/static/js/track.js?v=9"></script>
+  <script src="/static/js/perf.js?v=1"></script>
 </body>
 </html>

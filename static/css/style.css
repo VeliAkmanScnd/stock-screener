@@ -1507,3 +1507,11 @@ body {
   margin-bottom: 0;
   color: var(--text);
 }
+
+.perf-filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: 0.65rem;
+  align-items: end;
+  margin: 0.75rem 0 1rem;
+}

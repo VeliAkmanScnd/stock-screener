@@ -40,7 +40,11 @@ from app.services.scheduler_lock import acquire_scheduler_lock, release_schedule
 
 from app.services.schedule_runner import run_scheduled_scan
 
-from app.services.track_runner import run_track_price_update, run_track_weekend_expire
+from app.services.track_runner import (
+    run_track_archive,
+    run_track_price_update,
+    run_track_weekend_expire,
+)
 
 
 
@@ -55,6 +59,8 @@ JOB_PREFIX = "scheduled_scan_"
 TRACK_PRICE_JOB = "track_price_update"
 
 TRACK_WEEKEND_JOB = "track_weekend_expire"
+
+TRACK_ARCHIVE_JOB = "track_archive_expired"
 
 SCHEDULE_SYNC_JOB = "scheduled_scan_sync"
 
@@ -462,7 +468,7 @@ def register_track_jobs() -> None:
 
         run_track_price_update,
 
-        trigger=CronTrigger(hour="10-23", minute=50, day_of_week="mon-fri", timezone=tz),
+        trigger=CronTrigger(hour="10-23", minute=0, day_of_week="mon-fri", timezone=tz),
 
         id=TRACK_PRICE_JOB,
 
@@ -481,6 +487,22 @@ def register_track_jobs() -> None:
         trigger=CronTrigger(day_of_week="fri", hour=23, minute=5, timezone=tz),
 
         id=TRACK_WEEKEND_JOB,
+
+        replace_existing=True,
+
+        max_instances=1,
+
+        coalesce=True,
+
+    )
+
+    _scheduler.add_job(
+
+        run_track_archive,
+
+        trigger=CronTrigger(hour=0, minute=10, timezone=tz),
+
+        id=TRACK_ARCHIVE_JOB,
 
         replace_existing=True,
 

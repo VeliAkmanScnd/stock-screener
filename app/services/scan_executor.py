@@ -131,6 +131,7 @@ def execute_scan_config(
             "custom_source_universe": body.get("custom_source_universe"),
             "timeframe": body["timeframe"],
             "pine_label": pine_label,
+            "filters": body.get("filters") or [],
             "pine_source": pine_source,
             "pine_inputs_applied": pine_inputs_applied,
             "pine_mode": "first_green_bar" if pine_source == "candle_green_first" else None,

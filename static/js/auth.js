@@ -116,20 +116,26 @@ async function submitChangePassword(e) {
 function switchAppTab(tab) {
   const scan = qs("#scanPanel");
   const track = qs("#trackPanel");
+  const perf = qs("#perfPanel");
   const admin = qs("#adminPanel");
   const tabScan = qs("#tabScan");
   const tabTrack = qs("#tabTrack");
+  const tabPerf = qs("#tabPerf");
   const tabAdmin = qs("#tabAdmin");
   const isAdmin = tab === "admin";
   const isTrack = tab === "track";
-  if (scan) scan.classList.toggle("hidden", isAdmin || isTrack);
+  const isPerf = tab === "perf";
+  if (scan) scan.classList.toggle("hidden", isAdmin || isTrack || isPerf);
   if (track) track.classList.toggle("hidden", !isTrack);
+  if (perf) perf.classList.toggle("hidden", !isPerf);
   if (admin) admin.classList.toggle("active", isAdmin);
   if (tabScan) tabScan.classList.toggle("active", tab === "scan");
   if (tabTrack) tabTrack.classList.toggle("active", isTrack);
+  if (tabPerf) tabPerf.classList.toggle("active", isPerf);
   if (tabAdmin) tabAdmin.classList.toggle("active", isAdmin);
   if (isAdmin) loadAdminUsers();
   if (isTrack && typeof onTrackTabShown === "function") onTrackTabShown();
+  if (isPerf && typeof onPerfTabShown === "function") onPerfTabShown();
 }
 
 async function loadAdminUsers() {
@@ -223,6 +229,7 @@ function initAuth() {
   qs("#changePasswordForm")?.addEventListener("submit", submitChangePassword);
   qs("#tabScan")?.addEventListener("click", () => switchAppTab("scan"));
   qs("#tabTrack")?.addEventListener("click", () => switchAppTab("track"));
+  qs("#tabPerf")?.addEventListener("click", () => switchAppTab("perf"));
   qs("#tabAdmin")?.addEventListener("click", () => switchAppTab("admin"));
   qs("#adminCreateUserForm")?.addEventListener("submit", createAdminUser);
 

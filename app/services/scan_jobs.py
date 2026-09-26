@@ -130,7 +130,7 @@ def make_progress_callback(job_id: str) -> ProgressCallback:
     return report
 
 
-def start_scan_job(body: dict[str, Any]) -> str:
+def start_scan_job(body: dict[str, Any], user_id: int | None = None) -> str:
     job_id = str(uuid.uuid4())
     with _lock:
         _jobs[job_id] = ScanJob(id=job_id)
@@ -153,6 +153,22 @@ def start_scan_job(body: dict[str, Any]) -> str:
                 extra_chat_ids=body.get("telegram_to"),
                 extra_bot_token=body.get("telegram_bot_token"),
             )
+            if user_id and result.get("results"):
+                try:
+                    from app.services.track_service import ingest_scan_results
+
+                    label = result.get("pine_label") or "Manuel tarama"
+                    ingested = ingest_scan_results(
+                        db,
+                        user_id=user_id,
+                        payload=result,
+                        source_type="manual",
+                        source_label=str(label),
+                    )
+                    result["track_added"] = ingested
+                except Exception as exc:
+                    result["track_added"] = 0
+                    result["track_error"] = str(exc)
             _update(
                 job_id,
                 status="done",

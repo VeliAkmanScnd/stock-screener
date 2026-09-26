@@ -10,8 +10,9 @@ from sqlalchemy.orm import Session
 
 from app.api.auth_deps import get_current_user
 from app.database import TrackPosition, User, get_db
+from app.services.track_reports import performance_report
 from app.services.track_service import (
-    ACTIVE_STATUS,
+    WATCH_STATUSES,
     calc_levels,
     clear_active,
     close_positions_by_ids,
@@ -52,6 +53,8 @@ class TrackIngestBody(BaseModel):
     universe: str
     timeframe: str = "1d"
     source_label: str = "Manuel tarama"
+    pine_label: str | None = None
+    filters: list[dict[str, Any]] | None = None
     results: list[dict[str, Any]]
 
 
@@ -138,9 +141,9 @@ def list_positions(
 ):
     q = db.query(TrackPosition).filter(TrackPosition.user_id == user.id)
     if status == "active":
-        q = q.filter(TrackPosition.status == ACTIVE_STATUS)
+        q = q.filter(TrackPosition.status.in_(WATCH_STATUSES))
     elif status == "closed":
-        q = q.filter(TrackPosition.status != ACTIVE_STATUS)
+        q = q.filter(~TrackPosition.status.in_(WATCH_STATUSES))
     if universe and universe != "all":
         q = q.filter(TrackPosition.universe == universe)
     rows = q.order_by(TrackPosition.entry_at.desc()).limit(500).all()
@@ -170,6 +173,8 @@ def ingest_manual(
         "universe": body.universe,
         "timeframe": body.timeframe,
         "results": body.results,
+        "pine_label": body.pine_label,
+        "filters": body.filters or [],
     }
     added = ingest_scan_results(
         db,
@@ -195,15 +200,16 @@ def update_position(
     )
     if not row:
         raise HTTPException(404, "İzleme kaydı bulunamadı")
-    if row.status != ACTIVE_STATUS:
+    if row.status not in WATCH_STATUSES:
         raise HTTPException(400, "Kapalı kayıt düzenlenemez")
 
+    direction = getattr(row, "direction", None) or "AL"
     if body.target_pct is not None:
         row.target_pct = body.target_pct
-        row.target_price = calc_levels(row.entry_price, row.target_pct, row.stop_pct)[0]
+        row.target_price = calc_levels(row.entry_price, row.target_pct, row.stop_pct, direction)[0]
     if body.stop_pct is not None:
         row.stop_pct = body.stop_pct
-        row.stop_price = calc_levels(row.entry_price, row.target_pct, row.stop_pct)[1]
+        row.stop_price = calc_levels(row.entry_price, row.target_pct, row.stop_pct, direction)[1]
     if body.target_price is not None:
         row.target_price = body.target_price
         row.target_pct = round((row.target_price / row.entry_price - 1) * 100, 2)
@@ -275,3 +281,22 @@ def refresh_prices(
 ):
     stats = update_active_prices(db, user.id)
     return stats
+
+
+@router.get("/report")
+def track_performance_report(
+    group_by: str = "timeframe",
+    date_from: str | None = None,
+    date_to: str | None = None,
+    include_positions: bool = True,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    return performance_report(
+        db,
+        user.id,
+        group_by=group_by,
+        date_from=date_from,
+        date_to=date_to,
+        include_positions=include_positions,
+    )

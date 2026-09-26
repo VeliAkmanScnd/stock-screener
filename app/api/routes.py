@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.config import MAX_SYMBOLS_PER_SCAN
 from app.services.twelvedata_client import TwelveDataError
-from app.database import PineScript, get_db
+from app.database import PineScript, User, get_db
 from app.services.data_fetcher import (
     get_universe_count,
     get_universe_meta,
@@ -373,13 +373,13 @@ async def preview_pine(file: UploadFile = File(...)):
 
 
 @router.post("/api/scan")
-def api_scan(body: ScanBody):
+def api_scan(body: ScanBody, user: User = Depends(get_current_user)):
     if body.require_pine_al and not body.pine_script_id and not body.pine_condition_override:
         raise HTTPException(400, "Pine AL taraması için script veya koşul gerekli")
 
     from app.services.scan_jobs import start_scan_job
 
-    job_id = start_scan_job(body.model_dump())
+    job_id = start_scan_job(body.model_dump(), user_id=user.id)
     return {"job_id": job_id, "status": "running"}
 
 
