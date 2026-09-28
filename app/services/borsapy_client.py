@@ -38,12 +38,19 @@ def ensure_tradingview_auth() -> bool:
     if _tv_auth_applied or not tradingview_auth_configured():
         return tradingview_auth_configured()
     try:
+        import inspect
+
         import borsapy as bp
 
-        bp.set_tradingview_auth(
-            session_id=TRADINGVIEW_SESSION_ID,
-            session_sign=TRADINGVIEW_SESSION_SIGN,
-        )
+        params = inspect.signature(bp.set_tradingview_auth).parameters
+        kwargs = {}
+        if "session" in params:
+            kwargs["session"] = TRADINGVIEW_SESSION_ID
+        elif "session_id" in params:
+            kwargs["session_id"] = TRADINGVIEW_SESSION_ID
+        if "session_sign" in params:
+            kwargs["session_sign"] = TRADINGVIEW_SESSION_SIGN
+        bp.set_tradingview_auth(**kwargs)
         _tv_auth_applied = True
         logger.info("borsapy TradingView auth applied (live BIST if subscribed)")
         return True
