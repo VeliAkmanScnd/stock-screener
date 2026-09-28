@@ -147,6 +147,22 @@ def start_scan_job(body: dict[str, Any], user_id: int | None = None) -> str:
 
             progress = make_progress_callback(job_id)
             result = execute_scan_config(body, db, progress_callback=progress)
+            if user_id:
+                from app.services.signal_dedupe import apply_repeat_price_filter, scan_fingerprint
+
+                result = apply_repeat_price_filter(
+                    db,
+                    result,
+                    user_id=user_id,
+                    fingerprint=scan_fingerprint(
+                        user_id=user_id,
+                        universe=str(result.get("universe") or body.get("universe") or ""),
+                        timeframe=str(result.get("timeframe") or body.get("timeframe") or ""),
+                        custom_source_universe=result.get("custom_source_universe")
+                        or body.get("custom_source_universe"),
+                        pine_script_id=body.get("pine_script_id"),
+                    ),
+                )
             result = _attach_telegram(
                 result,
                 notify=bool(body.get("notify_telegram", True)),

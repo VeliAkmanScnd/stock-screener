@@ -1,6 +1,6 @@
 # Zamanlanmış taramalar
 
-Tarama ekranındaki **Zamanlanmış tarama** mevcut evren, filtre, Pine ve periyodu kaydeder. Sunucu çalışıyorsa seçilen gün/saatte tekrar tarar.
+Tarama ekranındaki **Zamanlanmış tarama** mevcut evren, filtre, Pine ve periyodu kaydeder. Sunucu çalışıyorsa seçilen gün/saatte tekrar tarar. Aynı hisse aynı fiyattan yeniden eşleşirse bildirim gitmez.
 
 ## Oluşturma
 

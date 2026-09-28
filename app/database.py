@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, Column, DateTime, Float, Integer, String, Text, create_engine, text
+from sqlalchemy import Boolean, Column, DateTime, Float, Integer, String, Text, UniqueConstraint, create_engine, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.config import DB_PATH, PINE_DIR, STORAGE_DIR
@@ -77,6 +77,29 @@ class ScanRun(Base):
     tv_list_text = Column(Text, nullable=True)
     email_sent = Column(Boolean, nullable=False, default=False)
     error_message = Column(Text, nullable=True)
+
+
+class ScanSignalLast(Base):
+    """Last emitted signal price per user/scan/symbol/direction (repeat filter)."""
+
+    __tablename__ = "scan_signal_last"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id",
+            "fingerprint",
+            "symbol",
+            "direction",
+            name="uq_scan_signal_last",
+        ),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, nullable=False, index=True)
+    fingerprint = Column(String(255), nullable=False, index=True)
+    symbol = Column(String(32), nullable=False)
+    direction = Column(String(8), nullable=False, default="AL")
+    price = Column(Float, nullable=False)
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 class TrackUserSettings(Base):

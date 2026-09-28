@@ -2142,6 +2142,9 @@ async function runScan() {
       !!(data.results?.length || data.tradingview_symbols?.length)
     );
     let msg = `Tamamlandı — ${data.count} eşleşme`;
+    if (data.skipped_repeat_price) {
+      msg += ` · ${data.skipped_repeat_price} tekrar (aynı fiyat) gizlendi`;
+    }
     if (data.track_added != null) {
       msg += ` · performansa ${data.track_added}`;
     }
@@ -2188,7 +2191,9 @@ function renderResults(data, universe) {
     ) ||
     $("#universe")?.value ||
     "sp500";
-  $("#resultCount").textContent = `${data.count} eşleşme`;
+  $("#resultCount").textContent = data.skipped_repeat_price
+    ? `${data.count} eşleşme (${data.skipped_repeat_price} tekrar gizlendi)`
+    : `${data.count} eşleşme`;
   setCustomListExportEnabled(!!data.results?.length);
   renderSignalSummary(data);
   const tbody = $("#resultsBody");

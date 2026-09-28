@@ -136,14 +136,34 @@ def run_scheduled_scan(scheduled_id: int, *, force: bool = False) -> None:
 
         config = json.loads(sched.config_json)
         payload = execute_scan_config(config, db)
+        from app.services.signal_dedupe import apply_repeat_price_filter, scan_fingerprint
+
+        payload = apply_repeat_price_filter(
+            db,
+            payload,
+            user_id=sched.user_id,
+            fingerprint=scan_fingerprint(
+                user_id=sched.user_id,
+                scheduled_scan_id=sched.id,
+            ),
+        )
 
         tv_text = payload.get("tradingview_text") or ""
         match_count = int(payload.get("count") or 0)
+        skipped_repeat = int(payload.get("skipped_repeat_price") or 0)
         email_sent = False
         notify_errors: list[str] = []
 
         notify_email = bool(getattr(sched, "notify_email", True))
-        if notify_email and (sched.email_to or "").strip():
+        send_email = notify_email and (sched.email_to or "").strip()
+        if send_email and match_count == 0 and skipped_repeat > 0:
+            send_email = False
+            logger.info(
+                "Scheduled scan %s: skipped email (%s same-price repeats, no new hits)",
+                scheduled_id,
+                skipped_repeat,
+            )
+        if send_email:
             try:
                 subject = (
                     f"TradeLABtr tarama: {sched.name} — {match_count} eşleşme"

@@ -2,6 +2,8 @@
 
 Tarama sekmesi, seçilen evrendeki sembolleri zaman dilimine göre indirir, filtreleri ve isteğe bağlı Pine AL koşulunu uygular. Sonuçlar tabloda görünür; aynı anda Performans’a yazılabilir ve Telegram’a gidebilir.
 
+Aynı tarama aynı hisseyi **aynı fiyattan** yeniden yakalarsa satır gösterilmez; Telegram ve e-posta da gitmez. Fiyat değişirse sinyal yeniden gelir.
+
 ## Adım adım
 
 1. **Hisse evreni** seçin. Özel liste için sembolleri yazıp kaydedebilirsiniz.
