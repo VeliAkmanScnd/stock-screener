@@ -4,9 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev --hostname 0.0.0.0 --port 4317",
-    "build": "next build",
-    "build:embed": "CALC_BASE_PATH=/calc next build",
-    "start": "bash scripts/serve.sh",
+    "build": "CALC_BASE_PATH=/calc next build",
+    "start": "node api-server.mjs",
     "lint": "eslint",
     "test": "tsx --test src/lib/*.test.ts"
   },
