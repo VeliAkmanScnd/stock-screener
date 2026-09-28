@@ -8,6 +8,7 @@ Sunucu **açıkken** çalışır. Pencereyi kapatırsanız zamanlanmış taramal
 
 | Sekme | Ne işe yarar |
 | --- | --- |
+| **Özet** | Bugün hangi tarama kaç kez çalıştı, kaç hisse bulundu, tekrarlar. İlk açılış. |
 | **Tarama** | Evren, periyot, filtre ve Pine seçip tarama çalıştırırsınız. |
 | **VIOP** | Vadeli kontrat lot ve K/Z hesaplayıcı; hacim-volatilite sıralaması. |
 | **Hisse** | Nakit lot hesaplayıcı; BIST / Nasdaq / NYSE sıralaması. |
@@ -17,7 +18,7 @@ Sunucu **açıkken** çalışır. Pencereyi kapatırsanız zamanlanmış taramal
 
 ## Tipik bir gün
 
-1. **Tarama**’da evreni seçin (ör. NASDAQ), zaman dilimini **15 dakika** yapın.
+1. **Özet**’te günün taramalarına bakın; **Tarama**’da evreni seçin (ör. NASDAQ), zaman dilimini **15 dakika** yapın.
 2. Pine veya teknik filtreleri açın, **Taramayı Başlat**.
 3. Eşleşmeler otomatik **Performans**’a düşer. Telegram açıksa her hisse ayrı kart gider.
 4. Saat başı fiyat (intraday’de high/low) güncellenir.

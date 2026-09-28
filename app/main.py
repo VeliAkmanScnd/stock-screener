@@ -14,6 +14,7 @@ from app.api.auth_routes import router as auth_router
 from app.api.calc_routes import router as calc_router
 from app.api.schedule_routes import router as schedule_router
 from app.api.help_routes import router as help_router
+from app.api.dashboard_routes import router as dashboard_router
 from app.api.track_routes import router as track_router
 from app.api.routes import router
 from app.config import BASE_DIR
@@ -48,6 +49,7 @@ app = FastAPI(title="TradeLABtr Stock Screener", version="1.0.0", lifespan=lifes
 app.include_router(auth_router)
 app.include_router(admin_router)
 app.include_router(schedule_router)
+app.include_router(dashboard_router)
 app.include_router(track_router)
 app.include_router(help_router)
 app.include_router(calc_router)

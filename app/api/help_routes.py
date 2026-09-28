@@ -18,6 +18,7 @@ HELP_DIR = BASE_DIR / "docs" / "help"
 
 TOPICS: list[dict[str, str]] = [
     {"id": "genel", "title": "Genel bakış", "file": "genel.md", "summary": "Sekmeler, günlük akış ve örnek senaryo."},
+    {"id": "ozet", "title": "Özet (günlük pano)", "file": "ozet.md", "summary": "Bugünkü taramalar, eşleşmeler ve tekrarlar."},
     {"id": "tarama", "title": "Tarama", "file": "tarama.md", "summary": "Evren, filtre, Pine ve sonuçlar."},
     {"id": "performans", "title": "Performans takibi", "file": "performans.md", "summary": "Pozisyonlar, TP/SL, R sıralaması ve örnekler."},
     {"id": "zamanlanmis", "title": "Zamanlanmış taramalar", "file": "zamanlanmis.md", "summary": "Kayıt, saat ve kuyruk."},

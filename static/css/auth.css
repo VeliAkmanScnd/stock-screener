@@ -115,7 +115,8 @@
   display: block;
 }
 
-.scan-panel.hidden {
+.scan-panel.hidden,
+.dash-panel.hidden {
   display: none;
 }
 

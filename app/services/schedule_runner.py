@@ -223,6 +223,8 @@ def run_scheduled_scan(scheduled_id: int, *, force: bool = False) -> None:
         run_row.finished_at = datetime.now(timezone.utc)
         run_row.status = "success"
         run_row.match_count = match_count
+        payload["email_sent"] = email_sent
+        payload["telegram_sent"] = telegram_sent
         run_row.results_json = json.dumps(payload, ensure_ascii=False)
         run_row.tv_list_text = tv_text
         run_row.email_sent = email_sent

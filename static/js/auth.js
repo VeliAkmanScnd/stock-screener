@@ -123,30 +123,35 @@ function loadCalcFrame(tab) {
 
 function switchAppTab(tab) {
   if (tab === "track") tab = "perf";
+  const dash = qs("#dashPanel");
   const scan = qs("#scanPanel");
   const perf = qs("#perfPanel");
   const help = qs("#helpPanel");
   const admin = qs("#adminPanel");
   const viop = qs("#viopPanel");
   const hisse = qs("#hissePanel");
+  const tabDash = qs("#tabDash");
   const tabScan = qs("#tabScan");
   const tabPerf = qs("#tabPerf");
   const tabHelp = qs("#tabHelp");
   const tabAdmin = qs("#tabAdmin");
   const tabViop = qs("#tabViop");
   const tabHisse = qs("#tabHisse");
+  const isDash = tab === "dash";
   const isAdmin = tab === "admin";
   const isPerf = tab === "perf";
   const isHelp = tab === "help";
   const isViop = tab === "viop";
   const isHisse = tab === "hisse";
-  const hideScan = isAdmin || isPerf || isHelp || isViop || isHisse;
+  const hideScan = isAdmin || isPerf || isHelp || isViop || isHisse || isDash;
+  if (dash) dash.classList.toggle("hidden", !isDash);
   if (scan) scan.classList.toggle("hidden", hideScan);
   if (perf) perf.classList.toggle("hidden", !isPerf);
   if (help) help.classList.toggle("hidden", !isHelp);
   if (viop) viop.classList.toggle("hidden", !isViop);
   if (hisse) hisse.classList.toggle("hidden", !isHisse);
   if (admin) admin.classList.toggle("active", isAdmin);
+  if (tabDash) tabDash.classList.toggle("active", isDash);
   if (tabScan) tabScan.classList.toggle("active", tab === "scan");
   if (tabPerf) tabPerf.classList.toggle("active", isPerf);
   if (tabHelp) tabHelp.classList.toggle("active", isHelp);
@@ -154,6 +159,7 @@ function switchAppTab(tab) {
   if (tabHisse) tabHisse.classList.toggle("active", isHisse);
   if (tabAdmin) tabAdmin.classList.toggle("active", isAdmin);
   if (isAdmin) loadAdminUsers();
+  if (isDash && typeof onDashTabShown === "function") onDashTabShown();
   if (isPerf) {
     if (typeof onTrackTabShown === "function") onTrackTabShown();
     if (typeof onPerfTabShown === "function") onPerfTabShown();
@@ -251,6 +257,7 @@ async function createAdminUser(e) {
 function initAuth() {
   qs("#btnLogout")?.addEventListener("click", logout);
   qs("#changePasswordForm")?.addEventListener("submit", submitChangePassword);
+  qs("#tabDash")?.addEventListener("click", () => switchAppTab("dash"));
   qs("#tabScan")?.addEventListener("click", () => switchAppTab("scan"));
   qs("#tabViop")?.addEventListener("click", () => switchAppTab("viop"));
   qs("#tabHisse")?.addEventListener("click", () => switchAppTab("hisse"));

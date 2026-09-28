@@ -6,8 +6,8 @@
   <title>TradeLABtr Stock Screener</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/css/style.css?v=35" />
-  <link rel="stylesheet" href="/static/css/auth.css?v=3" />
+  <link rel="stylesheet" href="/static/css/style.css?v=38" />
+  <link rel="stylesheet" href="/static/css/auth.css?v=5" />
 </head>
 <body>
   <div class="app">
@@ -21,7 +21,8 @@
       </div>
       <div class="header-user">
         <div class="app-tabs">
-          <button type="button" class="app-tab active" id="tabScan">Tarama</button>
+          <button type="button" class="app-tab active" id="tabDash">Özet</button>
+          <button type="button" class="app-tab" id="tabScan">Tarama</button>
           <button type="button" class="app-tab" id="tabViop">VIOP</button>
           <button type="button" class="app-tab" id="tabHisse">Hisse</button>
           <button type="button" class="app-tab" id="tabPerf">Performans</button>
@@ -64,7 +65,78 @@
       </div>
     </div>
 
-    <main class="layout scan-panel" id="scanPanel">
+    <main class="layout dash-panel" id="dashPanel">
+      <section class="card dash-hero">
+        <div class="dash-hero-row">
+          <div>
+            <h2>Günün özeti</h2>
+            <p class="hint" id="dashDateHint">Zamanlanmış taramaların İstanbul günü.</p>
+          </div>
+          <div class="dash-hero-actions">
+            <button type="button" class="btn secondary" id="btnDashRefresh">Yenile</button>
+            <button type="button" class="btn secondary" id="btnDashToSchedules">Zamanlanmış</button>
+            <button type="button" class="btn primary" id="btnDashToScan">Yeni tarama</button>
+          </div>
+        </div>
+        <div class="dash-kpis" id="dashKpis"></div>
+      </section>
+      <div class="dash-grid">
+        <section class="card dash-card">
+          <h2>Zamanlanmış taramalar</h2>
+          <p class="hint">Bugün kaç kez çalıştı, kaç eşleşme bulundu, hangi periyot.</p>
+          <div class="table-wrap">
+            <table class="dash-table">
+              <thead>
+                <tr>
+                  <th>Tarama</th>
+                  <th>Periyot</th>
+                  <th>Borsa</th>
+                  <th>Çalışma</th>
+                  <th>Eşleşme</th>
+                  <th>Tekil</th>
+                  <th>Son</th>
+                </tr>
+              </thead>
+              <tbody id="dashScansBody">
+                <tr class="empty"><td colspan="7">Yükleniyor…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+        <section class="card dash-card">
+          <h2>Tekrarlayan hisseler</h2>
+          <p class="hint">Aynı hisse bugün kaç kez geldi (farklı taramalar dahil).</p>
+          <div class="table-wrap">
+            <table class="dash-table">
+              <thead>
+                <tr>
+                  <th>Sembol</th>
+                  <th>Kez</th>
+                  <th>Yön</th>
+                  <th>Periyot</th>
+                  <th>Tarama</th>
+                </tr>
+              </thead>
+              <tbody id="dashRepeatsBody">
+                <tr class="empty"><td colspan="5">Yükleniyor…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+        <section class="card dash-card">
+          <h2>Saatlik eşleşmeler</h2>
+          <p class="hint">İstanbul saatiyle bulunan hisse adedi.</p>
+          <div class="dash-hours" id="dashHours" role="img" aria-label="Saatlik eşleşme"></div>
+        </section>
+        <section class="card dash-card">
+          <h2>Sıradaki çalışmalar</h2>
+          <p class="hint">Açık zamanlanmış taramaların sonraki saati.</p>
+          <ul class="dash-upcoming" id="dashUpcoming"></ul>
+        </section>
+      </div>
+    </main>
+
+    <main class="layout scan-panel hidden" id="scanPanel">
       <div class="layout-top">
         <section class="card universe-card">
           <h2>Evren &amp; Zaman</h2>
@@ -727,7 +799,8 @@
     </div>
   </div>
 
-  <script src="/static/js/auth.js?v=7"></script>
+  <script src="/static/js/auth.js?v=8"></script>
+  <script src="/static/js/dash.js?v=2"></script>
   <script src="/static/js/app.js?v=50"></script>
   <script src="/static/js/track.js?v=12"></script>
   <script src="/static/js/perf.js?v=3"></script>
