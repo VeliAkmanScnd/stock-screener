@@ -7,6 +7,7 @@ Amerikan borsaları (S&P 500, NASDAQ, NYSE), **Borsa İstanbul (BIST)** ve **Bin
 - **Teknik filtreler:** EMA kesişimi, fiyat/EMA, RSI, ADX, CCI, momentum, ALMA, ATR genişlemesi
 - **Pine Script:** `.txt` dosyası yükleme, SQLite’da kalıcı kayıt, **AL** (alış) koşulunun otomatik çıkarımı
 - **Tarama:** ABD → yfinance; BIST → yfinance (`.IS`); **Binance** → Binance klines (USDT çiftleri, örn. `BTC`)
+- **VIOP / Hisse hesaplayıcı:** üst menüde ayrı sekmeler; lot ve K/Z hesabı, BIST/Nasdaq/NYSE hacim-volatilite-hype sıralaması
 - **BIST sembol listesi:** BigPara public API (API anahtarı gerekmez)
 - **TradingView:** Sonuçları `.txt` izleme listesi olarak indir
 
@@ -63,6 +64,23 @@ Zamanlanmış taramalar **yalnızca sunucu çalışırken** tetiklenir; pencerey
 
 Tarayıcı: http://127.0.0.1:8000
 
+## VIOP ve Hisse hesaplayıcı
+
+Giriş yaptıktan sonra üst menüde **VIOP** ve **Hisse** sekmeleri açılır.
+
+- **VIOP:** teminat tutarına göre vadeli kontrat lotu ve yüzde hareketin kar/zararı
+- **Hisse:** nakit alım tutarına göre lot (1 lot = 1 pay) ve K/Z; altta BIST / Nasdaq / NYSE sıralaması
+
+Arayüz `calc/out` altında statik olarak durur. Hacim, volatilite, göreli hacim ve hype sıralaması için **Node.js** gerekir; `run.py` açılışta `calc/api-server.mjs` sürecini başlatır. Node yoksa lot hesabı yine çalışır, sıralama tablosu boş kalır.
+
+Arayüzü yeniden derlemek:
+
+```bash
+cd calc
+npm install
+CALC_BASE_PATH=/calc npm run build
+```
+
 ## Pine Script sınırları
 
 TradingView Pine Script’in tamamı çalıştırılmaz. Desteklenen yapılar:
@@ -96,6 +114,8 @@ app/
     pine_parser.py     # AL koşul çıkarımı
     pine_evaluator.py  # Koşul değerlendirme
     screener.py        # Tarama motoru
+    calc_sidecar.py    # VIOP/Hisse sıralama API (Node)
+calc/                  # VIOP + Hisse hesaplayıcı (statik UI + Node API)
 static/ + templates/   # Web arayüzü
 storage/               # DB ve Pine dosyaları
 ```

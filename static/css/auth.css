@@ -119,6 +119,27 @@
   display: none;
 }
 
+.track-panel.hidden,
+.help-panel.hidden,
+.perf-panel.hidden,
+.calc-panel.hidden {
+  display: none !important;
+}
+
+.calc-panel {
+  min-height: calc(100vh - 10rem);
+}
+
+.calc-embed {
+  display: block;
+  width: 100%;
+  min-height: calc(100vh - 10rem);
+  height: 85vh;
+  border: 0;
+  border-radius: var(--radius);
+  background: #09090b;
+}
+
 .track-panel.hidden {
   display: none;
 }

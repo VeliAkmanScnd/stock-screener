@@ -1,0 +1,45 @@
+{
+  "kap": {
+    "THYAO": 3,
+    "GARAN": 2,
+    "AKBNK": 2,
+    "YKBNK": 1,
+    "ISCTR": 2,
+    "SASA": 5,
+    "EREGL": 1,
+    "TUPRS": 2,
+    "ASELS": 3,
+    "SISE": 1,
+    "PGSUS": 4,
+    "BIMAS": 2,
+    "TCELL": 2,
+    "KCHOL": 1,
+    "SAHOL": 1,
+    "ASTOR": 3,
+    "HEKTS": 4,
+    "PETKM": 2,
+    "TAVHL": 2,
+    "FROTO": 1
+  },
+  "news": {
+    "AAPL": 8,
+    "NVDA": 11,
+    "TSLA": 9,
+    "AMZN": 6,
+    "MSFT": 5,
+    "META": 7,
+    "GOOGL": 4,
+    "JPM": 3,
+    "THYAO": 2,
+    "GARAN": 1
+  },
+  "reddit": {
+    "AAPL": 40,
+    "NVDA": 55,
+    "TSLA": 70,
+    "AMZN": 22,
+    "THYAO": 8,
+    "SASA": 12,
+    "GARAN": 4
+  }
+}

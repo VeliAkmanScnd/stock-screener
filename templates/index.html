@@ -6,8 +6,8 @@
   <title>TradeLABtr Stock Screener</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/css/style.css?v=33" />
-  <link rel="stylesheet" href="/static/css/auth.css?v=1" />
+  <link rel="stylesheet" href="/static/css/style.css?v=34" />
+  <link rel="stylesheet" href="/static/css/auth.css?v=2" />
 </head>
 <body>
   <div class="app">
@@ -22,6 +22,8 @@
       <div class="header-user">
         <div class="app-tabs">
           <button type="button" class="app-tab active" id="tabScan">Tarama</button>
+          <button type="button" class="app-tab" id="tabViop">VIOP</button>
+          <button type="button" class="app-tab" id="tabHisse">Hisse</button>
           <button type="button" class="app-tab" id="tabTrack">İzleme</button>
           <button type="button" class="app-tab" id="tabPerf">Performans</button>
           <button type="button" class="app-tab" id="tabHelp">Yardım</button>
@@ -554,6 +556,24 @@
         </div>
       </article>
     </main>
+
+    <main class="calc-panel hidden" id="viopPanel">
+      <iframe
+        id="viopFrame"
+        class="calc-embed"
+        title="VIOP hesaplayıcı"
+        data-src="/calc/?tab=viop&amp;embed=1"
+      ></iframe>
+    </main>
+
+    <main class="calc-panel hidden" id="hissePanel">
+      <iframe
+        id="hisseFrame"
+        class="calc-embed"
+        title="Hisse hesaplayıcı"
+        data-src="/calc/?tab=hisse&amp;embed=1"
+      ></iframe>
+    </main>
   </div>
 
   <div class="modal-overlay" id="scheduleScanModal" hidden>
@@ -708,7 +728,7 @@
     </div>
   </div>
 
-  <script src="/static/js/auth.js?v=5"></script>
+  <script src="/static/js/auth.js?v=6"></script>
   <script src="/static/js/app.js?v=47"></script>
   <script src="/static/js/track.js?v=11"></script>
   <script src="/static/js/perf.js?v=2"></script>

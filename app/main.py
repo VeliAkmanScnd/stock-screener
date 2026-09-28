@@ -11,12 +11,14 @@ from sqlalchemy.orm import Session
 from app.api.admin_routes import router as admin_router
 from app.api.auth_deps import optional_user
 from app.api.auth_routes import router as auth_router
+from app.api.calc_routes import router as calc_router
 from app.api.schedule_routes import router as schedule_router
 from app.api.help_routes import router as help_router
 from app.api.track_routes import router as track_router
 from app.api.routes import router
 from app.config import BASE_DIR
 from app.database import get_db
+from app.services.calc_sidecar import start_calc_api, stop_calc_api
 from app.services.scheduler import start_scheduler, stop_scheduler
 from app.services.twelvedata_client import TwelveDataError
 
@@ -24,7 +26,9 @@ from app.services.twelvedata_client import TwelveDataError
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     start_scheduler()
+    start_calc_api()
     yield
+    stop_calc_api()
     stop_scheduler()
 
 
@@ -34,6 +38,7 @@ app.include_router(admin_router)
 app.include_router(schedule_router)
 app.include_router(track_router)
 app.include_router(help_router)
+app.include_router(calc_router)
 app.include_router(router)
 
 
@@ -51,8 +56,11 @@ async def unhandled_error_handler(_request: Request, exc: Exception):
 
 static_dir = BASE_DIR / "static"
 templates_dir = BASE_DIR / "templates"
+calc_out = BASE_DIR / "calc" / "out"
 
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
+if calc_out.is_dir():
+    app.mount("/calc", StaticFiles(directory=calc_out, html=True), name="calc")
 templates = Jinja2Templates(directory=templates_dir)
 
 
