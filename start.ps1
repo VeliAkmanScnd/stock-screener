@@ -7,15 +7,16 @@ if (-not (Test-Path $python)) {
     exit 1
 }
 
-$portUsers = Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction SilentlyContinue
-if ($portUsers) {
-    $pids = ($portUsers | Select-Object -ExpandProperty OwningProcess -Unique) -join ", "
-    Write-Warning "Port 8000 is already in use (PID: $pids). Stop the other server first or scheduled scans will not run."
+$port = if ($env:PORT) { [int]$env:PORT } else { 8000 }
+$freePort = Join-Path $PSScriptRoot "scripts\free-listen-port.ps1"
+if (Test-Path $freePort) {
+    & $freePort -Port $port
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 
-Write-Host "Starting TradeLABtr. VPS/LAN icin .env icinde HOST=0.0.0.0 olmali."
-if (-not $env:HOST) { $env:HOST = "0.0.0.0" }
-Write-Host "Bind http://$($env:HOST):$(if ($env:PORT) {$env:PORT} else {'8000'})"
+$env:HOST = "0.0.0.0"
+Write-Host "Starting TradeLABtr. Tarayici: http://127.0.0.1:${port}/login"
+Write-Host "Bind http://$($env:HOST):$port"
 & $python -u run.py
 if ($LASTEXITCODE -ne 0) {
     Write-Error "Sunucu kapandi (kod $LASTEXITCODE). storage\server.log dosyasina bakin."

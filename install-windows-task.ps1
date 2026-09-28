@@ -44,18 +44,11 @@ if (-not (Test-Path $Python)) {
     throw "Missing venv python at $Python. Run: python -m venv .venv then pip install -r requirements.txt"
 }
 
-# Free port 8000 if something already listens
-$listeners = Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction SilentlyContinue
-if ($listeners) {
-    $pids = $listeners | Select-Object -ExpandProperty OwningProcess -Unique
-    Write-Warning "Port 8000 in use by PID(s): $($pids -join ', '). Stop those processes first (Ctrl+C on run.py), then re-run this script."
-    foreach ($procId in $pids) {
-        try {
-            $p = Get-Process -Id $procId -ErrorAction Stop
-            Write-Host "  PID $procId = $($p.ProcessName)"
-        } catch {}
-    }
-    exit 1
+# Free port 8000 if an old python TradeLABtr is still listening
+$freePort = Join-Path $Root "scripts\free-listen-port.ps1"
+if (Test-Path $freePort) {
+    & $freePort -Port 8000
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 
 $isAdmin = Test-IsAdmin

@@ -41,28 +41,49 @@ def main() -> int:
     )
 
     reload = os.getenv("RUN_RELOAD", "").lower() in ("1", "true", "yes")
-    host = os.getenv("HOST", "127.0.0.1").strip() or "127.0.0.1"
+    host = os.getenv("HOST", "0.0.0.0").strip() or "0.0.0.0"
     port = int(os.getenv("PORT", "8000"))
 
-    print(f"TradeLABtr dinleniyor: http://{host}:{port}", flush=True)
+    print(f"TradeLABtr bind: http://{host}:{port}", flush=True)
+    print(f"Tarayici (bu makine): http://127.0.0.1:{port}/login", flush=True)
     if host in {"127.0.0.1", "localhost"}:
         print(
             "Uyari: HOST=127.0.0.1 yalnizca bu makineden acilir. "
-            "VPS icin .env icine HOST=0.0.0.0 yazin (veya start-tradelab.bat kullanin).",
+            "VPS icin start-tradelab.bat kullanin (HOST=0.0.0.0 zorlar) "
+            "veya .env icine HOST=0.0.0.0 yazin.",
             flush=True,
         )
+    else:
+        print(
+            "Baska PC'den: http://<VPS-IPv4>:{}/login  "
+            "(Windows Firewall'da TCP {} acik olmali)".format(port, port),
+            flush=True,
+        )
+    print("http://localhost kullanmayin — Windows IPv6'ya dusebilir.", flush=True)
     print(f"Log: {log_path}", flush=True)
 
     import uvicorn
 
-    uvicorn.run("app.main:app", host=host, port=port, reload=reload)
+    try:
+        uvicorn.run("app.main:app", host=host, port=port, reload=reload)
+    except OSError as exc:
+        print(f"[HATA] Port {port} dinlenemedi: {exc}", flush=True)
+        print(
+            "Baska bir TradeLABtr penceresi aciksa onu kapatin, "
+            "sonra start-tradelab.bat ile yeniden baslatin.",
+            flush=True,
+        )
+        raise
     return 0
 
 
 if __name__ == "__main__":
     try:
         raise SystemExit(main())
-    except SystemExit:
+    except SystemExit as exc:
+        code = exc.code if isinstance(exc.code, int) else 1
+        if code not in (0, None):
+            _pause_on_windows()
         raise
     except Exception:
         traceback.print_exc()

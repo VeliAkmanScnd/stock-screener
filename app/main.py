@@ -76,6 +76,11 @@ if calc_out.is_dir():
 templates = Jinja2Templates(directory=templates_dir)
 
 
+@app.get("/healthz")
+async def healthz():
+    return {"ok": True, "app": "TradeLABtr"}
+
+
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
     return templates.TemplateResponse(request, "login.html")

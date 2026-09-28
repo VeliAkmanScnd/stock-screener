@@ -24,16 +24,40 @@ if not exist ".env" (
   copy /y ".env.example" ".env" >nul
 )
 
-REM VPS: disaridan erisim. .env icinde HOST varsa o gecerli (python load_dotenv override etmez).
-if not defined HOST set HOST=0.0.0.0
+REM VPS tarayicidan erisim icin her zaman tum arayuzlere baglan.
+REM .env icinde HOST=127.0.0.1 kalsa bile bu pencere disari acar.
+set HOST=0.0.0.0
 if not defined PORT set PORT=8000
 set PYTHONUNBUFFERED=1
 
 echo Python: .venv\Scripts\python.exe
-echo Adres : http://%HOST%:%PORT%
+echo Bind  : %HOST%:%PORT%
 echo Log   : storage\server.log
+echo.
+
+echo Eski surec varsa durduruluyor (git pull sonrasi yeni kod icin)...
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\free-listen-port.ps1" %PORT%
+if errorlevel 1 (
+  echo.
+  pause
+  exit /b 1
+)
+
+echo.
+echo Tarayiciyi acin:
+echo   Bu VPS:     http://127.0.0.1:%PORT%/login
+echo   (localhost YAZMAYIN — Windows IPv6'ya gidip sayfayi acmayabilir)
+echo   Baska PC:   http://SUNUCU_IPv4:%PORT%/login
+echo   http kullanin, https degil. Portu atlamayin.
+echo.
+echo Windows Firewall ^(Yonetici CMD^):
+echo   netsh advfirewall firewall add rule name="TradeLABtr" dir=in action=allow protocol=TCP localport=%PORT%
+echo.
 echo Pencereyi kapatirsaniz tarama durur.
 echo.
+
+REM Sunucu ayaga kalkinca dogru adresi ac (localhost degil).
+start "" /b cmd /c "timeout /t 4 /nobreak >nul & start http://127.0.0.1:%PORT%/login"
 
 ".venv\Scripts\python.exe" -u run.py
 set ERR=%ERRORLEVEL%
@@ -41,6 +65,7 @@ echo.
 if not "%ERR%"=="0" (
   echo [HATA] Sunucu cikis kodu %ERR%
   echo Ayrinti icin storage\server.log dosyasina bakin.
+  echo Port doluysa bu pencereyi kapatip start-tradelab.bat'i tekrar calistirin.
 )
 pause
 exit /b %ERR%
