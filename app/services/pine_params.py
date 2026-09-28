@@ -88,6 +88,9 @@ def param_to_api_dict(p: PineInputParam) -> dict[str, Any]:
     }
     if p.options:
         d["options"] = p.options
+    elif p.kind == "timeframe":
+        d["type"] = "string"
+        d["options"] = ["", "15", "60", "120", "240", "D"]
     if p.minval is not None:
         d["min"] = p.minval
     if p.maxval is not None:

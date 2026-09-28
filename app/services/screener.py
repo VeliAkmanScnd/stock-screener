@@ -286,7 +286,11 @@ def scan_dataframe(
             elif pine_source == "bias_ts" and pine_code:
                 from app.services.pine_bias_ts import bias_ts_params_from_script, bias_ts_snapshot
 
-                snap = bias_ts_snapshot(df, **bias_ts_params_from_script(pine_code, overrides))
+                snap = bias_ts_snapshot(
+                    df,
+                    chart_tf=req.timeframe,
+                    **bias_ts_params_from_script(pine_code, overrides),
+                )
                 signals.update(snap)
                 pine_ok = bool(snap.get("pine_al"))
             elif pine_source == "candle_green_first" and pine_code:

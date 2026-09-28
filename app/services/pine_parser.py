@@ -59,7 +59,7 @@ def extract_pine_inputs(code: str) -> list[PineInputParam]:
     params: list[PineInputParam] = []
     seen: set[str] = set()
     pattern = re.compile(
-        r"(\w+)\s*=\s*input\.(int|float|bool|string|source)\(\s*"
+        r"(\w+)\s*=\s*input\.(int|float|bool|string|source|timeframe)\(\s*"
         r"([^,]+)\s*,\s*\"([^\"]+)\"([^)]*)\)",
         flags=re.I,
     )

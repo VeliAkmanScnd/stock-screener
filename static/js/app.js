@@ -967,6 +967,12 @@ function renderPineInputField(p, value) {
       buy: "BUY",
       sell: "SELL",
       both: "BUY veya SELL",
+      "": "Grafik zaman dilimi",
+      "15": "15 dakika",
+      "60": "1 saat",
+      "120": "2 saat",
+      "240": "4 saat",
+      D: "Günlük",
     };
     const opts = p.options
       .map((o) => {

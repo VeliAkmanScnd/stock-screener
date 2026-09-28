@@ -8,9 +8,31 @@ import numpy as np
 import pandas as pd
 
 from app.services import indicators as ind
+from app.services.bar_close import TIMEFRAME_SECONDS
 from app.services.pine_params import merge_pine_inputs
 
 BIAS_TS_MARKER = "__BIAS_TS_LAST__"
+
+PINE_TF_SECONDS: dict[str, int] = {
+    **TIMEFRAME_SECONDS,
+    "1": 60,
+    "3": 180,
+    "5": 300,
+    "15": 900,
+    "30": 1800,
+    "45": 2700,
+    "60": 3600,
+    "120": 7200,
+    "180": 10800,
+    "240": 14400,
+    "1h": 3600,
+    "2h": 7200,
+    "4h": 14400,
+    "d": 86400,
+    "1d": 86400,
+    "w": 604800,
+    "1w": 604800,
+}
 
 
 def _parse_indicator_title(code: str) -> str:
@@ -49,6 +71,39 @@ def _as_float(val: str | None, default: float) -> float:
         return default
 
 
+def _tf_seconds(tf: str | None) -> int | None:
+    key = str(tf or "").strip().strip('"').strip("'").lower()
+    if not key:
+        return None
+    return PINE_TF_SECONDS.get(key)
+
+
+def _hold_on_htf(series: pd.Series, ha_htf: str | None, chart_tf: str | None) -> pd.Series:
+    """Pine: o2s := newHtf ? o2 : o2s[1] when ha_htf is slower than the chart."""
+    htf_sec = _tf_seconds(ha_htf)
+    chart_sec = _tf_seconds(chart_tf)
+    if htf_sec is None:
+        return series
+    if chart_sec is not None and htf_sec <= chart_sec:
+        return series
+    idx = series.index
+    if not isinstance(idx, pd.DatetimeIndex) or len(series) == 0:
+        return series
+    freq = pd.Timedelta(seconds=htf_sec)
+    bucket_s = pd.Series(idx.floor(freq), index=idx)
+    new_htf = bucket_s.ne(bucket_s.shift(1))
+    new_htf.iloc[0] = True
+    held = np.empty(len(series), dtype=float)
+    last = np.nan
+    vals = series.to_numpy(dtype=float)
+    flags = new_htf.to_numpy(dtype=bool)
+    for i in range(len(vals)):
+        if flags[i] or not np.isfinite(last):
+            last = vals[i]
+        held[i] = last
+    return pd.Series(held, index=idx)
+
+
 def bias_ts_params_from_script(pine_code: str, overrides: dict | None = None) -> dict:
     inputs = merge_pine_inputs(pine_code, overrides)
     extra = overrides or {}
@@ -64,6 +119,7 @@ def bias_ts_params_from_script(pine_code: str, overrides: dict | None = None) ->
         "require_close_side": _as_bool(inputs.get("require_close_side"), True),
         "use_dist": _as_bool(inputs.get("use_dist"), True),
         "max_dist": max(0.0, _as_float(inputs.get("max_dist"), 5.0)),
+        "ha_htf": str(inputs.get("ha_htf") or "").strip().strip('"'),
         "side": side,
     }
 
@@ -78,8 +134,10 @@ def bias_ts_series(
     require_close_side: bool = True,
     use_dist: bool = True,
     max_dist: float = 5.0,
+    ha_htf: str = "",
+    chart_tf: str | None = None,
 ) -> dict[str, pd.Series]:
-    """Replay Pine Bias x TS state. Empty ha_htf = chart timeframe (no HTF sample)."""
+    """Replay Pine Bias x TS state. ha_htf empty = chart TF (sample every bar)."""
     o_src = df["Open"].astype(float)
     h_src = df["High"].astype(float)
     l_src = df["Low"].astype(float)
@@ -111,8 +169,12 @@ def bias_ts_series(
     c2 = ind.ema(haclose, ha_len2)
     h2 = ind.ema(hahigh, ha_len2)
     l2 = ind.ema(halow, ha_len2)
-    ha_avg = (h2 + l2) / 2.0
-    osc_bias = 100.0 * (c2 - o2)
+    o2s = _hold_on_htf(o2, ha_htf, chart_tf)
+    c2s = _hold_on_htf(c2, ha_htf, chart_tf)
+    h2s = _hold_on_htf(h2, ha_htf, chart_tf)
+    l2s = _hold_on_htf(l2, ha_htf, chart_tf)
+    ha_avg = (h2s + l2s) / 2.0
+    osc_bias = 100.0 * (c2s - o2s)
 
     src = c_src
     basis = ind.sma(src, lenn)
@@ -186,6 +248,7 @@ def bias_ts_series(
 
 def bias_ts_snapshot(df: pd.DataFrame, **params) -> dict:
     side = params.pop("side", "buy")
+    chart_tf = params.pop("chart_tf", None)
     need = params.get("ha_len", 100) + params.get("ha_len2", 100) + params.get("lenn", 20) + 5
     if df is None or len(df) < need:
         return {
@@ -194,7 +257,7 @@ def bias_ts_snapshot(df: pd.DataFrame, **params) -> dict:
             "bias_ts_sell": False,
             "bias_ts_side": side,
         }
-    s = bias_ts_series(df, **params)
+    s = bias_ts_series(df, chart_tf=chart_tf, **params)
     buy = bool(s["buy_sig"].iloc[-1])
     sell = bool(s["sell_sig"].iloc[-1])
     if side == "sell":

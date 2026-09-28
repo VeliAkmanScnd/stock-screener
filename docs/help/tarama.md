@@ -28,7 +28,8 @@ Aynı tarama aynı hisseyi **aynı fiyattan** yeniden yakalarsa satır gösteril
 - Zaman: **15 dakika**
 - Kayıtlı Pine: Bias×TS, yön AL (veya her iki yön)
 - Telegram açık, BIST grubu için ayrı bot token + chat id girilmiş olsun
-- Sinyal **kapanmış son barda** varsa eşleşir. Oluşan (henüz kapanmamış) bar sayılmaz.
+- Sinyal **kapanmış son barda BUY/SELL etiketi** varsa eşleşir. Yeşil bant veya yeşil mum yetmez; oluşan (henüz kapanmamış) bar sayılmaz.
+- Bias×TS içinde **Zaman aralığı** (ör. 1 saat) grafiktekiyle aynı olmalı; boş = grafik TF.
 
 ## Özel liste
 
