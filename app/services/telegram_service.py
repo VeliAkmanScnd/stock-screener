@@ -10,6 +10,7 @@ import httpx
 
 from app.config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, _normalize_telegram_bot_token
 from app.services.http_ssl import default_ssl_context
+from app.services.schedule_helpers import normalize_schedule_type
 from app.services.ticker_format import (
     clean_bist_symbol,
     clean_us_symbol,
@@ -20,6 +21,7 @@ from app.services.ticker_format import (
     to_binance_pair,
     to_viop_continuous_symbol,
 )
+from app.services.track_levels import TIMEFRAME_LEVEL_BENCHMARKS
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +29,16 @@ _TG_API = "https://api.telegram.org"
 _MSG_LIMIT = 3900
 _VIOP_TP_PCT = 0.04
 _VIOP_SL_PCT = 0.03
+_EXCHANGE_LABELS = {
+    "bist": "BIST",
+    "viop": "VIOP",
+    "nasdaq": "NASDAQ",
+    "nyse": "NYSE",
+    "sp500": "S&P 500",
+    "all_us": "NASDAQ + NYSE + S&P 500",
+    "binance": "Binance",
+    "custom": "Özel",
+}
 
 
 def _bot_token(override: str | None = None) -> str:
@@ -182,8 +194,37 @@ def _signal_direction(signals: dict | None) -> str:
     return "AL"
 
 
+def _exchange_label(universe: str, custom_source_universe: str | None = None) -> str:
+    src = (custom_source_universe or universe or "").strip().lower()
+    if src in _EXCHANGE_LABELS:
+        return _EXCHANGE_LABELS[src]
+    raw = (custom_source_universe or universe or "").strip()
+    return raw.upper() if raw else "—"
+
+
+def _timeframe_label(timeframe: str | None) -> str:
+    key = normalize_schedule_type(timeframe or "")
+    row = TIMEFRAME_LEVEL_BENCHMARKS.get(key)
+    if row:
+        return str(row["label"])
+    minutes = re.fullmatch(r"(\d+)m", key)
+    if minutes:
+        return f"{minutes.group(1)} dakika"
+    hours = re.fullmatch(r"(\d+)h", key)
+    if hours:
+        n = int(hours.group(1))
+        return "1 saat" if n == 1 else f"{n} saat"
+    return (timeframe or "").strip() or "—"
+
+
 def format_signal_telegram_card(
-    symbol: str, price: float, direction: str, *, market: str = "viop"
+    symbol: str,
+    price: float,
+    direction: str,
+    *,
+    market: str = "viop",
+    exchange: str | None = None,
+    timeframe: str | None = None,
 ) -> str:
     yon = "SAT" if str(direction).strip().upper() == "SAT" else "AL"
     if yon == "AL":
@@ -202,20 +243,34 @@ def format_signal_telegram_card(
         contract = to_binance_pair(symbol) or str(symbol).strip().upper()
     else:
         contract = clean_us_symbol(symbol)
-    return (
-        f"Kontrat\t: {contract}\n"
-        f"Fiyat\t: {_tr_price(price)}\n"
-        f"Yön\t\t: {yon}\n"
-        f"Kar AL\t: {_tr_price(tp)}\n"
-        f"Stop\t\t: {_tr_price(sl)}"
+    lines = []
+    if exchange:
+        lines.append(f"Borsa\t: {exchange}")
+    if timeframe:
+        lines.append(f"Zaman dilimi\t: {_timeframe_label(timeframe)}")
+    lines.extend(
+        [
+            f"Kontrat\t: {contract}",
+            f"Fiyat\t: {_tr_price(price)}",
+            f"Yön\t\t: {yon}",
+            f"Kar AL\t: {_tr_price(tp)}",
+            f"Stop\t\t: {_tr_price(sl)}",
+        ]
     )
+    return "\n".join(lines)
 
 
 def format_viop_telegram_card(symbol: str, price: float, direction: str) -> str:
     return format_signal_telegram_card(symbol, price, direction, market="viop")
 
 
-def _signal_cards(results: list[dict] | None, *, market: str) -> list[str]:
+def _signal_cards(
+    results: list[dict] | None,
+    *,
+    market: str,
+    exchange: str | None = None,
+    timeframe: str | None = None,
+) -> list[str]:
     cards: list[str] = []
     for row in results or []:
         try:
@@ -229,7 +284,12 @@ def _signal_cards(results: list[dict] | None, *, market: str) -> list[str]:
             continue
         cards.append(
             format_signal_telegram_card(
-                symbol, price, _signal_direction(row.get("signals")), market=market
+                symbol,
+                price,
+                _signal_direction(row.get("signals")),
+                market=market,
+                exchange=exchange,
+                timeframe=timeframe,
             )
         )
     return cards
@@ -309,7 +369,10 @@ def send_telegram_scan_result(
     bot_token, extra_chat_ids = merge_telegram_credentials(bot_token, extra_chat_ids)
     chats = _resolve_chats(extra_chat_ids, bot_token)
     market = _card_market(universe, custom_source_universe, results)
-    cards = _signal_cards(results, market=market)
+    exchange = _exchange_label(universe, custom_source_universe)
+    cards = _signal_cards(
+        results, market=market, exchange=exchange, timeframe=timeframe
+    )
     if not cards:
         if results or match_count > 0:
             raise RuntimeError(

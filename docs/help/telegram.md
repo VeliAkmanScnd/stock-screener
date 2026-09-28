@@ -6,17 +6,19 @@ Bildirimler taramada eşleşme olduğunda gider. Boş taramada Telegram sessiz k
 
 Her eşleşme **ayrı mesajdır**. Dosya (txt) eklenmez, tarama adı başlıkta yazmaz.
 
-Örnek (VIOP):
+Örnek (VIOP 15 dakika):
 
 ```
+Borsa: VIOP
+Zaman dilimi: 15 dakika
 Kontrat: AEFES1!
-Fiyat: 184.50
+Fiyat: 184,50
 Yön: AL
-Kar AL: +4%
-Stop: −3%
+Kar AL: 191,88
+Stop: 178,97
 ```
 
-BIST’te sembol `THYAO`, ABD’de `TER` olur. SAT’ta Kar AL aşağı, Stop yukarı hesaplanır.
+BIST / NASDAQ / NYSE kartlarında borsa adı evrene göre değişir (`BIST`, `NASDAQ`, `NYSE`, `S&P 500`). SAT’ta Kar AL aşağı, Stop yukarı hesaplanır.
 
 Telegram kartındaki +4/−3, **Performans benchmark’ından bağımsızdır**. Performans 15m için +2/−1.5 kullanır.
 
