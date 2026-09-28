@@ -10,7 +10,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
-import yfinance as yf
 
 from app.config import BASE_DIR
 
@@ -158,6 +157,8 @@ def _download_batch(items: list[dict]) -> list[dict]:
         return []
     symbols = [row["yahoo"] for row in items]
     try:
+        import yfinance as yf
+
         data = yf.download(
             tickers=" ".join(symbols),
             period="3mo",

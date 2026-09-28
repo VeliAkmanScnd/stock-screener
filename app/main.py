@@ -18,7 +18,6 @@ from app.api.track_routes import router as track_router
 from app.api.routes import router
 from app.config import BASE_DIR
 from app.database import get_db
-from app.services.calc_screener import start_calc_screener
 from app.services.calc_sidecar import start_calc_api, stop_calc_api
 from app.services.scheduler import start_scheduler, stop_scheduler
 from app.services.twelvedata_client import TwelveDataError
@@ -27,10 +26,21 @@ from app.services.twelvedata_client import TwelveDataError
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     start_scheduler()
-    start_calc_screener()
-    start_calc_api()
+    try:
+        from app.services.calc_screener import start_calc_screener
+
+        start_calc_screener()
+    except Exception as exc:
+        print(f"Calc ranking baslatilamadi (tarama calisir): {exc}", flush=True)
+    try:
+        start_calc_api()
+    except Exception as exc:
+        print(f"Calc Node sidecar baslatilamadi: {exc}", flush=True)
     yield
-    stop_calc_api()
+    try:
+        stop_calc_api()
+    except Exception:
+        pass
     stop_scheduler()
 
 

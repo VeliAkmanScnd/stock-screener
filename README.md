@@ -64,6 +64,16 @@ Zamanlanmış taramalar **yalnızca sunucu çalışırken** tetiklenir; pencerey
 
 Tarayıcı: http://127.0.0.1:8000
 
+## VPS (Windows) baslatma
+
+1. `git pull`
+2. `.env` yoksa `copy .env.example .env` — icinde `HOST=0.0.0.0` olmali
+3. Cift tik: `start-tradelab.bat` (pencere acik kalsin; kapanirsa hata metni gorunur)
+4. Log: `storage\server.log`
+5. Firewall’da `PORT` (varsayilan 8000) acik olmali
+
+`start-tradelab.bat` venv yoksa veya python dusurse pencereyi kapatmaz. Port 8000 doluysa once eski `python run.py` / TradeLABtr penceresini kapatin.
+
 ## VIOP ve Hisse hesaplayıcı
 
 Giriş yaptıktan sonra üst menüde **VIOP** ve **Hisse** sekmeleri açılır.

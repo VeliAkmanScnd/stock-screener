@@ -13,5 +13,11 @@ if ($portUsers) {
     Write-Warning "Port 8000 is already in use (PID: $pids). Stop the other server first or scheduled scans will not run."
 }
 
-Write-Host "Starting TradeLABtr on http://127.0.0.1:8000 (scheduled scans run while this window stays open)..."
-& $python run.py
+Write-Host "Starting TradeLABtr. VPS/LAN icin .env icinde HOST=0.0.0.0 olmali."
+if (-not $env:HOST) { $env:HOST = "0.0.0.0" }
+Write-Host "Bind http://$($env:HOST):$(if ($env:PORT) {$env:PORT} else {'8000'})"
+& $python -u run.py
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "Sunucu kapandi (kod $LASTEXITCODE). storage\server.log dosyasina bakin."
+    exit $LASTEXITCODE
+}
