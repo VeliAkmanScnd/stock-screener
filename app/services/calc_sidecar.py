@@ -25,15 +25,23 @@ def calc_ui_available() -> bool:
     return (CALC_OUT / "index.html").is_file()
 
 
+def _find_node() -> str | None:
+    for name in ("node", "node.exe"):
+        found = shutil.which(name)
+        if found:
+            return found
+    return None
+
+
 def start_calc_api() -> None:
     global _proc
     if _proc is not None and _proc.poll() is None:
         return
-    node = shutil.which("node")
+    node = _find_node()
     script = CALC_DIR / "api-server.mjs"
     if node is None or not script.is_file():
         print(
-            "Calc API: node veya calc/api-server.mjs yok; VIOP/Hisse lot hesabı çalışır, sıralama kapalı.",
+            "Calc API: Node yok; sıralama Python/yfinance ile devam eder.",
             file=sys.stderr,
         )
         return
@@ -41,10 +49,14 @@ def start_calc_api() -> None:
     env["CALC_API_HOST"] = CALC_API_HOST
     env["CALC_API_PORT"] = str(CALC_API_PORT)
     env["PORT"] = str(CALC_API_PORT)
+    kwargs: dict = {}
+    if os.name == "nt":
+        kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
     _proc = subprocess.Popen(
         [node, str(script)],
         cwd=str(CALC_DIR),
         env=env,
+        **kwargs,
     )
     print(f"Calc API başlatıldı (pid {_proc.pid}) {calc_api_base()}", file=sys.stderr)
 

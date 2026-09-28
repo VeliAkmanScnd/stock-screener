@@ -71,7 +71,7 @@ Giriş yaptıktan sonra üst menüde **VIOP** ve **Hisse** sekmeleri açılır.
 - **VIOP:** teminat tutarına göre vadeli kontrat lotu ve yüzde hareketin kar/zararı
 - **Hisse:** nakit alım tutarına göre lot (1 lot = 1 pay) ve K/Z; altta BIST / Nasdaq / NYSE sıralaması
 
-Arayüz `calc/out` altında statik olarak durur. Hacim, volatilite, göreli hacim ve hype sıralaması için **Node.js** gerekir; `run.py` açılışta `calc/api-server.mjs` sürecini başlatır. Node yoksa lot hesabı yine çalışır, sıralama tablosu boş kalır.
+Arayüz `calc/out` altında statik olarak durur. Nasdaq / NYSE isim listesi ve hacim-volatilite sıralaması FastAPI içinde **yfinance** ile gelir (Node gerekmez). Node.js varsa `calc/api-server.mjs` hype (haber/Reddit) için ek kaynak olur.
 
 Arayüzü yeniden derlemek:
 
