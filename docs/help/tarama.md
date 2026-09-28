@@ -1,6 +1,6 @@
 # Tarama
 
-Tarama sekmesi, seçilen evrendeki sembolleri zaman dilimine göre indirir, filtreleri ve isteğe bağlı Pine AL koşulunu uygular. Sonuçlar tabloda görünür; aynı anda İzleme’ye yazılabilir ve Telegram’a gidebilir.
+Tarama sekmesi, seçilen evrendeki sembolleri zaman dilimine göre indirir, filtreleri ve isteğe bağlı Pine AL koşulunu uygular. Sonuçlar tabloda görünür; aynı anda Performans’a yazılabilir ve Telegram’a gidebilir.
 
 ## Adım adım
 
@@ -18,7 +18,7 @@ Tarama sekmesi, seçilen evrendeki sembolleri zaman dilimine göre indirir, filt
 - Filtre: EMA kesişimi 9 / 21, RSI 40–70
 - Başlat → eşleşenler (ör. THYAO, AKBNK) sonuç tablosunda
 - **TV listesi indir** ile TradingView izleme listesine aktarın
-- **İzlemeye ekle** yedek yoldur; başarılı tarama zaten otomatik ekler
+- **Performansa ekle** yedek yoldur; başarılı tarama zaten otomatik ekler
 
 ## Örnek: NASDAQ 15m Bias×TS
 

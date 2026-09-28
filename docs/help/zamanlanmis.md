@@ -6,7 +6,7 @@ Tarama ekranındaki **Zamanlanmış tarama** mevcut evren, filtre, Pine ve periy
 
 1. Taramayı elle bir kez ayarlayın (evren, 15m, Pine, Telegram).
 2. **Zamanlanmış tarama**’ya basın.
-3. **Preset adı** verin: `Bias TS NASDAQ 15m`. Bu isim İzleme kaynağı ve Performans “tarama adı” olur.
+3. **Preset adı** verin: `Bias TS NASDAQ 15m`. Bu isim Performans kaynağı ve “tarama adı” olur.
 4. **Periyot** tarama zaman dilimiyle aynı seçeneklerdir (5m … 1W).
 5. Saat / pencere ve haftanın günlerini seçin.
 6. Bildirim kanalını seçin: **e-posta**, **Telegram** veya ikisi. En az biri gerekir; e-posta zorunlu değildir.
@@ -21,7 +21,7 @@ Tarama ekranındaki **Zamanlanmış tarama** mevcut evren, filtre, Pine ve periy
 - Bildirim: Telegram (e-posta kapalı kalabilir)
 - Telegram: VIOP bot + VIOP grup chat id
 
-Her çalışmada eşleşmeler İzleme’ye eklenir. TP sonrası açık bir AL varsa, yeni SAT satırı onu **ters sinyal** ile kapatır.
+Her çalışmada eşleşmeler Performans’a eklenir. TP sonrası açık bir AL varsa, yeni SAT satırı onu **ters sinyal** ile kapatır.
 
 ## Örnek: her gün 09:35 BIST
 

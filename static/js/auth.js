@@ -122,44 +122,42 @@ function loadCalcFrame(tab) {
 }
 
 function switchAppTab(tab) {
+  if (tab === "track") tab = "perf";
   const scan = qs("#scanPanel");
-  const track = qs("#trackPanel");
   const perf = qs("#perfPanel");
   const help = qs("#helpPanel");
   const admin = qs("#adminPanel");
   const viop = qs("#viopPanel");
   const hisse = qs("#hissePanel");
   const tabScan = qs("#tabScan");
-  const tabTrack = qs("#tabTrack");
   const tabPerf = qs("#tabPerf");
   const tabHelp = qs("#tabHelp");
   const tabAdmin = qs("#tabAdmin");
   const tabViop = qs("#tabViop");
   const tabHisse = qs("#tabHisse");
   const isAdmin = tab === "admin";
-  const isTrack = tab === "track";
   const isPerf = tab === "perf";
   const isHelp = tab === "help";
   const isViop = tab === "viop";
   const isHisse = tab === "hisse";
-  const hideScan = isAdmin || isTrack || isPerf || isHelp || isViop || isHisse;
+  const hideScan = isAdmin || isPerf || isHelp || isViop || isHisse;
   if (scan) scan.classList.toggle("hidden", hideScan);
-  if (track) track.classList.toggle("hidden", !isTrack);
   if (perf) perf.classList.toggle("hidden", !isPerf);
   if (help) help.classList.toggle("hidden", !isHelp);
   if (viop) viop.classList.toggle("hidden", !isViop);
   if (hisse) hisse.classList.toggle("hidden", !isHisse);
   if (admin) admin.classList.toggle("active", isAdmin);
   if (tabScan) tabScan.classList.toggle("active", tab === "scan");
-  if (tabTrack) tabTrack.classList.toggle("active", isTrack);
   if (tabPerf) tabPerf.classList.toggle("active", isPerf);
   if (tabHelp) tabHelp.classList.toggle("active", isHelp);
   if (tabViop) tabViop.classList.toggle("active", isViop);
   if (tabHisse) tabHisse.classList.toggle("active", isHisse);
   if (tabAdmin) tabAdmin.classList.toggle("active", isAdmin);
   if (isAdmin) loadAdminUsers();
-  if (isTrack && typeof onTrackTabShown === "function") onTrackTabShown();
-  if (isPerf && typeof onPerfTabShown === "function") onPerfTabShown();
+  if (isPerf) {
+    if (typeof onTrackTabShown === "function") onTrackTabShown();
+    if (typeof onPerfTabShown === "function") onPerfTabShown();
+  }
   if (isHelp && typeof onHelpTabShown === "function") onHelpTabShown();
   if (isViop || isHisse) loadCalcFrame(tab);
 }
@@ -256,7 +254,6 @@ function initAuth() {
   qs("#tabScan")?.addEventListener("click", () => switchAppTab("scan"));
   qs("#tabViop")?.addEventListener("click", () => switchAppTab("viop"));
   qs("#tabHisse")?.addEventListener("click", () => switchAppTab("hisse"));
-  qs("#tabTrack")?.addEventListener("click", () => switchAppTab("track"));
   qs("#tabPerf")?.addEventListener("click", () => switchAppTab("perf"));
   qs("#tabHelp")?.addEventListener("click", () => switchAppTab("help"));
   qs("#tabAdmin")?.addEventListener("click", () => switchAppTab("admin"));

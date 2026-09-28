@@ -2143,7 +2143,7 @@ async function runScan() {
     );
     let msg = `Tamamlandı — ${data.count} eşleşme`;
     if (data.track_added != null) {
-      msg += ` · izlemeye ${data.track_added}`;
+      msg += ` · performansa ${data.track_added}`;
     }
     if (data.stats) {
       const s = data.stats;

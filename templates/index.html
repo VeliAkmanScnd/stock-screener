@@ -6,8 +6,8 @@
   <title>TradeLABtr Stock Screener</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/css/style.css?v=34" />
-  <link rel="stylesheet" href="/static/css/auth.css?v=2" />
+  <link rel="stylesheet" href="/static/css/style.css?v=35" />
+  <link rel="stylesheet" href="/static/css/auth.css?v=3" />
 </head>
 <body>
   <div class="app">
@@ -24,7 +24,6 @@
           <button type="button" class="app-tab active" id="tabScan">Tarama</button>
           <button type="button" class="app-tab" id="tabViop">VIOP</button>
           <button type="button" class="app-tab" id="tabHisse">Hisse</button>
-          <button type="button" class="app-tab" id="tabTrack">İzleme</button>
           <button type="button" class="app-tab" id="tabPerf">Performans</button>
           <button type="button" class="app-tab" id="tabHelp">Yardım</button>
           <button type="button" class="app-tab" id="tabAdmin" hidden>Kullanıcılar</button>
@@ -327,9 +326,9 @@
                 class="btn secondary"
                 id="btnTrackResults"
                 disabled
-                title="Sonuçları izleme listesine ekle"
+                title="Sonuçları performans listesine ekle"
               >
-                İzlemeye ekle
+                Performansa ekle
               </button>
               <button
                 type="button"
@@ -373,12 +372,18 @@
       </section>
     </main>
 
-    <main class="layout track-panel hidden" id="trackPanel">
-      <section class="card track-settings-card">
-        <h2>İzleme ayarları</h2>
+    <main class="layout track-panel hidden" id="perfPanel">
+      <nav class="perf-section-nav" aria-label="Performans bölümleri">
+        <a href="#perfSettings">Takip ayarları</a>
+        <a href="#perfPositions">Pozisyonlar</a>
+        <a href="#perfReport">R raporu</a>
+        <a href="#perfHistory">Rapor satırları</a>
+      </nav>
+      <section class="card track-settings-card" id="perfSettings">
+        <h2>Takip ayarları</h2>
         <p class="hint">Yeni eşleşmeler periyot benchmark’ına göre TP/SL alır (15m +2/−1.5, 1s +3/−2, 1g +8/−5). Saat başı high/low güncellenir; TP sonrası ters sinyale veya 10 işlem gününe kadar izlenir.</p>
         <div class="tf-bench-wrap">
-          <p class="hint">Periyot TP/SL benchmark</p>
+          <p class="hint">Periyot TP/SL benchmark — yeni pozisyonlar buna göre açılır</p>
           <div class="tf-bench-grid" id="trackLevelBenchmarks"></div>
         </div>
         <form id="trackSettingsForm" class="track-settings-form">
@@ -415,10 +420,10 @@
         <p class="auth-status" id="trackSettingsStatus"></p>
       </section>
 
-      <section class="card track-list-card">
+      <section class="card track-list-card" id="perfPositions">
         <div class="track-list-head">
           <div>
-            <h2>Performans izleme</h2>
+            <h2>Pozisyonlar</h2>
             <p class="hint" id="trackListHint">Aktif pozisyonlar — fiyatlar saat başı güncellenir (Pzt–Cum 10:00–23:00).</p>
           </div>
           <div class="track-list-actions">
@@ -444,22 +449,16 @@
               <tr id="trackTableHeadRow"></tr>
             </thead>
             <tbody id="trackPositionsBody">
-              <tr class="empty"><td colspan="15">Henüz izlenen pozisyon yok.</td></tr>
+              <tr class="empty"><td colspan="15">Henüz pozisyon yok.</td></tr>
             </tbody>
           </table>
         </div>
         <p class="auth-status" id="trackListStatus"></p>
       </section>
-    </main>
 
-    <main class="layout track-panel hidden" id="perfPanel">
-      <section class="card">
+      <section class="card" id="perfReport">
         <h2>Performans raporu</h2>
         <p class="hint">Sıra, kapanmış işlemlerin beklenen R değerine göredir. 20 kapanmış işlemden az gruplar «yetersiz» işaretlenir ve sıralanmaz. Ters sinyal, o periyottaki tarama tekrar çalışıp aksi yön basınca gelir.</p>
-        <div class="tf-bench-wrap">
-          <p class="hint">Periyot TP/SL benchmark — yeni izlemeler buna göre açılır</p>
-          <div class="tf-bench-grid" id="perfLevelBenchmarks"></div>
-        </div>
         <form id="perfReportForm" class="perf-filters">
           <label class="field">
             <span>Sınıflandır</span>
@@ -511,9 +510,9 @@
           </table>
         </div>
       </section>
-      <section class="card">
-        <h2>Geçmiş kayıtlar</h2>
-        <p class="hint">Aynı filtrelere göre tekil izleme satırları. Max %, TP/SL süreleri ve arşiv durumu burada tutulur.</p>
+      <section class="card" id="perfHistory">
+        <h2>Rapor satırları</h2>
+        <p class="hint">Aynı filtrelere göre tekil kayıtlar. Max %, TP/SL süreleri ve arşiv durumu burada tutulur. Canlı tablo yukarıda Aktif / Geçmiş altındadır.</p>
         <div class="table-wrap">
           <table class="scheduled-scans-table track-table">
             <thead>
@@ -728,10 +727,10 @@
     </div>
   </div>
 
-  <script src="/static/js/auth.js?v=6"></script>
-  <script src="/static/js/app.js?v=47"></script>
-  <script src="/static/js/track.js?v=11"></script>
-  <script src="/static/js/perf.js?v=2"></script>
-  <script src="/static/js/help.js?v=1"></script>
+  <script src="/static/js/auth.js?v=7"></script>
+  <script src="/static/js/app.js?v=48"></script>
+  <script src="/static/js/track.js?v=12"></script>
+  <script src="/static/js/perf.js?v=3"></script>
+  <script src="/static/js/help.js?v=2"></script>
 </body>
 </html>

@@ -619,7 +619,7 @@ function renderTrackTableBody(rows, isActive) {
   if (!trackAllRows.length) {
     tbody.innerHTML =
       trackView === "active"
-        ? '<tr class="empty"><td colspan="15">Henüz izlenen pozisyon yok. Zamanlanmış tarama veya «İzlemeye ekle» kullanın.</td></tr>'
+        ? '<tr class="empty"><td colspan="15">Henüz pozisyon yok. Zamanlanmış tarama veya «Performansa ekle» kullanın.</td></tr>'
         : '<tr class="empty"><td colspan="15">Kapalı kayıt yok.</td></tr>';
     updateTrackFilterToolbar();
     updateTrackHeaderFilterStates();
@@ -674,7 +674,7 @@ function renderTrackTableBody(rows, isActive) {
 
   tbody.querySelectorAll("[data-track-close]").forEach((btn) => {
     btn.addEventListener("click", async () => {
-      if (!confirm("Bu pozisyon izlemeden kaldırılsın mı?")) return;
+      if (!confirm("Bu pozisyon listeden kaldırılsın mı?")) return;
       await apiFetch(`/api/track/positions/${btn.dataset.trackClose}/close`, { method: "POST" });
       loadTrackPositions();
     });
@@ -1069,9 +1069,9 @@ async function ingestLastScanToTrack() {
       body: JSON.stringify(payload),
     });
     const data = await res.json();
-    setStatus(`${data.added ?? 0} sembol izlemeye eklendi.`, "ok");
+    setStatus(`${data.added ?? 0} sembol performansa eklendi.`, "ok");
   } catch (e) {
-    setStatus("İzleme hatası: " + e.message, "error");
+    setStatus("Performans ekleme hatası: " + e.message, "error");
   }
 }
 

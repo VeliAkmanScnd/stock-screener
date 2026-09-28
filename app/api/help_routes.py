@@ -19,8 +19,7 @@ HELP_DIR = BASE_DIR / "docs" / "help"
 TOPICS: list[dict[str, str]] = [
     {"id": "genel", "title": "Genel bakış", "file": "genel.md", "summary": "Sekmeler, günlük akış ve örnek senaryo."},
     {"id": "tarama", "title": "Tarama", "file": "tarama.md", "summary": "Evren, filtre, Pine ve sonuçlar."},
-    {"id": "izleme", "title": "İzleme", "file": "izleme.md", "summary": "TP/SL, saatlik fiyat, aktif / geçmiş."},
-    {"id": "performans", "title": "Performans takibi", "file": "performans.md", "summary": "R sıralaması, benchmark ve örnekler."},
+    {"id": "performans", "title": "Performans takibi", "file": "performans.md", "summary": "Pozisyonlar, TP/SL, R sıralaması ve örnekler."},
     {"id": "zamanlanmis", "title": "Zamanlanmış taramalar", "file": "zamanlanmis.md", "summary": "Kayıt, saat ve kuyruk."},
     {"id": "telegram", "title": "Telegram ve e-posta", "file": "telegram.md", "summary": "Kart formatı, bot ve grup."},
     {"id": "evrenler", "title": "Evrenler ve veri", "file": "evrenler.md", "summary": "ABD, BIST, VIOP, Binance."},
@@ -29,6 +28,8 @@ TOPICS: list[dict[str, str]] = [
 
 
 def _topic(topic_id: str) -> dict[str, str] | None:
+    if topic_id == "izleme":
+        topic_id = "performans"
     return next((t for t in TOPICS if t["id"] == topic_id), None)
 
 

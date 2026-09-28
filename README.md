@@ -8,6 +8,7 @@ Amerikan borsaları (S&P 500, NASDAQ, NYSE), **Borsa İstanbul (BIST)** ve **Bin
 - **Pine Script:** `.txt` dosyası yükleme, SQLite’da kalıcı kayıt, **AL** (alış) koşulunun otomatik çıkarımı
 - **Tarama:** ABD → yfinance; BIST → yfinance (`.IS`); **Binance** → Binance klines (USDT çiftleri, örn. `BTC`)
 - **VIOP / Hisse hesaplayıcı:** üst menüde ayrı sekmeler; lot ve K/Z hesabı, BIST/Nasdaq/NYSE hacim-volatilite-hype sıralaması
+- **Performans:** tarama eşleşmelerini TP/SL ile takip, grafik, aktif/geçmiş liste ve beklenen R raporu
 - **BIST sembol listesi:** BigPara public API (API anahtarı gerekmez)
 - **TradingView:** Sonuçları `.txt` izleme listesi olarak indir
 

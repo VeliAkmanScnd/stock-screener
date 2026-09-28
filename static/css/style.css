@@ -1532,6 +1532,34 @@ body {
   margin: 0.75rem 0 1rem;
 }
 
+.perf-section-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.perf-section-nav a {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.28rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--silver);
+  text-decoration: none;
+}
+
+.perf-section-nav a:hover {
+  border-color: var(--silver-dim);
+  color: var(--text, #e8eaed);
+}
+
+#perfSettings,
+#perfPositions,
+#perfReport,
+#perfHistory {
+  scroll-margin-top: 0.75rem;
+}
+
 .tf-bench-wrap {
   margin: 0.75rem 0 1rem;
 }

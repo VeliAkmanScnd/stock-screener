@@ -18,7 +18,7 @@ Stop: −3%
 
 BIST’te sembol `THYAO`, ABD’de `TER` olur. SAT’ta Kar AL aşağı, Stop yukarı hesaplanır.
 
-Telegram kartındaki +4/−3, **İzleme benchmark’ından bağımsızdır**. İzleme 15m için +2/−1.5 kullanır.
+Telegram kartındaki +4/−3, **Performans benchmark’ından bağımsızdır**. Performans 15m için +2/−1.5 kullanır.
 
 ## Bot ve grup
 
