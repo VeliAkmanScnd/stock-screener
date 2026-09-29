@@ -1,4 +1,4 @@
-"""VIOP contract list + OHLCV (borsapy quotes; history via dayanak / index)."""
+"""VIOP contract list + OHLCV (TradingView continuous UNDERLYING1!, then dayanak fallback)."""
 
 from __future__ import annotations
 
@@ -7,7 +7,11 @@ from typing import Callable
 
 import pandas as pd
 
-from app.services.ticker_format import clean_viop_symbol, viop_underlying
+from app.services.ticker_format import (
+    clean_viop_symbol,
+    to_viop_continuous_symbol,
+    viop_underlying,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +90,12 @@ def _history_borsapy(symbol: str, timeframe: str) -> pd.DataFrame | None:
     from app.services.borsapy_client import fetch_ohlcv_batch_borsapy
 
     frames = fetch_ohlcv_batch_borsapy([symbol], timeframe)
-    return _pick_frame(frames, symbol, clean_viop_symbol(symbol))
+    return _pick_frame(
+        frames,
+        symbol,
+        clean_viop_symbol(symbol),
+        to_viop_continuous_symbol(symbol),
+    )
 
 
 def _history_yahoo_underlying(underlying: str, timeframe: str) -> pd.DataFrame | None:
@@ -94,21 +103,25 @@ def _history_yahoo_underlying(underlying: str, timeframe: str) -> pd.DataFrame |
     from app.services.batch_data import fetch_yfinance_ohlcv_batch
 
     und = viop_underlying(underlying)
-    if not und or und.startswith("F_"):
+    if not und or und.startswith("F_") or und.endswith("1!"):
         return None
     frames = fetch_yfinance_ohlcv_batch([und], timeframe, "bist")
     return _pick_frame(frames, und)
 
 
 def fetch_ohlcv_one_viop(symbol: str, timeframe: str) -> pd.DataFrame | None:
-    """History via dayanak (cash/index). Contract premium is not available."""
+    """Prefer TradingView continuous (AEFES1!), then dayanak cash/index."""
     code = clean_viop_symbol(symbol)
     und = viop_underlying(code)
+    continuous = to_viop_continuous_symbol(code)
     candidates = []
-    if und:
+    if continuous:
+        candidates.append(continuous)
+    if und and und not in candidates and not und.endswith("1!"):
         candidates.append(und)
-    if code and code != und:
+    if code and code not in candidates:
         candidates.append(code)
+
     for candidate in candidates:
         try:
             frame = _usable(_history_borsapy(candidate, timeframe))
@@ -116,10 +129,15 @@ def fetch_ohlcv_one_viop(symbol: str, timeframe: str) -> pd.DataFrame | None:
                 return frame
         except Exception as exc:
             logger.debug("VIOP borsapy %s: %s", candidate, exc)
-        if not candidate.startswith("F_"):
+        if not candidate.startswith("F_") and not candidate.endswith("1!"):
             try:
                 frame = _usable(_history_yahoo_underlying(candidate, timeframe))
                 if frame is not None:
+                    logger.warning(
+                        "VIOP %s: continuous yok, dayanak (%s) kullanıldı — TV vadeli ile fark olabilir",
+                        code,
+                        candidate,
+                    )
                     return frame
             except Exception as exc:
                 logger.debug("VIOP yahoo %s: %s", candidate, exc)
@@ -135,40 +153,85 @@ def fetch_ohlcv_batch_viop(
     if not clean:
         return {}
 
-    by_und: dict[str, list[str]] = {}
+    by_cont: dict[str, list[str]] = {}
     for code in clean:
-        by_und.setdefault(viop_underlying(code) or code, []).append(code)
+        cont = to_viop_continuous_symbol(code)
+        by_cont.setdefault(cont or code, []).append(code)
 
-    unique_und = list(by_und.keys())
-    und_frames: dict[str, pd.DataFrame] = {}
+    unique_cont = list(by_cont.keys())
+    cont_frames: dict[str, pd.DataFrame] = {}
     try:
         from app.services.borsapy_client import fetch_ohlcv_batch_borsapy
 
-        und_frames.update(fetch_ohlcv_batch_borsapy(unique_und, timeframe, on_progress=on_progress))
-    except Exception as exc:
-        logger.warning("VIOP borsapy batch failed: %s", exc)
-
-    missing = [u for u in unique_und if u not in und_frames]
-    if missing:
-        from app.services.batch_data import fetch_yfinance_ohlcv_batch
-
-        extra = fetch_yfinance_ohlcv_batch(
-            missing,
-            timeframe,
-            "bist",
-            on_progress=on_progress,
-            progress_offset=len(und_frames),
-            progress_total=len(unique_und),
+        fetched = fetch_ohlcv_batch_borsapy(
+            unique_cont, timeframe, on_progress=on_progress
         )
-        und_frames.update(extra)
+        for key, frame in fetched.items():
+            norm = _usable(frame)
+            if norm is None:
+                continue
+            cont_frames[key] = norm
+            cont = to_viop_continuous_symbol(key)
+            if cont and cont not in cont_frames:
+                cont_frames[cont] = norm
+    except Exception as exc:
+        logger.warning("VIOP continuous batch failed: %s", exc)
+
+    missing_und = []
+    for cont, codes in by_cont.items():
+        if cont not in cont_frames and not any(c in cont_frames for c in codes):
+            und = viop_underlying(codes[0])
+            if und and not und.endswith("1!"):
+                missing_und.append(und)
+
+    und_frames: dict[str, pd.DataFrame] = {}
+    if missing_und:
+        missing_und = sorted(set(missing_und))
+        try:
+            from app.services.borsapy_client import fetch_ohlcv_batch_borsapy
+
+            for und, frame in fetch_ohlcv_batch_borsapy(missing_und, timeframe).items():
+                norm = _usable(frame)
+                if norm is not None:
+                    und_frames[und] = norm
+        except Exception as exc:
+            logger.debug("VIOP dayanak borsapy: %s", exc)
+
+        still = [u for u in missing_und if u not in und_frames]
+        if still:
+            from app.services.batch_data import fetch_yfinance_ohlcv_batch
+
+            extra = fetch_yfinance_ohlcv_batch(
+                still,
+                timeframe,
+                "bist",
+                on_progress=on_progress,
+                progress_offset=len(cont_frames),
+                progress_total=len(unique_cont),
+            )
+            for und, frame in extra.items():
+                norm = _usable(frame)
+                if norm is not None:
+                    und_frames[und] = norm
+                    logger.warning(
+                        "VIOP %s: continuous yok, dayanak kullanıldı — TV vadeli ile fark olabilir",
+                        und,
+                    )
 
     out: dict[str, pd.DataFrame] = {}
-    for und, codes in by_und.items():
-        frame = und_frames.get(und)
+    for cont, codes in by_cont.items():
+        frame = cont_frames.get(cont)
+        if frame is None:
+            und = viop_underlying(codes[0])
+            frame = und_frames.get(und) if und else None
         if frame is None:
             continue
         for code in codes:
             out[code] = frame.copy()
 
-    logger.info("VIOP OHLCV %d / %d (dayanak serisi)", len(out), len(clean))
+    logger.info(
+        "VIOP OHLCV %d / %d (öncelik: sürekli 1!)",
+        len(out),
+        len(clean),
+    )
     return out

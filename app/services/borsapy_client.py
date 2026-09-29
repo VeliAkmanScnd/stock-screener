@@ -80,10 +80,15 @@ def _split_download(data: pd.DataFrame, symbols: list[str]) -> dict[str, pd.Data
         return out
 
     if isinstance(data.columns, pd.MultiIndex):
+        level0 = {str(x) for x in data.columns.get_level_values(0)}
         for sym in symbols:
-            code = clean_bist_symbol(sym)
+            code = clean_bist_symbol(sym) or str(sym).strip()
+            aliases = [code, str(sym).strip(), code.replace("1!", ""), f"{code}1!" if not code.endswith("1!") else code]
+            hit = next((a for a in aliases if a and a in level0), None)
+            if not hit:
+                continue
             try:
-                sub = data.xs(code, axis=1, level=0, drop_level=True)
+                sub = data.xs(hit, axis=1, level=0, drop_level=True)
                 frame = _normalize_frame(sub)
                 if frame is not None:
                     out[code] = frame
@@ -92,7 +97,8 @@ def _split_download(data: pd.DataFrame, symbols: list[str]) -> dict[str, pd.Data
     else:
         frame = _normalize_frame(data)
         if frame is not None and len(symbols) == 1:
-            out[clean_bist_symbol(symbols[0])] = frame
+            key = clean_bist_symbol(symbols[0]) or str(symbols[0]).strip()
+            out[key] = frame
     return out
 
 

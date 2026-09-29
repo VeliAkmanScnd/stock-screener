@@ -24,12 +24,12 @@ Aynı tarama aynı hisseyi **aynı fiyattan** yeniden yakalarsa satır gösteril
 
 ## Örnek: NASDAQ 15m Bias×TS
 
-- Evren: **NASDAQ**
+- Evren: **NASDAQ** veya **VIOP**
 - Zaman: **15 dakika**
-- Kayıtlı Pine: Bias×TS, yön AL (veya her iki yön)
-- Telegram açık, BIST grubu için ayrı bot token + chat id girilmiş olsun
-- Sinyal **kapanmış son barda BUY/SELL etiketi** varsa eşleşir. Yeşil bant veya yeşil mum yetmez; oluşan (henüz kapanmamış) bar sayılmaz.
-- Bias×TS içinde **Zaman aralığı** (ör. 1 saat) grafiktekiyle aynı olmalı; boş = grafik TF.
+- Kayıtlı Pine: Bias×TS — TV girdileriyle aynı (ör. HA 233 / 233, TS 60, zaman aralığı **1 saat**, tarama yönü **BUY veya SELL**)
+- Telegram açık; VIOP için ayrı bot + chat id
+- Sinyal **kapanmış son barda BUY/SELL etiketi** varsa eşleşir. Yeşil/kırmızı bant yetmez; oluşan bar sayılmaz.
+- VIOP’ta veri `TOASO1!` gibi sürekli vadeli seridir (nakit dayanak değil).
 
 ## Özel liste
 

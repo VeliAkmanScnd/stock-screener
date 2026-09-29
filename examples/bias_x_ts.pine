@@ -12,12 +12,12 @@ g_filt = "Sinyal filtreleri"
 g_al = "Alerts"
 g_disp = "Display"
 
-ha_htf = input.timeframe("", "Zaman aralığı", group=g_bias, tooltip="1 saat = grafikteki Bias×TS ile aynı. Boş = grafik TF. HA EMA grafik TF'sinde hesaplanır, Bias bu TF'de örneklenir.")
-ha_len = input.int(100, "Periyot", group=g_bias)
-ha_len2 = input.int(100, "Belirginleştirme", group=g_bias)
+ha_htf = input.timeframe("60", "Zaman aralığı", group=g_bias, tooltip="1 saat = grafikteki Bias×TS ile aynı. Boş = grafik TF. HA EMA grafik TF'sinde hesaplanır, Bias bu TF'de örneklenir.")
+ha_len = input.int(233, "Periyot", group=g_bias)
+ha_len2 = input.int(233, "Belirginleştirme", group=g_bias)
 osc_len = input.int(7, "Oscillator Period", group=g_bias)
 
-lenn = input.int(20, "Periyot", group=g_ts)
+lenn = input.int(60, "Periyot", group=g_ts)
 showTsBars = input.bool(true, "Mum rengini TS ile boya", group=g_ts)
 showTsBands = input.bool(false, "TS bantlarını göster", group=g_ts)
 upColor = input.color(#00ffbb, "Up Color", group=g_ts)

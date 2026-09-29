@@ -61,15 +61,15 @@ def pine_inputs_for_api(
     from app.services.pine_bias_ts import is_bias_ts_script
 
     if is_bias_ts_script(pine_code) and not any(p["name"] == "scan_side" for p in out):
-        saved = (saved_defaults or {}).get("scan_side") or "buy"
+        saved = (saved_defaults or {}).get("scan_side") or "both"
         out.insert(
             0,
             {
                 "name": "scan_side",
                 "type": "string",
-                "default": "buy",
-                "value": str(saved).strip().lower() if saved else "buy",
-                "pine_default": "buy",
+                "default": "both",
+                "value": str(saved).strip().lower() if saved else "both",
+                "pine_default": "both",
                 "label": "Tarama yönü",
                 "group": "Sinyal filtreleri",
                 "options": ["buy", "sell", "both"],

@@ -107,9 +107,9 @@ def _hold_on_htf(series: pd.Series, ha_htf: str | None, chart_tf: str | None) ->
 def bias_ts_params_from_script(pine_code: str, overrides: dict | None = None) -> dict:
     inputs = merge_pine_inputs(pine_code, overrides)
     extra = overrides or {}
-    side = str(extra.get("scan_side") or inputs.get("scan_side") or "buy").strip().lower()
+    side = str(extra.get("scan_side") or inputs.get("scan_side") or "both").strip().lower()
     if side not in ("buy", "sell", "both"):
-        side = "buy"
+        side = "both"
     return {
         "ha_len": max(2, _as_int(inputs.get("ha_len"), 100)),
         "ha_len2": max(2, _as_int(inputs.get("ha_len2"), 100)),
@@ -247,7 +247,7 @@ def bias_ts_series(
 
 
 def bias_ts_snapshot(df: pd.DataFrame, **params) -> dict:
-    side = params.pop("side", "buy")
+    side = params.pop("side", "both")
     chart_tf = params.pop("chart_tf", None)
     need = params.get("ha_len", 100) + params.get("ha_len2", 100) + params.get("lenn", 20) + 5
     if df is None or len(df) < need:
