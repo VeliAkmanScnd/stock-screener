@@ -83,8 +83,26 @@ def _split_download(data: pd.DataFrame, symbols: list[str]) -> dict[str, pd.Data
         level0 = {str(x) for x in data.columns.get_level_values(0)}
         for sym in symbols:
             code = clean_bist_symbol(sym) or str(sym).strip()
-            aliases = [code, str(sym).strip(), code.replace("1!", ""), f"{code}1!" if not code.endswith("1!") else code]
+            want_continuous = code.endswith("1!")
+            aliases = [code, str(sym).strip()]
+            if want_continuous:
+                # Never match cash dayanak (TOASO) when requesting TOASO1!
+                aliases.append(code.upper())
+            else:
+                aliases.extend(
+                    [
+                        code.replace("1!", ""),
+                        f"{code}1!" if not code.endswith("1!") else code,
+                    ]
+                )
             hit = next((a for a in aliases if a and a in level0), None)
+            if not hit:
+                # Case-insensitive continuous match
+                if want_continuous:
+                    hit = next(
+                        (a for a in level0 if str(a).upper() == code.upper()),
+                        None,
+                    )
             if not hit:
                 continue
             try:

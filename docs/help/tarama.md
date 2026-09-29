@@ -29,7 +29,7 @@ Aynı tarama aynı hisseyi **aynı fiyattan** yeniden yakalarsa satır gösteril
 - Kayıtlı Pine: Bias×TS — TV girdileriyle aynı (ör. HA 233 / 233, TS 60, zaman aralığı **1 saat**, tarama yönü **BUY veya SELL**)
 - Telegram açık; VIOP için ayrı bot + chat id
 - Sinyal **kapanmış son barda BUY/SELL etiketi** varsa eşleşir. Yeşil/kırmızı bant yetmez; oluşan bar sayılmaz.
-- VIOP’ta veri `TOASO1!` gibi sürekli vadeli seridir (nakit dayanak değil).
+- VIOP’ta veri **yalnızca** `TOASO1!` gibi sürekli vadelidir; nakit hisse/dayanak taranmaz.
 
 ## Özel liste
 

@@ -12,7 +12,7 @@ Borsa İstanbul hisseleri (Yahoo `.IS`). Liste BigPara’dan gelir. İntraday ge
 
 ## VIOP
 
-Vadeli kontratlar `F_AEFES1026` gibi. Tarama OHLCV’si TradingView sürekli serisinden gelir (`AEFES1!` / `TOASO1!`) — grafikteki Bias×TS ile aynı mumlar. Continuous yoksa dayanak (nakit) yedeklenir; o zaman sinyal TV’den sapabilir.
+Vadeli kontratlar `F_AEFES1026` gibi listelenir; tarama ve fiyat **yalnızca** TradingView sürekli vadeli serisinden okunur (`AEFES1!`, `TOASO1!`). Nakit hisse / dayanak (ör. `TOASO.IS`) **kullanılmaz** — continuous yoksa sembol atlanır.
 
 Telegram’da da `AEFES1!` görünür. Özel listede VIOP seçin, kontrat kodlarını yazın.
 
