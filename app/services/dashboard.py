@@ -1,11 +1,11 @@
-"""Today's scheduled-scan dashboard stats (Europe/Istanbul calendar day)."""
+"""Scheduled-scan dashboard stats (Europe/Istanbul calendar periods)."""
 
 from __future__ import annotations
 
 import json
 from collections import Counter, defaultdict
 from datetime import datetime, time, timedelta, timezone
-from typing import Any
+from typing import Any, Literal
 from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
@@ -16,6 +16,8 @@ from app.services.scheduler import next_run_for_schedule
 from app.services.runtime_status import build_runtime_status
 from app.services.track_levels import TIMEFRAME_LEVEL_BENCHMARKS
 from app.utils.datetime_fmt import utc_iso
+
+Period = Literal["day", "week", "all"]
 
 UNIVERSE_LABELS = {
     "bist": "BIST",
@@ -28,6 +30,8 @@ UNIVERSE_LABELS = {
     "custom": "Özel",
 }
 
+WEEKDAY_TR = ("Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "Paz")
+
 
 def _tz() -> ZoneInfo:
     try:
@@ -36,12 +40,25 @@ def _tz() -> ZoneInfo:
         return ZoneInfo("Europe/Istanbul")
 
 
-def _day_bounds(now: datetime | None = None) -> tuple[datetime, datetime, str]:
+def _period_bounds(
+    period: Period,
+    now: datetime | None = None,
+) -> tuple[datetime | None, datetime, str, str]:
+    """Return (start_local|None, end_local, label, period)."""
     zone = _tz()
     local = (now or datetime.now(timezone.utc)).astimezone(zone)
+    end_local = local
+    if period == "all":
+        return None, end_local, "Tüm zamanlar", "all"
+    if period == "week":
+        start_local = datetime.combine(local.date(), time.min, tzinfo=zone) - timedelta(
+            days=local.weekday()
+        )
+        end_week = start_local + timedelta(days=7)
+        label = f"{start_local.strftime('%Y-%m-%d')} → {min(end_local, end_week).strftime('%Y-%m-%d')}"
+        return start_local, end_local, label, "week"
     start_local = datetime.combine(local.date(), time.min, tzinfo=zone)
-    end_local = start_local + timedelta(days=1)
-    return start_local, end_local, local.strftime("%Y-%m-%d")
+    return start_local, end_local, local.strftime("%Y-%m-%d"), "day"
 
 
 def _naive_utc(dt: datetime) -> datetime:
@@ -101,9 +118,20 @@ def _parse_payload(raw: str | None) -> dict[str, Any]:
     return data if isinstance(data, dict) else {}
 
 
-def build_today_dashboard(db: Session, user: User) -> dict[str, Any]:
-    start_local, _end_local, day = _day_bounds()
-    start_utc = _naive_utc(start_local)
+def _normalize_period(period: str | None) -> Period:
+    key = (period or "day").strip().lower()
+    if key in ("week", "hafta", "w"):
+        return "week"
+    if key in ("all", "tum", "tüm", "total", "a"):
+        return "all"
+    return "day"
+
+
+def build_today_dashboard(db: Session, user: User, period: str | None = "day") -> dict[str, Any]:
+    period_key = _normalize_period(period)
+    start_local, _end_local, range_label, period_key = _period_bounds(period_key)
+    start_utc = _naive_utc(start_local) if start_local else None
+    run_limit = 8000 if period_key == "all" else (4000 if period_key == "week" else 2500)
 
     q = db.query(ScheduledScan)
     if user.role != "admin":
@@ -120,16 +148,10 @@ def build_today_dashboard(db: Session, user: User) -> dict[str, Any]:
 
     runs: list[ScanRun] = []
     if scan_ids:
-        runs = (
-            db.query(ScanRun)
-            .filter(
-                ScanRun.scheduled_scan_id.in_(scan_ids),
-                ScanRun.started_at >= start_utc,
-            )
-            .order_by(ScanRun.started_at.asc())
-            .limit(2500)
-            .all()
-        )
+        rq = db.query(ScanRun).filter(ScanRun.scheduled_scan_id.in_(scan_ids))
+        if start_utc is not None:
+            rq = rq.filter(ScanRun.started_at >= start_utc)
+        runs = rq.order_by(ScanRun.started_at.asc()).limit(run_limit).all()
 
     zone = _tz()
     by_scan: dict[int, list[ScanRun]] = defaultdict(list)
@@ -138,6 +160,7 @@ def build_today_dashboard(db: Session, user: User) -> dict[str, Any]:
 
     symbol_hits: dict[str, dict[str, Any]] = {}
     hour_hits = Counter()
+    weekday_hits = Counter()
     al_count = 0
     sat_count = 0
     skipped_repeat = 0
@@ -169,9 +192,12 @@ def build_today_dashboard(db: Session, user: User) -> dict[str, Any]:
             results = payload.get("results") if payload else None
             started = run.started_at
             hour = None
+            weekday = None
             if started:
                 aware = started if started.tzinfo else started.replace(tzinfo=timezone.utc)
-                hour = aware.astimezone(zone).hour
+                local_dt = aware.astimezone(zone)
+                hour = local_dt.hour
+                weekday = local_dt.weekday()
             if isinstance(results, list):
                 hits += len(results)
                 for item in results:
@@ -200,10 +226,15 @@ def build_today_dashboard(db: Session, user: User) -> dict[str, Any]:
                     rec["directions"][direction] += 1
                     if hour is not None:
                         hour_hits[hour] += 1
+                    if weekday is not None:
+                        weekday_hits[weekday] += 1
             else:
-                hits += int(run.match_count or 0)
+                n = int(run.match_count or 0)
+                hits += n
                 if hour is not None:
-                    hour_hits[hour] += int(run.match_count or 0)
+                    hour_hits[hour] += n
+                if weekday is not None:
+                    weekday_hits[weekday] += n
 
         skipped_repeat += local_skipped
         if hits:
@@ -248,7 +279,19 @@ def build_today_dashboard(db: Session, user: User) -> dict[str, Any]:
         )
     repeats.sort(key=lambda row: (-row["count"], row["symbol"]))
 
-    hours = [{"hour": h, "hits": int(hour_hits.get(h, 0))} for h in range(8, 24)]
+    if period_key == "week":
+        chart_mode = "weekday"
+        hours = [
+            {"hour": i, "label": WEEKDAY_TR[i], "hits": int(weekday_hits.get(i, 0))}
+            for i in range(7)
+        ]
+    else:
+        chart_mode = "hour"
+        hours = [
+            {"hour": h, "label": f"{h}", "hits": int(hour_hits.get(h, 0))}
+            for h in range(8, 24)
+        ]
+
     upcoming = [
         {
             "id": row["id"],
@@ -265,15 +308,32 @@ def build_today_dashboard(db: Session, user: User) -> dict[str, Any]:
     unique_total = len(symbol_hits)
     repeat_symbols = sum(1 for row in repeats if row["count"] >= 2)
     hit_total = al_count + sat_count
-    peak_hour, peak_hour_hits = (hour_hits.most_common(1)[0] if hour_hits else (None, 0))
+    if period_key == "week" and weekday_hits:
+        peak_key, peak_hits = weekday_hits.most_common(1)[0]
+        peak_label = WEEKDAY_TR[peak_key]
+    elif hour_hits:
+        peak_key, peak_hits = hour_hits.most_common(1)[0]
+        peak_label = f"{peak_key}:00"
+    else:
+        peak_label, peak_hits = None, 0
     top_tf, top_tf_hits = (tf_hits.most_common(1)[0] if tf_hits else ("—", 0))
 
+    period_titles = {
+        "day": "Günün özeti",
+        "week": "Haftanın özeti",
+        "all": "Tüm zamanlar",
+    }
+
     return {
-        "date": day,
+        "period": period_key,
+        "period_label": period_titles[period_key],
+        "date": range_label,
         "timezone": DEFAULT_SCHEDULE_TIMEZONE or "Europe/Istanbul",
         "service": build_runtime_status(),
+        "chart_mode": chart_mode,
         "kpis": {
             "enabled_scans": sum(1 for s in scans if s.enabled),
+            "runs": len(runs),
             "runs_today": len(runs),
             "success_runs": success_runs,
             "error_runs": error_runs,
@@ -285,8 +345,8 @@ def build_today_dashboard(db: Session, user: User) -> dict[str, Any]:
             "skipped_repeat_price": skipped_repeat,
             "email_sent": email_sent,
             "telegram_sent": telegram_sent,
-            "peak_hour": peak_hour,
-            "peak_hour_hits": int(peak_hour_hits),
+            "peak_hour": peak_label,
+            "peak_hour_hits": int(peak_hits),
             "top_timeframe": top_tf,
             "top_timeframe_hits": int(top_tf_hits),
         },

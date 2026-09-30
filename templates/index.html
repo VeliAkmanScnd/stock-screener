@@ -6,7 +6,7 @@
   <title>TradeLABtr Stock Screener</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/css/style.css?v=39" />
+  <link rel="stylesheet" href="/static/css/style.css?v=40" />
   <link rel="stylesheet" href="/static/css/auth.css?v=5" />
 </head>
 <body>
@@ -69,7 +69,7 @@
       <section class="card dash-hero">
         <div class="dash-hero-row">
           <div>
-            <h2>Günün özeti</h2>
+            <h2 id="dashTitle">Günün özeti</h2>
             <p class="hint" id="dashDateHint">Zamanlanmış taramaların İstanbul günü.</p>
           </div>
           <div class="dash-hero-actions">
@@ -77,6 +77,11 @@
             <button type="button" class="btn secondary" id="btnDashToSchedules">Zamanlanmış</button>
             <button type="button" class="btn primary" id="btnDashToScan">Yeni tarama</button>
           </div>
+        </div>
+        <div class="dash-period" id="dashPeriod" role="tablist" aria-label="Özet dönemi">
+          <button type="button" class="dash-period-btn is-active" data-period="day" role="tab" aria-selected="true">Bugün</button>
+          <button type="button" class="dash-period-btn" data-period="week" role="tab" aria-selected="false">Bu hafta</button>
+          <button type="button" class="dash-period-btn" data-period="all" role="tab" aria-selected="false">Tüm zamanlar</button>
         </div>
         <div class="dash-service" id="dashService" aria-live="polite">
           <span class="dash-service-pill" id="dashServicePill">Servis…</span>
@@ -87,7 +92,7 @@
       <div class="dash-grid">
         <section class="card dash-card">
           <h2>Zamanlanmış taramalar</h2>
-          <p class="hint">Bugün kaç kez çalıştı, kaç eşleşme bulundu, hangi periyot.</p>
+          <p class="hint" id="dashScansHint">Seçili dönemde kaç kez çalıştı, kaç eşleşme bulundu.</p>
           <div class="table-wrap">
             <table class="dash-table">
               <thead>
@@ -109,7 +114,7 @@
         </section>
         <section class="card dash-card">
           <h2>Tekrarlayan hisseler</h2>
-          <p class="hint">Aynı hisse bugün kaç kez geldi (farklı taramalar dahil).</p>
+          <p class="hint" id="dashRepeatsHint">Aynı hisse seçili dönemde kaç kez geldi.</p>
           <div class="table-wrap">
             <table class="dash-table">
               <thead>
@@ -128,9 +133,9 @@
           </div>
         </section>
         <section class="card dash-card">
-          <h2>Saatlik eşleşmeler</h2>
-          <p class="hint">İstanbul saatiyle bulunan hisse adedi.</p>
-          <div class="dash-hours" id="dashHours" role="img" aria-label="Saatlik eşleşme"></div>
+          <h2 id="dashChartTitle">Saatlik eşleşmeler</h2>
+          <p class="hint" id="dashChartHint">İstanbul saatiyle bulunan hisse adedi.</p>
+          <div class="dash-hours" id="dashHours" role="img" aria-label="Eşleşme dağılımı"></div>
         </section>
         <section class="card dash-card">
           <h2>Sıradaki çalışmalar</h2>
@@ -804,7 +809,7 @@
   </div>
 
   <script src="/static/js/auth.js?v=8"></script>
-  <script src="/static/js/dash.js?v=3"></script>
+  <script src="/static/js/dash.js?v=4"></script>
   <script src="/static/js/app.js?v=51"></script>
   <script src="/static/js/track.js?v=12"></script>
   <script src="/static/js/perf.js?v=3"></script>

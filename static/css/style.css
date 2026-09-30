@@ -1735,6 +1735,41 @@ body {
   margin: 0;
 }
 
+.dash-period {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-block: 0 0.85rem;
+  padding: 0.2rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface2);
+}
+
+.dash-period-btn {
+  appearance: none;
+  border: 0;
+  margin: 0;
+  padding: 0.4rem 0.85rem;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.dash-period-btn:hover {
+  color: var(--silver);
+}
+
+.dash-period-btn.is-active {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 0 0 1px var(--border);
+}
+
 .dash-service {
   display: flex;
   flex-wrap: wrap;
