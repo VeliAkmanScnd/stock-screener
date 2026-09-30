@@ -1,31 +1,13 @@
 """APScheduler integration for scheduled scans."""
-
-
-
 from __future__ import annotations
-
-
-
 import logging
-
 import threading
-
 from zoneinfo import ZoneInfo
-
-
-
 from apscheduler.executors.pool import ThreadPoolExecutor
-
 from apscheduler.schedulers.background import BackgroundScheduler
-
 from apscheduler.triggers.cron import CronTrigger
-
-
-
 from app.config import TRACK_PRICE_CHECK_TIMEZONE
-
 from app.database import ScheduledScan, SessionLocal
-
 from app.services.schedule_helpers import (
     WINDOW_INTERVAL_MINUTES,
     hour_window_cron,
@@ -35,76 +17,52 @@ from app.services.schedule_helpers import (
     parse_weekdays_field,
     weekdays_to_cron,
 )
-
 from app.services.scheduler_lock import acquire_scheduler_lock, release_scheduler_lock
-
 from app.services.schedule_runner import run_scheduled_scan
-
 from app.services.track_runner import (
     run_track_archive,
     run_track_price_update,
     run_track_weekend_expire,
 )
-
-
-
 logger = logging.getLogger(__name__)
-
-
-
 _scheduler: BackgroundScheduler | None = None
-
 JOB_PREFIX = "scheduled_scan_"
-
 TRACK_PRICE_JOB = "track_price_update"
-
 TRACK_WEEKEND_JOB = "track_weekend_expire"
-
 TRACK_ARCHIVE_JOB = "track_archive_expired"
-
 SCHEDULE_SYNC_JOB = "scheduled_scan_sync"
 
-
-
-
-
 def _build_trigger(sched: ScheduledScan) -> CronTrigger:
-
-    tz = ZoneInfo(sched.timezone or "Europe/Istanbul")
-
-    minute = int(sched.minute)
-
-    hour = int(sched.hour)
-
+    tz_name = (sched.timezone or "Europe/Istanbul").strip() or "Europe/Istanbul"
+    try:
+        tz = ZoneInfo(tz_name)
+    except Exception:
+        tz = ZoneInfo("Europe/Istanbul")
+    minute = int(sched.minute or 0)
+    hour = int(sched.hour or 0)
     end_hour = int(sched.end_hour) if sched.end_hour is not None else None
-
     stype = normalize_schedule_type(sched.schedule_type)
-
     days = parse_weekdays_field(sched.weekdays)
-
     day_of_week = weekdays_to_cron(days) if days else None
-
     if is_window_schedule_type(stype):
+        # Bitiş boşsa seans sonu varsay (eski kayıtlarda NULL kalabiliyordu).
+        if end_hour is None:
+            end_hour = 18
         interval = WINDOW_INTERVAL_MINUTES[stype]
         if interval < 60:
             minute_cron = minute_step_cron(interval, minute)
-            cron_hour = hour_window_cron(hour, end_hour) if end_hour is not None else "*"
+            cron_hour = hour_window_cron(hour, end_hour)
             kwargs: dict = {"hour": cron_hour, "minute": minute_cron, "timezone": tz}
         else:
-            step_hours = interval // 60
-            if end_hour is not None:
-                cron_hour = hour_window_cron(hour, end_hour, step=step_hours)
-            else:
-                cron_hour = "*" if step_hours == 1 else f"*/{step_hours}"
+            step_hours = max(1, interval // 60)
+            cron_hour = hour_window_cron(hour, end_hour, step=step_hours)
             kwargs = {"hour": cron_hour, "minute": minute, "timezone": tz}
         if day_of_week:
             kwargs["day_of_week"] = day_of_week
         return CronTrigger(**kwargs)
-
     if stype == "1wk" and not days:
         dow = int(sched.weekday if sched.weekday is not None else 0)
         return CronTrigger(day_of_week=dow, hour=hour, minute=minute, timezone=tz)
-
     if days:
         return CronTrigger(
             day_of_week=weekdays_to_cron(days),
@@ -112,17 +70,74 @@ def _build_trigger(sched: ScheduledScan) -> CronTrigger:
             minute=minute,
             timezone=tz,
         )
-
     return CronTrigger(hour=hour, minute=minute, timezone=tz)
 
 
+def schedule_window_snapshot(sched: ScheduledScan) -> dict:
+    """Explain whether 'now' is inside the schedule window (Istanbul/local TZ)."""
+    from datetime import datetime, timezone
 
+    tz_name = (sched.timezone or "Europe/Istanbul").strip() or "Europe/Istanbul"
+    try:
+        tz = ZoneInfo(tz_name)
+    except Exception:
+        tz = ZoneInfo("Europe/Istanbul")
+    now_local = datetime.now(timezone.utc).astimezone(tz)
+    stype = normalize_schedule_type(sched.schedule_type)
+    days = parse_weekdays_field(sched.weekdays)
+    hour = int(sched.hour or 0)
+    minute = int(sched.minute or 0)
+    end_hour = int(sched.end_hour) if sched.end_hour is not None else (
+        18 if is_window_schedule_type(stype) else hour
+    )
+    weekday_ok = (not days) or (now_local.weekday() in days)
+    if is_window_schedule_type(stype):
+        interval = WINDOW_INTERVAL_MINUTES.get(stype, 15)
+        if interval < 60:
+            phase = minute % interval
+            last_slot_min = max(range(phase, 60, interval), default=phase)
+            before_start = now_local.hour < hour or (
+                now_local.hour == hour and now_local.minute < phase
+            )
+        else:
+            last_slot_min = minute
+            before_start = now_local.hour < hour or (
+                now_local.hour == hour and now_local.minute < minute
+            )
+        past_end = now_local.hour > end_hour or (
+            now_local.hour == end_hour and now_local.minute > last_slot_min
+        )
+        hour_ok = (not before_start) and (not past_end)
+        window_label = f"{hour:02d}:{minute:02d}–{end_hour:02d}:{last_slot_min:02d}"
+    else:
+        hour_ok = True
+        window_label = f"{hour:02d}:{minute:02d}"
+        past_end = False
+        before_start = False
+    inside = bool(sched.enabled and weekday_ok and hour_ok)
+    reason = ""
+    if not sched.enabled:
+        reason = "durduruldu"
+    elif not weekday_ok:
+        reason = "bugün seçili günlerde yok"
+    elif is_window_schedule_type(stype) and before_start:
+        reason = f"pencere henüz açılmadı ({window_label})"
+    elif is_window_schedule_type(stype) and past_end:
+        reason = f"bugünkü pencere bitti ({window_label})"
+    return {
+        "timezone": str(tz),
+        "now_local": now_local.isoformat(),
+        "window_label": window_label,
+        "inside_window": inside,
+        "reason": reason,
+        "weekdays": days,
+        "hour": hour,
+        "end_hour": end_hour if is_window_schedule_type(stype) else None,
+    }
 
 
 def _misfire_grace_seconds(schedule_type: str | None) -> int:
-
     """Allow catch-up window based on cadence."""
-
     stype = normalize_schedule_type(schedule_type)
     if stype in WINDOW_INTERVAL_MINUTES:
         return WINDOW_INTERVAL_MINUTES[stype] * 60
@@ -131,412 +146,232 @@ def _misfire_grace_seconds(schedule_type: str | None) -> int:
     return 24 * 3600
 
 
-
-
-
 def _trigger_scheduled_scan(scheduled_id: int) -> None:
-
     # Never run heavy scan work on the APScheduler thread — a long all_us job
-
     # would block later triggers (max_instances=1) and stall other schedules.
-
     threading.Thread(
-
         target=run_scheduled_scan,
-
         args=(scheduled_id,),
-
         kwargs={"force": False},
-
         daemon=True,
-
         name=f"scheduled-scan-{scheduled_id}",
-
     ).start()
 
 
-
-
-
 def next_run_for_schedule(sched: ScheduledScan):
-
-    """Return next fire datetime for a schedule (scheduler job or computed trigger)."""
-
+    """Return next fire datetime (always recompute from trigger; heal stale jobs)."""
     if not sched.enabled:
-
         return None
+    from datetime import datetime, timezone
 
-
+    now_utc = datetime.now(timezone.utc)
+    try:
+        computed = _build_trigger(sched).get_next_fire_time(None, now_utc)
+    except Exception:
+        logger.debug("Could not compute next run for schedule %s", sched.id, exc_info=True)
+        computed = None
 
     job_id = f"{JOB_PREFIX}{sched.id}"
-
     if _scheduler is not None:
-
         try:
-
             job = _scheduler.get_job(job_id)
-
-            if job is not None and job.next_run_time is not None:
-
-                return job.next_run_time
-
+            job_next = job.next_run_time if job is not None else None
+            # Job yoksa veya sonraki ateş tetikleyiciden belirgin sapıyorsa yeniden kaydet.
+            if job is None or (
+                computed is not None
+                and job_next is not None
+                and abs((job_next - computed).total_seconds()) > 90
+            ):
+                register_job(sched)
+                job = _scheduler.get_job(job_id)
+                if job is not None and job.next_run_time is not None:
+                    return job.next_run_time
+            elif job_next is not None:
+                return job_next
         except Exception:
+            logger.debug("Job next_run read failed for %s", sched.id, exc_info=True)
 
-            pass
-
-
-
-    try:
-
-        from datetime import datetime, timezone
-
-
-
-        return _build_trigger(sched).get_next_fire_time(None, datetime.now(timezone.utc))
-
-    except Exception:
-
-        logger.debug("Could not compute next run for schedule %s", sched.id, exc_info=True)
-
-        return None
-
-
-
-
+    return computed
 
 def scheduler_status() -> dict[str, object]:
-
     """Lightweight health info for the UI / debugging."""
-
     jobs = []
-
     if _scheduler is not None:
-
         jobs = [
-
             {"id": job.id, "next_run": job.next_run_time.isoformat() if job.next_run_time else None}
-
             for job in _scheduler.get_jobs()
-
         ]
-
     return {
-
         "running": _scheduler is not None,
-
         "job_count": len(jobs),
-
         "jobs": jobs[:20],
-
     }
 
-
-
-
-
 def sync_jobs_from_db() -> None:
-
     """Reconcile APScheduler jobs with enabled DB schedules (no needless re-register)."""
-
     if _scheduler is None:
-
         return
-
-
-
     db = SessionLocal()
-
     try:
-
         rows = db.query(ScheduledScan).filter(ScheduledScan.enabled.is_(True)).all()
-
         enabled_ids = {row.id for row in rows}
-
         existing_scan_jobs = {
-
             job.id for job in _scheduler.get_jobs() if job.id.startswith(JOB_PREFIX)
-
         }
-
-
-
         for row in rows:
-
-            job_id = f"{JOB_PREFIX}{row.id}"
-
-            existing = None
-
             try:
-
-                existing = _scheduler.get_job(job_id)
-
-            except Exception:
-
+                job_id = f"{JOB_PREFIX}{row.id}"
                 existing = None
-
-            desired = _build_trigger(row)
-
-            if existing is None or str(existing.trigger) != str(desired):
-
-                register_job(row)
-
-
-
-        stale_jobs = existing_scan_jobs - {f"{JOB_PREFIX}{sid}" for sid in enabled_ids}
-
-        for job_id in stale_jobs:
-
-            try:
-
-                _scheduler.remove_job(job_id)
-
+                try:
+                    existing = _scheduler.get_job(job_id)
+                except Exception:
+                    existing = None
+                desired = _build_trigger(row)
+                if existing is None or str(existing.trigger) != str(desired):
+                    register_job(row)
+                else:
+                    nxt = existing.next_run_time
+                    logger.debug(
+                        "Schedule %s ok trigger=%s next=%s",
+                        row.id,
+                        desired,
+                        nxt,
+                    )
             except Exception:
-
+                logger.exception("Failed to sync schedule job %s (%s)", row.id, row.name)
+        stale_jobs = existing_scan_jobs - {f"{JOB_PREFIX}{sid}" for sid in enabled_ids}
+        for job_id in stale_jobs:
+            try:
+                _scheduler.remove_job(job_id)
+            except Exception:
                 pass
-
     finally:
-
         db.close()
 
 
-
-
-
 def start_scheduler() -> None:
-
     global _scheduler
-
     if _scheduler is not None:
-
         return
-
     if not acquire_scheduler_lock():
-
+        logger.warning("Scheduler lock not acquired — timed scans will not run in this process")
         return
-
     try:
         from app.services.schedule_runner import cleanup_stale_running_scans
 
         cleanup_stale_running_scans()
     except Exception:
         logger.exception("Stale running scan cleanup failed")
-
+    # Schedule triggers use Europe/Istanbul; keep scheduler clock aligned.
     _scheduler = BackgroundScheduler(
-
-        timezone="UTC",
-
+        timezone="Europe/Istanbul",
         executors={"default": ThreadPoolExecutor(max_workers=4)},
-
         job_defaults={
-
             "coalesce": True,
-
             "max_instances": 1,
-
             "misfire_grace_time": 3600,
-
         },
-
     )
-
     _scheduler.start()
-
     reload_all_jobs()
-
     register_track_jobs()
-
     logger.info("Scan scheduler started")
 
-
-
-
-
 def stop_scheduler() -> None:
-
     global _scheduler
-
     if _scheduler is not None:
-
         _scheduler.shutdown(wait=False)
-
         _scheduler = None
-
         logger.info("Scan scheduler stopped")
-
     release_scheduler_lock()
 
-
-
-
-
 def reload_all_jobs() -> None:
-
     if _scheduler is None:
-
         return
-
     for job in list(_scheduler.get_jobs()):
-
         if job.id.startswith(JOB_PREFIX):
-
             try:
-
                 _scheduler.remove_job(job.id)
-
             except Exception:
-
                 pass
-
     sync_jobs_from_db()
 
-
-
-
-
 def register_job(sched: ScheduledScan) -> None:
-
     if _scheduler is None:
-
         return
-
     job_id = f"{JOB_PREFIX}{sched.id}"
-
     if not sched.enabled:
-
         try:
-
             _scheduler.remove_job(job_id)
-
         except Exception:
-
             pass
-
         return
-
-
-
     trigger = _build_trigger(sched)
-
     _scheduler.add_job(
-
         _trigger_scheduled_scan,
-
         trigger=trigger,
-
         id=job_id,
-
         args=[sched.id],
-
         replace_existing=True,
-
         max_instances=1,
-
         coalesce=True,
-
         misfire_grace_time=_misfire_grace_seconds(sched.schedule_type),
-
     )
+    from datetime import datetime, timezone
 
-    logger.info("Registered schedule job %s (%s)", sched.id, sched.schedule_type)
-
-
-
-
+    nxt = trigger.get_next_fire_time(None, datetime.now(timezone.utc))
+    logger.info(
+        "Registered schedule job %s (%s) trigger=%s next=%s",
+        sched.id,
+        sched.schedule_type,
+        trigger,
+        nxt,
+    )
 
 def unregister_job(scheduled_id: int) -> None:
-
     if _scheduler is None:
-
         return
-
     job_id = f"{JOB_PREFIX}{scheduled_id}"
-
     try:
-
         _scheduler.remove_job(job_id)
-
     except Exception:
-
         pass
 
-
-
-
-
 def register_track_jobs() -> None:
-
     if _scheduler is None:
-
         return
-
     tz = ZoneInfo(TRACK_PRICE_CHECK_TIMEZONE or "Europe/Istanbul")
-
     _scheduler.add_job(
-
         run_track_price_update,
-
         trigger=CronTrigger(hour="10-23", minute=0, day_of_week="mon-fri", timezone=tz),
-
         id=TRACK_PRICE_JOB,
-
         replace_existing=True,
-
         max_instances=1,
-
         coalesce=True,
-
     )
-
     _scheduler.add_job(
-
         run_track_weekend_expire,
-
         trigger=CronTrigger(day_of_week="fri", hour=23, minute=5, timezone=tz),
-
         id=TRACK_WEEKEND_JOB,
-
         replace_existing=True,
-
         max_instances=1,
-
         coalesce=True,
-
     )
-
     _scheduler.add_job(
-
         run_track_archive,
-
         trigger=CronTrigger(hour=0, minute=10, timezone=tz),
-
         id=TRACK_ARCHIVE_JOB,
-
         replace_existing=True,
-
         max_instances=1,
-
         coalesce=True,
-
     )
-
     _scheduler.add_job(
-
         sync_jobs_from_db,
-
         trigger=CronTrigger(minute="*/5", timezone=tz),
-
         id=SCHEDULE_SYNC_JOB,
-
         replace_existing=True,
-
         max_instances=1,
-
         coalesce=True,
-
         misfire_grace_time=300,
-
     )
-
     logger.info("Track price jobs registered (%s)", tz)
-
-

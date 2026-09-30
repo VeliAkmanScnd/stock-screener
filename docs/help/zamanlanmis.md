@@ -19,9 +19,11 @@ VPS’te sunucu düşmesin diye `install-windows-task.ps1` (5 dk watchdog) kurun
 
 - Ad: `Viop taraması`
 - Periyot: 15 dakika
-- Pencere: 10:00–18:00, dakika 0/15/30/45 (ekrana göre)
+- Pencere: **Başlangıç 10 / Bitiş 18 (dahil)** → 10:00–18:45 arası her çeyrek
 - Bildirim: Telegram (e-posta kapalı kalabilir)
 - Telegram: VIOP bot + VIOP grup chat id
+
+Bitiş 14 veya 15 ise öğleden sonra “sonraki çalışma yarın 10:00” görünür — bu normaldir; BIST/VIOP için bitişi **18** yapın.
 
 Her çalışmada eşleşmeler Performans’a eklenir. TP sonrası açık bir AL varsa, yeni SAT satırı onu **ters sinyal** ile kapatır.
 

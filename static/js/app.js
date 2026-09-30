@@ -1880,12 +1880,20 @@ async function loadScheduledScans() {
           ? `${formatLocalDateTime(r.last_run_at, tz)} · ${r.last_match_count ?? 0} eşleşme`
           : "—";
         const nextAt = resolveNextRunAt(r);
-        const next =
+        let next =
           r.enabled && nextAt
             ? formatLocalDateTime(nextAt, tz)
             : r.enabled
               ? "—"
               : "Durduruldu";
+        if (r.enabled && r.window) {
+          const w = r.window;
+          if (!w.inside_window && w.reason) {
+            next = `${next}<br><span class="dash-muted">${escapeHtml(w.reason)}</span>`;
+          } else if (w.window_label) {
+            next = `${next}<br><span class="dash-muted">pencere ${escapeHtml(w.window_label)}</span>`;
+          }
+        }
         const status = formatScheduleLastStatus(r);
         return `<tr>
           <td><strong>${r.name}</strong> ${status}</td>

@@ -222,6 +222,16 @@ def _migrate_db() -> None:
                     "WHERE schedule_type IN ('hourly', 'every_4h') AND hour = 8"
                 )
             )
+        # 15m/5m/… pencerelerde bitiş boşsa seans sonuna tamamla (sonraki run yarına kaymasın).
+        conn.execute(
+            text(
+                "UPDATE scheduled_scans SET end_hour = 18 WHERE end_hour IS NULL "
+                "AND lower(schedule_type) IN ("
+                "'5m','15m','30m','1h','2h','4h','8h','12h',"
+                "'every_5m','every_15m','every_30m','hourly','every_2h','every_4h','every_8h','every_12h'"
+                ")"
+            )
+        )
 
         pos_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(track_positions)"))}
         if pos_cols:
