@@ -8,12 +8,12 @@ Girişten sonra ilk ekran **Özet**’tir. Üstteki **Bugün / Bu hafta / Tüm z
 
 Seçili döneme göre güncellenir:
 
-- **Çalışma** — kaç kez tarama bitti; kaç tarama açık
-- **Eşleşme** — bulunan hisse satırları (AL / SAT)
+- **Çalışma** — tamamlanan taramalar (süren `running` hariç); kaç tarama açık
+- **Eşleşme** — geçerli sembol satırları (AL / SAT); sonuç yoksa `match_count`
 - **Tekil hisse** — kaç farklı sembol; kaçı birden fazla kez geldi
 - **Aynı fiyat gizlendi** — önceki taramayla aynı fiyattaki tekrarlar
 - **Hata** — başarısız / başarılı çalışma
-- **Bildirim** — gerçekten gönderilen Telegram mesajı ve e-posta sayısı (eşleşme yokken TG atılmaz)
+- **Bildirim** — gerçekten giden Telegram mesajı ve e-posta (boş turda TG yok; e-posta yalnız gönderildiyse)
 - **Yoğun saat / gün** — bugün ve tüm zamanlarda saat; bu haftada en yoğun gün
 - **En çok periyot** — en fazla hisse bulan zaman dilimi
 

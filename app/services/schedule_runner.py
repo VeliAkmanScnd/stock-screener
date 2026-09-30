@@ -156,8 +156,10 @@ def run_scheduled_scan(scheduled_id: int, *, force: bool = False) -> None:
 
         notify_email = bool(getattr(sched, "notify_email", True))
         send_email = notify_email and (sched.email_to or "").strip()
+        email_skipped_repeat = False
         if send_email and match_count == 0 and skipped_repeat > 0:
             send_email = False
+            email_skipped_repeat = True
             logger.info(
                 "Scheduled scan %s: skipped email (%s same-price repeats, no new hits)",
                 scheduled_id,
@@ -226,6 +228,7 @@ def run_scheduled_scan(scheduled_id: int, *, force: bool = False) -> None:
         run_row.status = "success"
         run_row.match_count = match_count
         payload["email_sent"] = email_sent
+        payload["email_skipped_repeat"] = email_skipped_repeat
         payload["telegram_sent"] = telegram_sent
         payload["telegram_sent_count"] = telegram_sent_count
         run_row.results_json = json.dumps(payload, ensure_ascii=False)
@@ -234,7 +237,12 @@ def run_scheduled_scan(scheduled_id: int, *, force: bool = False) -> None:
         run_row.error_message = notify_error
 
         sched.last_run_at = run_row.finished_at
-        email_failed = notify_email and bool((sched.email_to or "").strip()) and not email_sent
+        email_failed = (
+            notify_email
+            and bool((sched.email_to or "").strip())
+            and not email_sent
+            and not email_skipped_repeat
+        )
         # Boş eşleşmede TG bilerek atlanır; hata sayma.
         telegram_failed = notify_telegram and match_count > 0 and not telegram_sent
         if notify_error and email_failed and telegram_failed:

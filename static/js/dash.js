@@ -101,8 +101,11 @@ function renderDashKpis(kpis, period) {
       : String(kpis.peak_hour);
   const peakLabel = period === "week" ? "Yoğun gün" : "Yoğun saat";
   const runs = kpis.runs ?? kpis.runs_today ?? 0;
+  const runHint = kpis.running_runs
+    ? `${kpis.enabled_scans ?? 0} açık · ${kpis.running_runs} sürüyor`
+    : `${kpis.enabled_scans ?? 0} açık tarama`;
   el.innerHTML = [
-    kpiCard("Çalışma", runs, `${kpis.enabled_scans ?? 0} açık tarama`),
+    kpiCard("Çalışma", runs, runHint),
     kpiCard("Eşleşme", kpis.hits ?? 0, `AL ${kpis.al ?? 0} · SAT ${kpis.sat ?? 0}`),
     kpiCard("Tekil hisse", kpis.unique_symbols ?? 0, `${kpis.repeat_symbols ?? 0} tekrarlayan`),
     kpiCard("Aynı fiyat gizlendi", kpis.skipped_repeat_price ?? 0, "önceki sinyal ile aynı"),

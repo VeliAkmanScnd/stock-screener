@@ -127,6 +127,48 @@ def _normalize_period(period: str | None) -> Period:
     return "day"
 
 
+def _safe_int(value: Any, default: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _result_items(payload: dict[str, Any], run: ScanRun) -> tuple[list[tuple[str, str]], int]:
+    """Return [(symbol, direction), ...] and hit count for one run."""
+    results = payload.get("results")
+    items: list[tuple[str, str]] = []
+    if isinstance(results, list):
+        for row in results:
+            if not isinstance(row, dict):
+                continue
+            symbol = str(row.get("symbol") or "").strip().upper()
+            if not symbol:
+                continue
+            items.append((symbol, _direction(row.get("signals"))))
+        return items, len(items)
+    hits = max(0, _safe_int(run.match_count, _safe_int(payload.get("count"), 0)))
+    return items, hits
+
+
+def _telegram_messages(payload: dict[str, Any], run: ScanRun, hit_count: int) -> int:
+    """Actual Telegram messages only (legacy empty-run True flags ignored)."""
+    if "telegram_sent_count" in payload:
+        return max(0, _safe_int(payload.get("telegram_sent_count"), 0))
+    if payload.get("telegram_sent") and hit_count > 0:
+        return 1
+    return 0
+
+
+def _email_delivered(payload: dict[str, Any], run: ScanRun) -> bool:
+    """True only when an email was actually sent."""
+    if run.email_sent is True:
+        return True
+    if run.email_sent is False:
+        return False
+    return bool(payload.get("email_sent"))
+
+
 def build_today_dashboard(db: Session, user: User, period: str | None = "day") -> dict[str, Any]:
     period_key = _normalize_period(period)
     start_local, _end_local, range_label, period_key = _period_bounds(period_key)
@@ -163,11 +205,14 @@ def build_today_dashboard(db: Session, user: User, period: str | None = "day") -
     weekday_hits = Counter()
     al_count = 0
     sat_count = 0
+    hit_total = 0
     skipped_repeat = 0
     email_sent = 0
     telegram_sent = 0
     error_runs = 0
     success_runs = 0
+    running_runs = 0
+    finished_runs = 0
     tf_hits: Counter = Counter()
 
     scan_rows = []
@@ -178,29 +223,30 @@ def build_today_dashboard(db: Session, user: User, period: str | None = "day") -
         unique: set[str] = set()
         local_skipped = 0
         last = sched_runs[-1] if sched_runs else None
+        finished_sched_runs = 0
         for run in sched_runs:
-            if run.status == "error":
+            status = str(run.status or "").strip().lower()
+            if status == "running":
+                running_runs += 1
+                continue
+            finished_runs += 1
+            finished_sched_runs += 1
+            if status == "error":
                 error_runs += 1
-            elif run.status and str(run.status).startswith("success"):
+            else:
+                # success / success_no_email / success_no_telegram
                 success_runs += 1
+
             payload = _parse_payload(run.results_json)
-            if run.email_sent or payload.get("email_sent"):
+            items, run_hits = _result_items(payload, run)
+            hit_total += run_hits
+            hits += run_hits
+            local_skipped += max(0, _safe_int(payload.get("skipped_repeat_price"), 0))
+
+            if _email_delivered(payload, run):
                 email_sent += 1
-            # Eski kayıtlar: eşleşme yokken telegram_sent=True yazılıyordu — sayma.
-            tg_count = payload.get("telegram_sent_count")
-            if tg_count is not None:
-                try:
-                    telegram_sent += max(0, int(tg_count))
-                except (TypeError, ValueError):
-                    pass
-            elif payload.get("telegram_sent"):
-                hits_in_run = int(run.match_count or payload.get("count") or 0)
-                if hits_in_run <= 0 and isinstance(payload.get("results"), list):
-                    hits_in_run = len(payload["results"])
-                if hits_in_run > 0:
-                    telegram_sent += 1
-            local_skipped += int(payload.get("skipped_repeat_price") or 0)
-            results = payload.get("results") if payload else None
+            telegram_sent += _telegram_messages(payload, run, run_hits)
+
             started = run.started_at
             hour = None
             weekday = None
@@ -209,14 +255,10 @@ def build_today_dashboard(db: Session, user: User, period: str | None = "day") -
                 local_dt = aware.astimezone(zone)
                 hour = local_dt.hour
                 weekday = local_dt.weekday()
-            if isinstance(results, list):
-                hits += len(results)
-                for item in results:
-                    symbol = str(item.get("symbol") or "").strip().upper()
-                    if not symbol:
-                        continue
+
+            if items:
+                for symbol, direction in items:
                     unique.add(symbol)
-                    direction = _direction(item.get("signals"))
                     if direction == "SAT":
                         sat_count += 1
                     else:
@@ -239,13 +281,12 @@ def build_today_dashboard(db: Session, user: User, period: str | None = "day") -
                         hour_hits[hour] += 1
                     if weekday is not None:
                         weekday_hits[weekday] += 1
-            else:
-                n = int(run.match_count or 0)
-                hits += n
+            elif run_hits:
+                # Sonuç satırı yok; sadece match_count — saate yaz, AL/SAT bilinmiyor.
                 if hour is not None:
-                    hour_hits[hour] += n
+                    hour_hits[hour] += run_hits
                 if weekday is not None:
-                    weekday_hits[weekday] += n
+                    weekday_hits[weekday] += run_hits
 
         skipped_repeat += local_skipped
         if hits:
@@ -261,7 +302,7 @@ def build_today_dashboard(db: Session, user: User, period: str | None = "day") -
                 "universe_label": meta["universe_label"],
                 "timeframe": meta["timeframe"],
                 "timeframe_label": meta["timeframe_label"],
-                "runs": len(sched_runs),
+                "runs": finished_sched_runs,
                 "hits": hits,
                 "unique_symbols": len(unique),
                 "skipped_repeat_price": local_skipped,
@@ -318,7 +359,6 @@ def build_today_dashboard(db: Session, user: User, period: str | None = "day") -
 
     unique_total = len(symbol_hits)
     repeat_symbols = sum(1 for row in repeats if row["count"] >= 2)
-    hit_total = al_count + sat_count
     if period_key == "week" and weekday_hits:
         peak_key, peak_hits = weekday_hits.most_common(1)[0]
         peak_label = WEEKDAY_TR[peak_key]
@@ -344,8 +384,9 @@ def build_today_dashboard(db: Session, user: User, period: str | None = "day") -
         "chart_mode": chart_mode,
         "kpis": {
             "enabled_scans": sum(1 for s in scans if s.enabled),
-            "runs": len(runs),
-            "runs_today": len(runs),
+            "runs": finished_runs,
+            "runs_today": finished_runs,
+            "running_runs": running_runs,
             "success_runs": success_runs,
             "error_runs": error_runs,
             "hits": hit_total,
