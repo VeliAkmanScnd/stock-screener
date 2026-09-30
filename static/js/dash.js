@@ -1,3 +1,5 @@
+const DASH_TZ = "Europe/Istanbul";
+
 function dashEsc(s) {
   return String(s ?? "")
     .replace(/&/g, "&amp;")
@@ -6,11 +8,18 @@ function dashEsc(s) {
     .replace(/"/g, "&quot;");
 }
 
+function dashParseUtc(iso) {
+  if (!iso) return null;
+  const raw = String(iso);
+  if (raw.endsWith("Z") || /[+-]\d{2}:\d{2}$/.test(raw)) return new Date(raw);
+  return new Date(`${raw}Z`);
+}
+
 function dashFmt(iso) {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "—";
+  const d = dashParseUtc(iso);
+  if (!d || Number.isNaN(d.getTime())) return "—";
   return d.toLocaleString("tr-TR", {
+    timeZone: DASH_TZ,
     day: "2-digit",
     month: "2-digit",
     hour: "2-digit",
@@ -140,8 +149,11 @@ function renderDashScans(rows) {
   tbody.innerHTML = rows
     .map((r) => {
       const idle = r.enabled && !r.runs;
+      const running = r.is_running
+        ? ' <span class="status-pill">sürüyor</span>'
+        : "";
       return `<tr class="dash-row-link" data-goto="schedules">
-        <td><strong>${dashEsc(r.name)}</strong>${r.enabled ? "" : ' <span class="status-pill">durdu</span>'}</td>
+        <td><strong>${dashEsc(r.name)}</strong>${r.enabled ? "" : ' <span class="status-pill">durdu</span>'}${running}</td>
         <td>${dashEsc(r.timeframe_label)}</td>
         <td>${dashEsc(r.universe_label)}</td>
         <td>${r.runs || 0}${idle ? ' <span class="dash-muted">dönemde yok</span>' : ""}</td>

@@ -222,7 +222,6 @@ def build_today_dashboard(db: Session, user: User, period: str | None = "day") -
         hits = 0
         unique: set[str] = set()
         local_skipped = 0
-        last = sched_runs[-1] if sched_runs else None
         finished_sched_runs = 0
         for run in sched_runs:
             status = str(run.status or "").strip().lower()
@@ -234,7 +233,6 @@ def build_today_dashboard(db: Session, user: User, period: str | None = "day") -
             if status == "error":
                 error_runs += 1
             else:
-                # success / success_no_email / success_no_telegram
                 success_runs += 1
 
             payload = _parse_payload(run.results_json)
@@ -299,11 +297,33 @@ def build_today_dashboard(db: Session, user: User, period: str | None = "day") -
                     if weekday is not None:
                         weekday_hits[weekday] += 1
             elif run_hits:
-                # Sonuç satırı yok; sadece match_count — saate yaz, AL/SAT bilinmiyor.
                 if hour is not None:
                     hour_hits[hour] += run_hits
                 if weekday is not None:
                     weekday_hits[weekday] += run_hits
+
+        last = None
+        running_now = None
+        for run in reversed(sched_runs):
+            st = str(run.status or "").strip().lower()
+            if st == "running" and running_now is None:
+                running_now = run
+                continue
+            if st != "running":
+                last = run
+                break
+        if last is None and running_now is None and sched_runs:
+            last = sched_runs[-1]
+
+        if last is not None:
+            display_status = last.status
+            display_at = last.finished_at or last.started_at
+        elif running_now is not None:
+            display_status = running_now.status
+            display_at = running_now.started_at
+        else:
+            display_status = sched.last_status
+            display_at = sched.last_run_at
 
         skipped_repeat += local_skipped
         if hits:
@@ -323,10 +343,9 @@ def build_today_dashboard(db: Session, user: User, period: str | None = "day") -
                 "hits": hits,
                 "unique_symbols": len(unique),
                 "skipped_repeat_price": local_skipped,
-                "last_status": last.status if last else sched.last_status,
-                "last_run_at": utc_iso(last.finished_at or last.started_at)
-                if last
-                else utc_iso(sched.last_run_at),
+                "last_status": display_status,
+                "last_run_at": utc_iso(display_at),
+                "is_running": running_now is not None,
                 "next_run_at": utc_iso(next_at),
             }
         )
