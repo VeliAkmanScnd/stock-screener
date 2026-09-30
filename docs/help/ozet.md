@@ -2,6 +2,8 @@
 
 Girişten sonra ilk ekran **Özet**’tir. İstanbul takvim gününe göre zamanlanmış taramaların özetini gösterir. Teknik filtreler **Tarama** sekmesindedir.
 
+- **Servis durumu** — Özet üstünde sunucu / zamanlayıcı ayakta mı; kapalıysa Telegram gitmez
+
 ## Kartlar
 
 - **Çalışma** — bugün kaç kez tarama bitti; kaç tarama açık

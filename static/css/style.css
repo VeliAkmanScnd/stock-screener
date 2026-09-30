@@ -1735,6 +1735,65 @@ body {
   margin: 0;
 }
 
+.dash-service {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.55rem 0.85rem;
+  margin-block: 0 1rem;
+  padding: 0.65rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface2);
+}
+
+.dash-service.is-ok {
+  border-color: rgba(46, 204, 113, 0.35);
+}
+
+.dash-service.is-warn {
+  border-color: rgba(241, 196, 15, 0.4);
+}
+
+.dash-service.is-down {
+  border-color: rgba(231, 76, 60, 0.45);
+  background: rgba(231, 76, 60, 0.08);
+}
+
+.dash-service-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  background: var(--silver-bg);
+  color: var(--muted);
+}
+
+.dash-service.is-ok .dash-service-pill {
+  background: rgba(46, 204, 113, 0.18);
+  color: #7dffa8;
+}
+
+.dash-service.is-warn .dash-service-pill {
+  background: rgba(241, 196, 15, 0.18);
+  color: #f5d76e;
+}
+
+.dash-service.is-down .dash-service-pill {
+  background: rgba(231, 76, 60, 0.2);
+  color: #ff8f85;
+}
+
+.dash-service-detail {
+  font-size: 0.82rem;
+  color: var(--silver);
+  line-height: 1.35;
+}
+
 .dash-kpis {
   container-type: inline-size;
   display: grid;

@@ -80,7 +80,9 @@ templates = Jinja2Templates(directory=templates_dir)
 
 @app.get("/healthz")
 async def healthz():
-    return {"ok": True, "app": "TradeLABtr"}
+    from app.services.runtime_status import build_runtime_status
+
+    return build_runtime_status()
 
 
 @app.get("/login", response_class=HTMLResponse)

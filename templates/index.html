@@ -6,7 +6,7 @@
   <title>TradeLABtr Stock Screener</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/css/style.css?v=38" />
+  <link rel="stylesheet" href="/static/css/style.css?v=39" />
   <link rel="stylesheet" href="/static/css/auth.css?v=5" />
 </head>
 <body>
@@ -77,6 +77,10 @@
             <button type="button" class="btn secondary" id="btnDashToSchedules">Zamanlanmış</button>
             <button type="button" class="btn primary" id="btnDashToScan">Yeni tarama</button>
           </div>
+        </div>
+        <div class="dash-service" id="dashService" aria-live="polite">
+          <span class="dash-service-pill" id="dashServicePill">Servis…</span>
+          <span class="dash-service-detail" id="dashServiceDetail">Durum yükleniyor</span>
         </div>
         <div class="dash-kpis" id="dashKpis"></div>
       </section>
@@ -800,7 +804,7 @@
   </div>
 
   <script src="/static/js/auth.js?v=8"></script>
-  <script src="/static/js/dash.js?v=2"></script>
+  <script src="/static/js/dash.js?v=3"></script>
   <script src="/static/js/app.js?v=51"></script>
   <script src="/static/js/track.js?v=12"></script>
   <script src="/static/js/perf.js?v=3"></script>

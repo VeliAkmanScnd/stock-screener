@@ -18,6 +18,15 @@ function dashFmt(iso) {
   });
 }
 
+function dashUptime(sec) {
+  const n = Number(sec) || 0;
+  if (n < 60) return `${n} sn`;
+  if (n < 3600) return `${Math.floor(n / 60)} dk`;
+  const h = Math.floor(n / 3600);
+  const m = Math.floor((n % 3600) / 60);
+  return m ? `${h} sa ${m} dk` : `${h} sa`;
+}
+
 function dashStatus(status) {
   const s = String(status || "");
   if (s === "error") return '<span class="status-pill err">hata</span>';
@@ -26,6 +35,43 @@ function dashStatus(status) {
   if (s.startsWith("success")) return '<span class="status-pill ok">tamam</span>';
   if (s === "running") return '<span class="status-pill">çalışıyor</span>';
   return s ? dashEsc(s) : "—";
+}
+
+function setDashServiceUI(state, pillText, detail) {
+  const box = document.getElementById("dashService");
+  const pill = document.getElementById("dashServicePill");
+  const det = document.getElementById("dashServiceDetail");
+  if (!box || !pill || !det) return;
+  box.classList.remove("is-ok", "is-warn", "is-down");
+  if (state) box.classList.add(state);
+  pill.textContent = pillText;
+  det.textContent = detail;
+}
+
+function renderDashService(svc) {
+  if (!svc || svc.server !== "up") {
+    setDashServiceUI(
+      "is-down",
+      "Sunucu kapalı",
+      "ERR_CONNECTION_REFUSED = süreç yok. VPS: git pull → .\\install-windows-task.ps1 veya start-tradelab.bat"
+    );
+    return;
+  }
+  const schedOk = !!svc.scheduler_running;
+  const jobs = svc.scheduler_jobs ?? 0;
+  const parts = [
+    `çalışma süresi ${dashUptime(svc.uptime_seconds)}`,
+    schedOk ? `zamanlayıcı açık (${jobs} iş)` : "zamanlayıcı kapalı",
+    svc.next_job_at ? `sonraki iş ${dashFmt(svc.next_job_at)}` : "planlı iş yok",
+  ];
+  if (svc.watchdog_last) {
+    parts.push(`watchdog: ${String(svc.watchdog_last).slice(0, 80)}`);
+  }
+  setDashServiceUI(
+    schedOk ? "is-ok" : "is-warn",
+    schedOk ? "Servis ayakta" : "Servis kısmi",
+    parts.join(" · ")
+  );
 }
 
 function kpiCard(label, value, hint) {
@@ -141,8 +187,31 @@ function renderDashUpcoming(rows) {
     .join("");
 }
 
+let _dashPollTimer = null;
+
+async function pingHealthz() {
+  try {
+    const res = await fetch("/healthz", { credentials: "omit", cache: "no-store" });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error("healthz hata");
+    renderDashService(data);
+    return data;
+  } catch {
+    renderDashService(null);
+    return null;
+  }
+}
+
 async function loadDashboard() {
   const hint = document.getElementById("dashDateHint");
+  const health = await pingHealthz();
+  if (!health) {
+    if (hint) {
+      hint.textContent =
+        "Sunucu yanıt vermiyor (CONNECTION_REFUSED). VPS'te start-tradelab.bat veya install-windows-task.ps1 çalıştırın.";
+    }
+    return;
+  }
   try {
     const res = await apiFetch("/api/dashboard/today");
     const data = await res.json();
@@ -153,6 +222,7 @@ async function loadDashboard() {
     if (hint) {
       hint.textContent = `${data.date} · ${data.timezone} (bugünün zamanlanmış taramaları)`;
     }
+    if (data.service) renderDashService(data.service);
     renderDashKpis(data.kpis || {});
     renderDashScans(data.scans || []);
     renderDashRepeats(data.repeats || []);
@@ -160,11 +230,17 @@ async function loadDashboard() {
     renderDashUpcoming(data.upcoming || []);
   } catch (err) {
     if (hint) hint.textContent = err.message || "Özet yüklenemedi.";
+    await pingHealthz();
   }
 }
 
 function onDashTabShown() {
   loadDashboard();
+  if (_dashPollTimer) clearInterval(_dashPollTimer);
+  _dashPollTimer = setInterval(() => {
+    const panel = document.getElementById("dashPanel");
+    if (panel && !panel.classList.contains("hidden")) pingHealthz();
+  }, 30000);
 }
 
 function goToScanTab(scrollToSchedules) {
@@ -189,7 +265,7 @@ document.addEventListener("DOMContentLoaded", () => {
   });
   const panel = document.getElementById("dashPanel");
   if (panel && !panel.classList.contains("hidden")) {
-    loadDashboard();
+    onDashTabShown();
   }
 });
 

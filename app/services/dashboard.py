@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from app.config import DEFAULT_SCHEDULE_TIMEZONE
 from app.database import ScanRun, ScheduledScan, User
 from app.services.scheduler import next_run_for_schedule
+from app.services.runtime_status import build_runtime_status
 from app.services.track_levels import TIMEFRAME_LEVEL_BENCHMARKS
 from app.utils.datetime_fmt import utc_iso
 
@@ -270,6 +271,7 @@ def build_today_dashboard(db: Session, user: User) -> dict[str, Any]:
     return {
         "date": day,
         "timezone": DEFAULT_SCHEDULE_TIMEZONE or "Europe/Istanbul",
+        "service": build_runtime_status(),
         "kpis": {
             "enabled_scans": sum(1 for s in scans if s.enabled),
             "runs_today": len(runs),
