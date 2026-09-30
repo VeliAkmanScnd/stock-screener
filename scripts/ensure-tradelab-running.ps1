@@ -49,21 +49,21 @@ function Test-PortListen {
 }
 
 if (-not (Test-Path $Python)) {
-    Write-Watch "[HATA] venv python yok: $Python"
+    Write-Watch "[ERR] missing venv python: $Python"
     exit 1
 }
 
 if (Test-Healthy) {
-    Write-Watch "OK — TradeLABtr ayakta (healthz)."
+    Write-Watch "OK - TradeLABtr up (healthz)."
     exit 0
 }
 
 if (Test-PortListen) {
-    Write-Watch "OK — port $Port dinleniyor (healthz henuz hazir degil)."
+    Write-Watch "OK - port $Port listening (healthz not ready yet)."
     exit 0
 }
 
-Write-Watch "DOWN — baslatiliyor (HOST=0.0.0.0 PORT=$Port)..."
+Write-Watch "DOWN - starting (HOST=0.0.0.0 PORT=$Port)..."
 
 $env:HOST = "0.0.0.0"
 $env:PORT = "$Port"
@@ -73,16 +73,9 @@ $outLog = Join-Path $LogDir "service-stdout.log"
 $errLog = Join-Path $LogDir "service-stderr.log"
 
 try {
-    Start-Process `
-        -FilePath $Python `
-        -ArgumentList @("-u", "run.py") `
-        -WorkingDirectory $Root `
-        -WindowStyle Hidden `
-        -RedirectStandardOutput $outLog `
-        -RedirectStandardError $errLog |
-        Out-Null
+    Start-Process -FilePath $Python -ArgumentList "-u","run.py" -WorkingDirectory $Root -WindowStyle Hidden -RedirectStandardOutput $outLog -RedirectStandardError $errLog | Out-Null
 } catch {
-    Write-Watch "[HATA] Start-Process: $_"
+    Write-Watch "[ERR] Start-Process: $_"
     exit 1
 }
 
@@ -90,15 +83,15 @@ $deadline = (Get-Date).AddSeconds($WaitSeconds)
 while ((Get-Date) -lt $deadline) {
     Start-Sleep -Seconds 2
     if (Test-Healthy) {
-        Write-Watch "OK — TradeLABtr yeniden ayaga kalkti."
+        Write-Watch "OK - TradeLABtr started."
         exit 0
     }
 }
 
 if (Test-PortListen) {
-    Write-Watch "UYARI — port acik ama healthz basarisiz; storage\server.log bakin."
+    Write-Watch "WARN - port open but healthz failed; see storage\server.log"
     exit 0
 }
 
-Write-Watch "[HATA] Baslatma sonrasi healthz yok. storage\server.log / service-stderr.log"
+Write-Watch "[ERR] start failed - see storage\server.log and service-stderr.log"
 exit 1
