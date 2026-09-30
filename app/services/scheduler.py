@@ -314,6 +314,13 @@ def start_scheduler() -> None:
 
         return
 
+    try:
+        from app.services.schedule_runner import cleanup_stale_running_scans
+
+        cleanup_stale_running_scans()
+    except Exception:
+        logger.exception("Stale running scan cleanup failed")
+
     _scheduler = BackgroundScheduler(
 
         timezone="UTC",

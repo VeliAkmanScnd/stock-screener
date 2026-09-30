@@ -99,10 +99,14 @@ def format_weekdays_label(days: list[int]) -> str:
 
 
 def min_run_interval_seconds(schedule_type: str) -> int:
-    """Minimum gap between automatic runs (prevents duplicate cron triggers)."""
+    """Minimum gap between automatic runs (prevents duplicate cron triggers).
+
+    Window schedules (5m/15m/…) rely on race-window + already-running checks instead:
+    finish-time gaps skipped legitimate next slots when a scan took more than ~3 minutes.
+    """
     stype = normalize_schedule_type(schedule_type)
     if stype in WINDOW_INTERVAL_MINUTES:
-        return max(90, int(WINDOW_INTERVAL_MINUTES[stype] * 60 * 0.8))
+        return 0
     if stype == "1wk":
         return 6 * 24 * 3600
     return 23 * 3600

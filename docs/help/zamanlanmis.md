@@ -36,8 +36,16 @@ Her çalışmada eşleşmeler Performans’a eklenir. TP sonrası açık bir AL 
 
 Tarama kartındaki zamanlanmış tablo: son çalışma, eşleşme sayısı, seçilen bildirim kanalları, e-posta / Telegram hatası.
 
-- **Şimdi çalıştır** kuyruğa alır (aynı anda tek tarama).
+- **Şimdi çalıştır** kuyruğa alır (aynı anda tek tarama; SQLite nedeniyle sıralı).
 - **Düzenle** boş token ile kayıtlı bot token’ı silmez.
+- 15m/5m pencerelerde bir tarama uzun sürse bile bir sonraki `:00/:15/:30/:45` slotu atlanmaz (önceki sürümde yavaş biten tur sonraki slotu kesebiliyordu).
+- Sunucu yeniden başlarken takılı `running` kayıtları temizlenir.
+
+## Çalışmıyor gibi görünürse
+
+1. Özet → servis / zamanlayıcı ayakta mı?
+2. Zamanlanmış satırda **açık** mı, pencere saati (ör. 10–18 İstanbul) ve haftanın günü uygun mu?
+3. Logda `Skipping scheduled scan` var mı?
 - Telegram test butonu, yazdığınız token+chat’e deneme mesajı yollar.
 
 ## Dikkat

@@ -25,7 +25,7 @@ _queued_ids: set[int] = set()
 _queue_lock = threading.Lock()
 
 _RACE_WINDOW = timedelta(minutes=3)
-_STALE_RUNNING = timedelta(hours=2)
+_STALE_RUNNING = timedelta(minutes=45)
 
 
 def _as_utc(dt: datetime) -> datetime:
@@ -34,11 +34,54 @@ def _as_utc(dt: datetime) -> datetime:
     return dt.astimezone(timezone.utc)
 
 
+def cleanup_stale_running_scans(max_age: timedelta | None = None) -> int:
+    """Mark orphan 'running' rows as error so schedules are not blocked after restart."""
+    age_limit = max_age if max_age is not None else timedelta(minutes=15)
+    db = SessionLocal()
+    try:
+        now = datetime.now(timezone.utc)
+        rows = (
+            db.query(ScanRun)
+            .filter(ScanRun.status == "running")
+            .order_by(ScanRun.started_at.asc())
+            .all()
+        )
+        fixed = 0
+        for row in rows:
+            started = _as_utc(row.started_at) if row.started_at else None
+            if started is not None and (now - started) < age_limit:
+                continue
+            row.status = "error"
+            row.finished_at = now
+            row.error_message = "Kesildi: süreç yeniden başladı veya tarama takıldı"
+            fixed += 1
+            sched = (
+                db.query(ScheduledScan)
+                .filter(ScheduledScan.id == row.scheduled_scan_id)
+                .first()
+            )
+            if sched and (sched.last_status or "") == "running":
+                sched.last_status = "error"
+                sched.last_error = row.error_message
+                sched.last_run_at = now
+        if fixed:
+            db.commit()
+            logger.warning("Cleared %s stale running ScanRun row(s)", fixed)
+        return fixed
+    except Exception:
+        logger.exception("Failed to clear stale running scans")
+        db.rollback()
+        return 0
+    finally:
+        db.close()
+
+
 def _duplicate_skip_reason(
     db: Session,
     sched: ScheduledScan,
     *,
     force: bool,
+    bypass_min_gap: bool = False,
 ) -> str | None:
     if force:
         return None
@@ -57,6 +100,14 @@ def _duplicate_skip_reason(
         age = now - _as_utc(running.started_at)
         if age < _STALE_RUNNING:
             return f"already running (run #{running.id})"
+        running.status = "error"
+        running.finished_at = now
+        running.error_message = "Kesildi: takılı running kaydı"
+        logger.warning(
+            "Marked stale running ScanRun #%s for schedule %s",
+            running.id,
+            sched.id,
+        )
 
     recent = (
         db.query(ScanRun)
@@ -69,10 +120,13 @@ def _duplicate_skip_reason(
     if recent:
         return f"started recently (run #{recent.id})"
 
-    if sched.last_run_at:
+    if bypass_min_gap:
+        return None
+
+    min_gap_sec = min_run_interval_seconds(sched.schedule_type)
+    if min_gap_sec > 0 and sched.last_run_at:
         since = now - _as_utc(sched.last_run_at)
-        min_gap = timedelta(seconds=min_run_interval_seconds(sched.schedule_type))
-        if since < min_gap:
+        if since < timedelta(seconds=min_gap_sec):
             return f"last run {int(since.total_seconds())}s ago"
 
     return None
@@ -101,10 +155,21 @@ def _dequeue_next() -> int | None:
 def _run_next_queued() -> None:
     next_id = _dequeue_next()
     if next_id is not None:
-        threading.Thread(target=run_scheduled_scan, args=(next_id,), daemon=True).start()
+        # Kuyruktan gelen tur gecikti; min-gap ile sonraki slotu öldürme.
+        threading.Thread(
+            target=run_scheduled_scan,
+            args=(next_id,),
+            kwargs={"bypass_min_gap": True},
+            daemon=True,
+        ).start()
 
 
-def run_scheduled_scan(scheduled_id: int, *, force: bool = False) -> None:
+def run_scheduled_scan(
+    scheduled_id: int,
+    *,
+    force: bool = False,
+    bypass_min_gap: bool = False,
+) -> None:
     """Background job entry point."""
     if not _scan_lock.acquire(blocking=False):
         _enqueue_scheduled_scan(scheduled_id)
@@ -119,7 +184,12 @@ def run_scheduled_scan(scheduled_id: int, *, force: bool = False) -> None:
             db.rollback()
             return
 
-        skip = _duplicate_skip_reason(db, sched, force=force)
+        skip = _duplicate_skip_reason(
+            db,
+            sched,
+            force=force,
+            bypass_min_gap=bypass_min_gap,
+        )
         if skip:
             logger.info("Skipping scheduled scan %s (%s)", scheduled_id, skip)
             db.rollback()
