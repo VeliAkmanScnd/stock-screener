@@ -245,11 +245,17 @@ def build_today_dashboard(db: Session, user: User, period: str | None = "day") -
 
             if _email_delivered(payload, run):
                 email_sent += 1
-            telegram_sent += _telegram_messages(payload, run, run_hits)
+            tg_msgs = _telegram_messages(payload, run, run_hits)
+            telegram_sent += tg_msgs
+            tg_ok = tg_msgs > 0
+            tg_err = ""
+            if run_hits > 0 and not tg_ok:
+                tg_err = str(run.error_message or payload.get("telegram_error") or "").strip()
 
             started = run.started_at
             hour = None
             weekday = None
+            last_at = utc_iso(started) if started else None
             if started:
                 aware = started if started.tzinfo else started.replace(tzinfo=timezone.utc)
                 local_dt = aware.astimezone(zone)
@@ -271,12 +277,23 @@ def build_today_dashboard(db: Session, user: User, period: str | None = "day") -
                             "scans": set(),
                             "timeframes": set(),
                             "directions": Counter(),
+                            "telegram": "none",
+                            "telegram_error": "",
+                            "last_at": None,
                         },
                     )
                     rec["count"] += 1
                     rec["scans"].add(sched.name)
                     rec["timeframes"].add(meta["timeframe_label"])
                     rec["directions"][direction] += 1
+                    if last_at:
+                        rec["last_at"] = last_at
+                    if tg_ok:
+                        rec["telegram"] = "sent"
+                    elif rec["telegram"] != "sent":
+                        rec["telegram"] = "missed"
+                        if tg_err:
+                            rec["telegram_error"] = tg_err[:160]
                     if hour is not None:
                         hour_hits[hour] += 1
                     if weekday is not None:
@@ -314,22 +331,26 @@ def build_today_dashboard(db: Session, user: User, period: str | None = "day") -
             }
         )
 
-    repeats = []
+    symbols = []
     for rec in symbol_hits.values():
         dirs = rec["directions"]
         direction = "AL" if dirs["AL"] >= dirs["SAT"] else "SAT"
         if dirs["AL"] and dirs["SAT"]:
             direction = "AL/SAT"
-        repeats.append(
+        symbols.append(
             {
                 "symbol": rec["symbol"],
                 "count": rec["count"],
                 "scans": sorted(rec["scans"]),
                 "timeframes": sorted(rec["timeframes"]),
                 "direction": direction,
+                "telegram": rec.get("telegram") or "none",
+                "telegram_error": rec.get("telegram_error") or "",
+                "last_at": rec.get("last_at"),
             }
         )
-    repeats.sort(key=lambda row: (-row["count"], row["symbol"]))
+    symbols.sort(key=lambda row: (-row["count"], row["symbol"]))
+    repeats = [row for row in symbols if row["count"] >= 2]
 
     if period_key == "week":
         chart_mode = "weekday"
@@ -358,7 +379,8 @@ def build_today_dashboard(db: Session, user: User, period: str | None = "day") -
     upcoming.sort(key=lambda row: row["next_run_at"] or "")
 
     unique_total = len(symbol_hits)
-    repeat_symbols = sum(1 for row in repeats if row["count"] >= 2)
+    repeat_symbols = len(repeats)
+    tg_missed_symbols = sum(1 for row in symbols if row.get("telegram") == "missed")
     if period_key == "week" and weekday_hits:
         peak_key, peak_hits = weekday_hits.most_common(1)[0]
         peak_label = WEEKDAY_TR[peak_key]
@@ -392,6 +414,7 @@ def build_today_dashboard(db: Session, user: User, period: str | None = "day") -
             "hits": hit_total,
             "unique_symbols": unique_total,
             "repeat_symbols": repeat_symbols,
+            "tg_missed_symbols": tg_missed_symbols,
             "al": al_count,
             "sat": sat_count,
             "skipped_repeat_price": skipped_repeat,
@@ -401,8 +424,10 @@ def build_today_dashboard(db: Session, user: User, period: str | None = "day") -
             "peak_hour_hits": int(peak_hits),
             "top_timeframe": top_tf,
             "top_timeframe_hits": int(top_tf_hits),
+            "symbol_names": [row["symbol"] for row in symbols[:12]],
         },
         "scans": scan_rows,
+        "symbols": symbols[:80],
         "repeats": repeats[:40],
         "hours": hours,
         "upcoming": upcoming[:12],

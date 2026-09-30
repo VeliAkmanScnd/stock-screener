@@ -19,7 +19,7 @@ Seçili döneme göre güncellenir:
 
 ## Tablolar
 
-Zamanlanmış her tarama için periyot, borsa, seçili dönemdeki çalışma sayısı, eşleşme ve tekil hisse görülür. Satıra tıklayınca **Tarama** sekmesindeki zamanlanmış listeye gidersiniz. **Tekrarlayan hisseler** aynı sembolün dönemde kaç kez geldiğini listeler.
+Zamanlanmış her tarama için periyot, borsa, seçili dönemdeki çalışma sayısı, eşleşme ve tekil hisse görülür. Satıra tıklayınca **Tarama** sekmesindeki zamanlanmış listeye gidersiniz. **Bulunan hisseler** seçili dönemdeki tüm eşleşen sembolleri listeler (kaç kez, yön, Telegram gitti mi).
 
 **Bugün** ve **Tüm zamanlar** için saatlik çubuklar, **Bu hafta** için gün bazlı çubuklar (Pzt–Paz) gösterilir. Sıradaki çalışmalar, açık taramaların bir sonraki planlanan saatidir.
 

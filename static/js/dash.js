@@ -104,17 +104,23 @@ function renderDashKpis(kpis, period) {
   const runHint = kpis.running_runs
     ? `${kpis.enabled_scans ?? 0} açık · ${kpis.running_runs} sürüyor`
     : `${kpis.enabled_scans ?? 0} açık tarama`;
+  const names = Array.isArray(kpis.symbol_names) ? kpis.symbol_names.filter(Boolean) : [];
+  const uniqueHint = names.length
+    ? names.slice(0, 6).join(", ") + (kpis.unique_symbols > 6 ? "…" : "")
+    : `${kpis.repeat_symbols ?? 0} tekrarlayan`;
+  let notifyHint = `gönderilen mesaj · e-posta ${kpis.email_sent ?? 0}`;
+  if ((kpis.hits ?? 0) > 0 && (kpis.telegram_sent ?? 0) === 0) {
+    notifyHint = `eşleşme var, TG gitmedi · e-posta ${kpis.email_sent ?? 0}`;
+  } else if (kpis.tg_missed_symbols) {
+    notifyHint = `${kpis.tg_missed_symbols} sembol TG’siz · e-posta ${kpis.email_sent ?? 0}`;
+  }
   el.innerHTML = [
     kpiCard("Çalışma", runs, runHint),
     kpiCard("Eşleşme", kpis.hits ?? 0, `AL ${kpis.al ?? 0} · SAT ${kpis.sat ?? 0}`),
-    kpiCard("Tekil hisse", kpis.unique_symbols ?? 0, `${kpis.repeat_symbols ?? 0} tekrarlayan`),
+    kpiCard("Tekil hisse", kpis.unique_symbols ?? 0, uniqueHint),
     kpiCard("Aynı fiyat gizlendi", kpis.skipped_repeat_price ?? 0, "önceki sinyal ile aynı"),
     kpiCard("Hata", kpis.error_runs ?? 0, `${kpis.success_runs ?? 0} başarılı`),
-    kpiCard(
-      "Bildirim",
-      `${kpis.telegram_sent ?? 0} TG`,
-      `gönderilen mesaj · e-posta ${kpis.email_sent ?? 0}`
-    ),
+    kpiCard("Bildirim", `${kpis.telegram_sent ?? 0} TG`, notifyHint),
     kpiCard(peakLabel, peak, `${kpis.peak_hour_hits ?? 0} eşleşme`),
     kpiCard(
       "En çok periyot",
@@ -147,28 +153,40 @@ function renderDashScans(rows) {
     .join("");
 }
 
-function renderDashRepeats(rows, period) {
+function dashTgStatus(row) {
+  const t = String(row?.telegram || "none");
+  if (t === "sent") return '<span class="status-pill ok">gitti</span>';
+  if (t === "missed") {
+    const err = row.telegram_error ? ` title="${dashEsc(row.telegram_error)}"` : "";
+    return `<span class="status-pill err"${err}>gitmedi</span>`;
+  }
+  return "—";
+}
+
+function renderDashSymbols(rows, period) {
   const tbody = document.getElementById("dashRepeatsBody");
   if (!tbody) return;
-  const repeats = (rows || []).filter((r) => r.count >= 2);
-  if (!repeats.length) {
+  const list = rows || [];
+  if (!list.length) {
     const empty =
       period === "all"
-        ? "Seçili dönemde tekrarlayan hisse yok."
+        ? "Seçili dönemde eşleşen hisse yok."
         : period === "week"
-          ? "Bu hafta aynı hisse birden fazla gelmedi."
-          : "Bugün aynı hisse birden fazla gelmedi.";
-    tbody.innerHTML = `<tr class="empty"><td colspan="5">${empty}</td></tr>`;
+          ? "Bu hafta eşleşen hisse yok."
+          : "Bugün eşleşen hisse yok.";
+    tbody.innerHTML = `<tr class="empty"><td colspan="7">${empty}</td></tr>`;
     return;
   }
-  tbody.innerHTML = repeats
+  tbody.innerHTML = list
     .map(
       (r) => `<tr>
         <td><strong>${dashEsc(r.symbol)}</strong></td>
         <td>${r.count}</td>
         <td>${dashEsc(r.direction)}</td>
+        <td>${dashTgStatus(r)}</td>
         <td>${dashEsc((r.timeframes || []).join(", "))}</td>
         <td>${dashEsc((r.scans || []).join(" · "))}</td>
+        <td>${dashFmt(r.last_at)}</td>
       </tr>`
     )
     .join("");
@@ -242,10 +260,10 @@ function applyDashPeriodCopy(data) {
   if (repeatsHint) {
     repeatsHint.textContent =
       period === "all"
-        ? "Aynı hisse tüm dönemde kaç kez geldi."
+        ? "Tüm dönemde eşleşen semboller; TG sütunu gerçek gönderimi gösterir."
         : period === "week"
-          ? "Aynı hisse bu hafta kaç kez geldi."
-          : "Aynı hisse bugün kaç kez geldi.";
+          ? "Bu hafta eşleşen semboller; TG sütunu gerçek gönderimi gösterir."
+          : "Bugün eşleşen semboller; TG sütunu gerçek gönderimi gösterir.";
   }
   if (chartTitle) {
     chartTitle.textContent =
@@ -296,7 +314,7 @@ async function loadDashboard() {
     if (data.service) renderDashService(data.service);
     renderDashKpis(data.kpis || {}, data.period || _dashPeriod);
     renderDashScans(data.scans || []);
-    renderDashRepeats(data.repeats || [], data.period || _dashPeriod);
+    renderDashSymbols(data.symbols || data.repeats || [], data.period || _dashPeriod);
     renderDashHours(data.hours || [], data.chart_mode || "hour");
     renderDashUpcoming(data.upcoming || []);
   } catch (err) {
