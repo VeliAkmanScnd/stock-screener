@@ -186,8 +186,19 @@ def build_today_dashboard(db: Session, user: User, period: str | None = "day") -
             payload = _parse_payload(run.results_json)
             if run.email_sent or payload.get("email_sent"):
                 email_sent += 1
-            if payload.get("telegram_sent"):
-                telegram_sent += 1
+            # Eski kayıtlar: eşleşme yokken telegram_sent=True yazılıyordu — sayma.
+            tg_count = payload.get("telegram_sent_count")
+            if tg_count is not None:
+                try:
+                    telegram_sent += max(0, int(tg_count))
+                except (TypeError, ValueError):
+                    pass
+            elif payload.get("telegram_sent"):
+                hits_in_run = int(run.match_count or payload.get("count") or 0)
+                if hits_in_run <= 0 and isinstance(payload.get("results"), list):
+                    hits_in_run = len(payload["results"])
+                if hits_in_run > 0:
+                    telegram_sent += 1
             local_skipped += int(payload.get("skipped_repeat_price") or 0)
             results = payload.get("results") if payload else None
             started = run.started_at

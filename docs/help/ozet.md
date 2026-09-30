@@ -13,7 +13,7 @@ Seçili döneme göre güncellenir:
 - **Tekil hisse** — kaç farklı sembol; kaçı birden fazla kez geldi
 - **Aynı fiyat gizlendi** — önceki taramayla aynı fiyattaki tekrarlar
 - **Hata** — başarısız / başarılı çalışma
-- **Bildirim** — Telegram ve e-posta giden sayısı
+- **Bildirim** — gerçekten gönderilen Telegram mesajı ve e-posta sayısı (eşleşme yokken TG atılmaz)
 - **Yoğun saat / gün** — bugün ve tüm zamanlarda saat; bu haftada en yoğun gün
 - **En çok periyot** — en fazla hisse bulan zaman dilimi
 

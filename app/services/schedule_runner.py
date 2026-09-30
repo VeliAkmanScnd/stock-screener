@@ -191,6 +191,7 @@ def run_scheduled_scan(scheduled_id: int, *, force: bool = False) -> None:
                 logger.exception("Email failed for schedule %s", scheduled_id)
 
         telegram_sent = False
+        telegram_sent_count = 0
         notify_telegram = bool(getattr(sched, "notify_telegram", True))
         if notify_telegram and (
             telegram_configured()
@@ -210,8 +211,9 @@ def run_scheduled_scan(scheduled_id: int, *, force: bool = False) -> None:
                     custom_source_universe=payload.get("custom_source_universe"),
                     bot_token=getattr(sched, "telegram_bot_token", None),
                 )
-                telegram_sent = sent > 0 or match_count == 0
-                if match_count > 0 and sent == 0:
+                telegram_sent_count = int(sent or 0)
+                telegram_sent = telegram_sent_count > 0
+                if match_count > 0 and not telegram_sent:
                     notify_errors.append(
                         "telegram: eşleşme vardı ama mesaj üretilmedi (token/chat id kaydı veya fiyat)"
                     )
@@ -225,14 +227,16 @@ def run_scheduled_scan(scheduled_id: int, *, force: bool = False) -> None:
         run_row.match_count = match_count
         payload["email_sent"] = email_sent
         payload["telegram_sent"] = telegram_sent
+        payload["telegram_sent_count"] = telegram_sent_count
         run_row.results_json = json.dumps(payload, ensure_ascii=False)
         run_row.tv_list_text = tv_text
         run_row.email_sent = email_sent
         run_row.error_message = notify_error
 
         sched.last_run_at = run_row.finished_at
-        email_failed = notify_email and not email_sent
-        telegram_failed = notify_telegram and not telegram_sent
+        email_failed = notify_email and bool((sched.email_to or "").strip()) and not email_sent
+        # Boş eşleşmede TG bilerek atlanır; hata sayma.
+        telegram_failed = notify_telegram and match_count > 0 and not telegram_sent
         if notify_error and email_failed and telegram_failed:
             sched.last_status = "success_no_email"
         elif notify_error and email_failed:
@@ -245,11 +249,12 @@ def run_scheduled_scan(scheduled_id: int, *, force: bool = False) -> None:
         sched.last_error = notify_error
         db.commit()
         logger.info(
-            "Scheduled scan %s done: %s matches, email=%s telegram=%s",
+            "Scheduled scan %s done: %s matches, email=%s telegram=%s (%s msg)",
             scheduled_id,
             match_count,
             email_sent,
             telegram_sent,
+            telegram_sent_count,
         )
 
         from app.services.track_service import ingest_scan_results

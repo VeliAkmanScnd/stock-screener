@@ -26,12 +26,14 @@ def _attach_telegram(
 
     if not notify:
         result["telegram_sent"] = False
+        result["telegram_sent_count"] = 0
         result["telegram_skipped"] = True
         result["telegram_error"] = None
         return result
     bot_token = (extra_bot_token or TELEGRAM_BOT_TOKEN or "").strip() or None
     if not bot_token:
         result["telegram_sent"] = False
+        result["telegram_sent_count"] = 0
         result["telegram_error"] = "Telegram yapılandırılmamış (.env veya tarama bot token)"
         return result
     try:
@@ -51,9 +53,11 @@ def _attach_telegram(
             bot_token=bot_token,
         )
         result["telegram_sent"] = sent > 0
+        result["telegram_sent_count"] = int(sent or 0)
         result["telegram_error"] = None
     except Exception as exc:
         result["telegram_sent"] = False
+        result["telegram_sent_count"] = 0
         result["telegram_error"] = str(exc)
     return result
 

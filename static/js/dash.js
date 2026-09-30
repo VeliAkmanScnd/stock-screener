@@ -110,7 +110,7 @@ function renderDashKpis(kpis, period) {
     kpiCard(
       "Bildirim",
       `${kpis.telegram_sent ?? 0} TG`,
-      `e-posta ${kpis.email_sent ?? 0}`
+      `gönderilen mesaj · e-posta ${kpis.email_sent ?? 0}`
     ),
     kpiCard(peakLabel, peak, `${kpis.peak_hour_hits ?? 0} eşleşme`),
     kpiCard(
