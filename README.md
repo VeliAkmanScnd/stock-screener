@@ -65,29 +65,44 @@ Zamanlanmış taramalar **yalnızca sunucu çalışırken** tetiklenir; pencerey
 
 Tarayıcı: http://127.0.0.1:8000
 
-## VPS (Windows) baslatma
+## VPS (Windows) baslatma — surekli ayakta
 
-1. Repo klasorunde `git pull` (ör. `C:\Users\vakman\stock-screener`)
-2. `.env` yoksa `copy .env.example .env`
-3. Eski TradeLABtr penceresini kapatmanıza gerek yok: `start-tradelab.bat` port 8000’deki eski `python` sürecini durdurup yenisini açar
-4. Çift tık: `start-tradelab.bat` — pencere **açık kalsın**
-5. Tarayıcı: **http://127.0.0.1:8000/login** (bat 4 sn sonra bunu kendi açar)
+Zamanlanmis tarama ve Telegram **yalnizca sunucu calisirken** gider. Pencere kapanirsa veya python cokerse sinyal kacar.
 
-`localhost` yazmayın; Windows sıkça IPv6 (`::1`) dener, sayfa açılmaz. `https` yok, portu (`:8000`) atlamayın.
+**Bir kez (Yonetici PowerShell):**
 
-Başka bir PC’den: `http://VPS_IPv4:8000/login`. Windows Firewall’da TCP 8000 inbound açık olmalı (Yönetici CMD):
-
-```bat
-netsh advfirewall firewall add rule name="TradeLABtr" dir=in action=allow protocol=TCP localport=8000
+```powershell
+cd C:\Users\vakman\stock-screener
+git pull
+.\install-windows-task.ps1
 ```
 
-Hâlâ açılmazsa aynı VPS’te:
+Bu sudakileri kurar:
+- Oturum acilinca / baslangicta TradeLABtr
+- **Her 5 dakikada** `healthz` kontrolu; dusukse arka planda yeniden baslatir (`storage\watchdog.log`)
+
+**Manuel / git pull sonrasi zorla yenile** (eski sureci oldurup acar):
+
+```bat
+start-tradelab.bat
+```
+
+Kontrol:
 
 ```bat
 curl http://127.0.0.1:8000/healthz
 ```
 
-`{"ok":true...}` gelmiyorsa sunucu ayakta değildir — `storage\server.log` ve `start-tradelab.bat` penceresine bakın.
+`{"ok":true...}` gelmiyorsa sunucu ayakta degildir — `storage\server.log` ve `storage\watchdog.log` bakin.
+
+`localhost` yazmayin; Windows sikca IPv6 (`::1`) dener. `https` yok, portu (`:8000`) atlamayin.
+
+Baska PC: `http://VPS_IPv4:8000/login`. Firewall (Yonetici CMD):
+
+```bat
+netsh advfirewall firewall add rule name="TradeLABtr" dir=in action=allow protocol=TCP localport=8000
+```
+
 
 ## VIOP ve Hisse hesaplayıcı
 

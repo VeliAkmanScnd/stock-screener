@@ -2,7 +2,17 @@
 
 TradeLABtr, ABD, BIST, VIOP ve Binance evrenlerinde teknik + Pine filtreleriyle hisse tarayan, eşleşmeleri takip eden ve performansını ölçen bir web uygulamasıdır.
 
-Sunucu **açıkken** çalışır. Pencereyi kapatırsanız zamanlanmış taramalar ve saatlik fiyat güncellemesi durur.
+Sunucu **açıkken** çalışır. Pencereyi kapatırsanız veya süreç çökerse zamanlanmış taramalar ve Telegram durur.
+
+VPS’te sürekli ayakta tutmak için **bir kez** (Yönetici PowerShell):
+
+```powershell
+cd C:\Users\vakman\stock-screener
+git pull
+.\install-windows-task.ps1
+```
+
+Kurulum her 5 dakikada `/healthz` bakar; düşmüşse arka planda yeniden başlatır. Ayrıntı: README → VPS.
 
 ## Sekmeler
 

@@ -2,6 +2,8 @@
 
 Tarama ekranındaki **Zamanlanmış tarama** mevcut evren, filtre, Pine ve periyodu kaydeder. Sunucu çalışıyorsa seçilen gün/saatte tekrar tarar. Aynı hisse aynı fiyattan yeniden eşleşirse bildirim gitmez.
 
+VPS’te sunucu düşmesin diye `install-windows-task.ps1` (5 dk watchdog) kurun — README / Genel bakış.
+
 ## Oluşturma
 
 1. Taramayı elle bir kez ayarlayın (evren, 15m, Pine, Telegram).

@@ -1,21 +1,27 @@
-# TradeLABtr - auto-start installer for Windows VPS
-# Run in PowerShell:
+# TradeLABtr - auto-start + keep-alive for Windows VPS
+# Admin PowerShell:
 #   cd C:\Users\vakman\stock-screener
 #   .\install-windows-task.ps1
 #
-# Prefer Admin PowerShell for Task Scheduler.
-# If Access Denied, script falls back to Startup folder (no admin needed).
+# Creates:
+#   TradeLABtr      — at logon / boot
+#   TradeLABtrWatch — every 5 minutes if /healthz is down
 
 param(
     [string]$TaskName = "TradeLABtr",
+    [string]$WatchTaskName = "TradeLABtrWatch",
     [string]$WindowsUser = $env:USERNAME,
-    [string]$WindowsPassword = ""
+    [string]$WindowsPassword = "",
+    [int]$Port = 8000
 )
 
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
+$EnsurePs1 = Join-Path $Root "scripts\ensure-tradelab-running.ps1"
 $Bat = Join-Path $Root "start-tradelab.bat"
+$ServiceBat = Join-Path $Root "start-tradelab-service.bat"
 $Python = Join-Path $Root ".venv\Scripts\python.exe"
+$PsExe = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
 
 function Test-IsAdmin {
     $id = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -28,35 +34,53 @@ function Install-StartupShortcut {
     $lnkPath = Join-Path $startup "TradeLABtr.lnk"
     $w = New-Object -ComObject WScript.Shell
     $lnk = $w.CreateShortcut($lnkPath)
-    $lnk.TargetPath = $Bat
+    $lnk.TargetPath = $ServiceBat
     $lnk.WorkingDirectory = $Root
     $lnk.WindowStyle = 7
-    $lnk.Description = "TradeLABtr Stock Screener"
+    $lnk.Description = "TradeLABtr Stock Screener (keep-alive)"
     $lnk.Save()
     Write-Host "Installed Startup shortcut: $lnkPath"
-    return $lnkPath
 }
 
-if (-not (Test-Path $Bat)) {
-    throw "Missing start-tradelab.bat at $Bat"
+function New-EnsureTask {
+    param(
+        [string]$Name,
+        [string[]]$Schedule
+    )
+    cmd /c "schtasks /Delete /TN `"$Name`" /F >nul 2>&1" | Out-Null
+    $tr = "`"$PsExe`" -NoProfile -ExecutionPolicy Bypass -File `"$EnsurePs1`" -Port $Port"
+    $args = @(
+        "/Create", "/TN", $Name, "/TR", $tr
+    ) + $Schedule + @("/F")
+    if ($WindowsPassword) {
+        $args += @("/RU", $WindowsUser, "/RP", $WindowsPassword, "/RL", "HIGHEST")
+    } else {
+        $args += @("/RU", $WindowsUser, "/RL", "LIMITED")
+    }
+    & schtasks @args
+    return ($LASTEXITCODE -eq 0)
 }
+
+if (-not (Test-Path $EnsurePs1)) { throw "Missing $EnsurePs1" }
+if (-not (Test-Path $Bat)) { throw "Missing $Bat" }
 if (-not (Test-Path $Python)) {
-    throw "Missing venv python at $Python. Run: python -m venv .venv then pip install -r requirements.txt"
-}
-
-# Free port 8000 if an old python TradeLABtr is still listening
-$freePort = Join-Path $Root "scripts\free-listen-port.ps1"
-if (Test-Path $freePort) {
-    & $freePort -Port 8000
-    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    throw "Missing $Python — run: python -m venv .venv ; .\.venv\Scripts\pip install -r requirements.txt"
 }
 
 $isAdmin = Test-IsAdmin
 Write-Host "Running as admin: $isAdmin"
+Write-Host "Repo: $Root"
 
-$createdTask = $false
+$freePort = Join-Path $Root "scripts\free-listen-port.ps1"
+if (Test-Path $freePort) {
+    & $freePort -Port $Port
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+}
+
+$createdMain = $false
+$createdWatch = $false
+
 if ($isAdmin) {
-    # Remove old Windows service if present
     $svc = Get-Service -Name $TaskName -ErrorAction SilentlyContinue
     if ($svc) {
         Write-Host "Removing old Windows service $TaskName ..."
@@ -65,46 +89,56 @@ if ($isAdmin) {
         Start-Sleep -Seconds 2
     }
 
-    cmd /c "schtasks /Delete /TN `"$TaskName`" /F >nul 2>&1"
-
-    $tr = "`"$Bat`""
     if ($WindowsPassword) {
-        & schtasks /Create /TN $TaskName /TR $tr /SC ONSTART /RU $WindowsUser /RP $WindowsPassword /RL HIGHEST /F
+        $createdMain = New-EnsureTask -Name $TaskName -Schedule @("/SC", "ONSTART")
     } else {
-        & schtasks /Create /TN $TaskName /TR $tr /SC ONLOGON /RU $WindowsUser /RL LIMITED /F
+        $createdMain = New-EnsureTask -Name $TaskName -Schedule @("/SC", "ONLOGON")
+    }
+    if ($createdMain) {
+        Write-Host "Scheduled task: $TaskName"
+        & schtasks /Run /TN $TaskName | Out-Null
+    } else {
+        Write-Warning "Main task create failed — Startup folder fallback."
     }
 
-    if ($LASTEXITCODE -eq 0) {
-        $createdTask = $true
-        Write-Host "Scheduled task created: $TaskName"
-        & schtasks /Run /TN $TaskName
+    $createdWatch = New-EnsureTask -Name $WatchTaskName -Schedule @("/SC", "MINUTE", "/MO", "5")
+    if ($createdWatch) {
+        Write-Host "Watchdog task: $WatchTaskName (every 5 minutes)"
     } else {
-        Write-Warning "schtasks Create failed (exit $LASTEXITCODE). Falling back to Startup folder."
+        Write-Warning "Watchdog task create failed."
     }
 } else {
-    Write-Warning "Not admin. Skipping schtasks; using Startup folder instead."
-    Write-Warning "Tip: Right-click PowerShell -> Run as administrator, then re-run this script for a scheduled task."
+    Write-Warning "Not admin — Startup folder only (no 5-min watchdog)."
+    Write-Warning "Yonetici PowerShell ile tekrar calistirin: sag tik -> Run as administrator"
 }
 
-if (-not $createdTask) {
-    Install-StartupShortcut | Out-Null
-    Write-Host "Starting now via bat..."
-    Start-Process -FilePath $Bat -WorkingDirectory $Root -WindowStyle Minimized
+if (-not $createdMain) {
+    Install-StartupShortcut
 }
 
+Write-Host "Starting now..."
+& $EnsurePs1 -Port $Port
 Start-Sleep -Seconds 4
 
-$ok = Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction SilentlyContinue
+$ok = $false
+try {
+    $r = Invoke-WebRequest -Uri "http://127.0.0.1:${Port}/healthz" -UseBasicParsing -TimeoutSec 5
+    $ok = ($r.StatusCode -eq 200)
+} catch {}
+
 if ($ok) {
-    Write-Host "OK - TradeLABtr listening on port 8000"
-    Write-Host "Open http://127.0.0.1:8000  or  http://10.255.7.55:8000"
+    Write-Host "OK - TradeLABtr listening on port $Port"
+    Write-Host "Open http://127.0.0.1:$Port/login"
 } else {
-    Write-Warning "Port 8000 not listening yet. Try: start-tradelab.bat manually"
+    Write-Warning "Not healthy yet. Check storage\watchdog.log and storage\server.log"
 }
 
 Write-Host ""
-Write-Host "Useful commands:"
-Write-Host "  schtasks /Run /TN $TaskName"
-Write-Host "  schtasks /End /TN $TaskName"
+Write-Host "Keep-alive:"
+Write-Host "  Her 5 dk /healthz kontrol; dusukse arka planda yeniden baslar."
+Write-Host "  git pull sonrasi zorla yenile:  .\start-tradelab.bat"
+Write-Host "  Simdi kontrol:  powershell -File .\scripts\ensure-tradelab-running.ps1"
+Write-Host ""
 Write-Host "  schtasks /Query /TN $TaskName /V /FO LIST"
-Write-Host "  Startup folder: shell:startup"
+Write-Host "  schtasks /Query /TN $WatchTaskName /V /FO LIST"
+Write-Host "  curl http://127.0.0.1:$Port/healthz"
