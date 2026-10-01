@@ -16,6 +16,7 @@ from app.services.scheduler import next_run_for_schedule
 from app.services.runtime_status import build_runtime_status
 from app.services.track_levels import TIMEFRAME_LEVEL_BENCHMARKS
 from app.utils.datetime_fmt import istanbul_short, utc_iso
+from app.services.scan_jobs import get_active_schedule_progress, get_schedule_progress
 
 Period = Literal["day", "week", "all"]
 
@@ -216,6 +217,7 @@ def build_today_dashboard(db: Session, user: User, period: str | None = "day") -
     tf_hits: Counter = Counter()
 
     scan_rows = []
+    active_progress = get_active_schedule_progress()
     for sched in scans:
         meta = _config_meta(sched.config_json)
         sched_runs = by_scan.get(sched.id, [])
@@ -329,6 +331,10 @@ def build_today_dashboard(db: Session, user: User, period: str | None = "day") -
         if hits:
             tf_hits[meta["timeframe_label"]] += hits
         next_at = next_run_for_schedule(sched) if sched.enabled else None
+        progress = active_progress.get(sched.id) or get_schedule_progress(sched.id)
+        is_running = running_now is not None or (
+            isinstance(progress, dict) and progress.get("status") in ("running", "queued")
+        )
         scan_rows.append(
             {
                 "id": sched.id,
@@ -346,7 +352,8 @@ def build_today_dashboard(db: Session, user: User, period: str | None = "day") -
                 "last_status": display_status,
                 "last_run_at": utc_iso(display_at),
                 "last_run_istanbul": istanbul_short(display_at),
-                "is_running": running_now is not None,
+                "is_running": is_running,
+                "progress": progress,
                 "next_run_at": utc_iso(next_at),
                 "next_run_istanbul": istanbul_short(next_at),
             }
@@ -449,6 +456,17 @@ def build_today_dashboard(db: Session, user: User, period: str | None = "day") -
             "symbol_names": [row["symbol"] for row in symbols[:12]],
         },
         "scans": scan_rows,
+        "active_scans": [
+            {
+                **prog,
+                "name": next(
+                    (r["name"] for r in scan_rows if r["id"] == prog["scheduled_id"]),
+                    prog.get("name") or f"#{prog['scheduled_id']}",
+                ),
+            }
+            for prog in active_progress.values()
+            if prog.get("status") in ("running", "queued")
+        ],
         "symbols": symbols[:80],
         "repeats": repeats[:40],
         "hours": hours,

@@ -192,6 +192,7 @@ def _enqueue_scheduled_scan(
     try:
         sched = db.query(ScheduledScan).filter(ScheduledScan.id == scheduled_id).first()
         priority = _schedule_priority(sched, scheduled_id)
+        name = (sched.name if sched else "") or f"#{scheduled_id}"
     finally:
         db.close()
 
@@ -208,6 +209,12 @@ def _enqueue_scheduled_scan(
             "bypass_min_gap": bool(bypass_min_gap),
         }
         heapq.heappush(_pending_heap, (priority, next(_seq), scheduled_id))
+    try:
+        from app.services.scan_jobs import begin_schedule_progress
+
+        begin_schedule_progress(scheduled_id, name=name, queued=True)
+    except Exception:
+        pass
     logger.info(
         "Scheduled scan %s queued (priority=%s, force=%s)",
         scheduled_id,
@@ -294,6 +301,12 @@ def _execute_scheduled_scan(
         sched = db.query(ScheduledScan).filter(ScheduledScan.id == scheduled_id).first()
         if not sched or (not sched.enabled and not force):
             db.rollback()
+            try:
+                from app.services.scan_jobs import clear_schedule_progress
+
+                clear_schedule_progress(scheduled_id)
+            except Exception:
+                pass
             return
 
         skip = _duplicate_skip_reason(
@@ -305,6 +318,12 @@ def _execute_scheduled_scan(
         if skip:
             logger.info("Skipping scheduled scan %s (%s)", scheduled_id, skip)
             db.rollback()
+            try:
+                from app.services.scan_jobs import clear_schedule_progress
+
+                clear_schedule_progress(scheduled_id)
+            except Exception:
+                pass
             return
 
         run_row = ScanRun(
@@ -316,10 +335,31 @@ def _execute_scheduled_scan(
         db.commit()
         db.refresh(run_row)
 
+        from app.services.scan_jobs import (
+            begin_schedule_progress,
+            finish_schedule_progress,
+            make_schedule_progress_callback,
+            update_schedule_progress,
+        )
+
+        begin_schedule_progress(
+            scheduled_id,
+            run_id=run_row.id,
+            name=sched.name or f"#{scheduled_id}",
+            queued=False,
+        )
+        progress = make_schedule_progress_callback(scheduled_id)
+
         config = json.loads(sched.config_json)
-        payload = execute_scan_config(config, db)
+        payload = execute_scan_config(config, db, progress_callback=progress)
         from app.services.signal_dedupe import apply_repeat_price_filter, scan_fingerprint
 
+        update_schedule_progress(
+            scheduled_id,
+            progress=92,
+            phase="dedupe",
+            message="Tekrarlar eleniyor…",
+        )
         payload = apply_repeat_price_filter(
             db,
             payload,
@@ -335,6 +375,13 @@ def _execute_scheduled_scan(
         skipped_repeat = int(payload.get("skipped_repeat_price") or 0)
         email_sent = False
         notify_errors: list[str] = []
+
+        update_schedule_progress(
+            scheduled_id,
+            progress=95,
+            phase="notify",
+            message="Bildirimler gönderiliyor…",
+        )
 
         notify_email = bool(getattr(sched, "notify_email", True))
         send_email = notify_email and (sched.email_to or "").strip()
@@ -438,6 +485,11 @@ def _execute_scheduled_scan(
         sched.last_match_count = match_count
         sched.last_error = notify_error
         db.commit()
+        finish_schedule_progress(
+            scheduled_id,
+            ok=True,
+            message=f"Tamamlandı — {match_count} eşleşme",
+        )
         logger.info(
             "Scheduled scan %s done: %s matches, email=%s telegram=%s (%s msg)",
             scheduled_id,
@@ -461,6 +513,12 @@ def _execute_scheduled_scan(
         )
     except Exception as exc:
         logger.exception("Scheduled scan %s failed", scheduled_id)
+        try:
+            from app.services.scan_jobs import finish_schedule_progress
+
+            finish_schedule_progress(scheduled_id, ok=False, message=str(exc)[:160])
+        except Exception:
+            pass
         if run_row:
             run_row.finished_at = _utc_now_naive()
             run_row.status = "error"

@@ -151,6 +151,53 @@ function renderDashKpis(kpis, period) {
   ].join("");
 }
 
+function renderDashActiveScans(rows) {
+  const el = document.getElementById("dashActiveScans");
+  if (!el) return;
+  const list = (rows || []).filter((r) =>
+    ["running", "queued"].includes(String(r.status || ""))
+  );
+  if (!list.length) {
+    el.classList.add("hidden");
+    el.innerHTML = "";
+    return;
+  }
+  el.classList.remove("hidden");
+  el.innerHTML = list
+    .map((r) => {
+      const pct = Math.max(0, Math.min(100, Number(r.progress) || 0));
+      const queued = r.status === "queued";
+      const phase = queued ? "Kuyrukta" : dashPhaseLabel(r.phase);
+      return `<article class="dash-active-card${queued ? " is-queued" : ""}">
+        <div class="dash-active-head">
+          <strong>${dashEsc(r.name || "Tarama")}</strong>
+          <span>${dashEsc(phase)} · ${dashEsc(r.message || "")}</span>
+        </div>
+        <div class="dash-active-bar">
+          <div class="dash-active-track"><div class="dash-active-fill" style="width:${pct}%"></div></div>
+          <span class="dash-active-pct">${pct}%</span>
+        </div>
+      </article>`;
+    })
+    .join("");
+}
+
+function dashPhaseLabel(phase) {
+  const map = {
+    starting: "Başlatılıyor",
+    downloading: "Veri indiriliyor",
+    scanning: "Taranıyor",
+    dedupe: "Tekrarlar",
+    notify: "Bildirimler",
+    saving: "Kaydediliyor",
+    queued: "Kuyrukta",
+    done: "Tamam",
+    error: "Hata",
+  };
+  const key = String(phase || "");
+  return map[key] || key || "Tarama";
+}
+
 function renderDashScans(rows) {
   const tbody = document.getElementById("dashScansBody");
   if (!tbody) return;
@@ -161,11 +208,26 @@ function renderDashScans(rows) {
   tbody.innerHTML = rows
     .map((r) => {
       const idle = r.enabled && !r.runs;
-      const running = r.is_running
-        ? ' <span class="status-pill">sürüyor</span>'
-        : "";
+      const prog = r.progress || null;
+      const live =
+        r.is_running ||
+        (prog && ["running", "queued"].includes(String(prog.status || "")));
+      let running = "";
+      if (live && prog) {
+        const pct = Math.max(0, Math.min(100, Number(prog.progress) || 0));
+        const queued = prog.status === "queued";
+        running = queued
+          ? ' <span class="status-pill warn">kuyruk</span>'
+          : ` <span class="status-pill">sürüyor ${pct}%</span>`;
+      } else if (live) {
+        running = ' <span class="status-pill">sürüyor</span>';
+      }
+      const progLine =
+        live && prog
+          ? `<span class="dash-row-progress">${dashEsc(dashPhaseLabel(prog.phase))} — ${dashEsc(prog.message || "")}</span>`
+          : "";
       return `<tr class="dash-row-link" data-goto="schedules">
-        <td><strong>${dashEsc(r.name)}</strong>${r.enabled ? "" : ' <span class="status-pill">durdu</span>'}${running}</td>
+        <td><strong>${dashEsc(r.name)}</strong>${r.enabled ? "" : ' <span class="status-pill">durdu</span>'}${running}${progLine}</td>
         <td>${dashEsc(r.timeframe_label)}</td>
         <td>${dashEsc(r.universe_label)}</td>
         <td>${r.runs || 0}${idle ? ' <span class="dash-muted">dönemde yok</span>' : ""}</td>
@@ -302,6 +364,7 @@ function applyDashPeriodCopy(data) {
 }
 
 let _dashPollTimer = null;
+let _dashProgressTimer = null;
 
 async function pingHealthz() {
   try {
@@ -316,33 +379,60 @@ async function pingHealthz() {
   }
 }
 
-async function loadDashboard() {
+function stopDashProgressPoll() {
+  if (_dashProgressTimer) {
+    clearInterval(_dashProgressTimer);
+    _dashProgressTimer = null;
+  }
+}
+
+function startDashProgressPoll() {
+  if (_dashProgressTimer) return;
+  _dashProgressTimer = setInterval(() => {
+    const panel = document.getElementById("dashPanel");
+    if (!panel || panel.classList.contains("hidden")) {
+      stopDashProgressPoll();
+      return;
+    }
+    loadDashboard({ silent: true });
+  }, 4000);
+}
+
+async function loadDashboard(opts = {}) {
+  const silent = !!opts.silent;
   const hint = document.getElementById("dashDateHint");
   setDashPeriodUI(_dashPeriod);
   const health = await pingHealthz();
   if (!health) {
-    if (hint) {
+    if (!silent && hint) {
       hint.textContent =
         "Sunucu yanıt vermiyor (CONNECTION_REFUSED). VPS'te start-tradelab.bat veya install-windows-task.ps1 çalıştırın.";
     }
+    stopDashProgressPoll();
     return;
   }
   try {
     const res = await apiFetch(`/api/dashboard/today?period=${encodeURIComponent(_dashPeriod)}`);
     const data = await res.json();
     if (!res.ok) {
-      if (hint) hint.textContent = data.detail || "Özet yüklenemedi.";
+      if (!silent && hint) hint.textContent = data.detail || "Özet yüklenemedi.";
       return;
     }
     applyDashPeriodCopy(data);
     if (data.service) renderDashService(data.service);
     renderDashKpis(data.kpis || {}, data.period || _dashPeriod);
+    renderDashActiveScans(data.active_scans || []);
     renderDashScans(data.scans || []);
     renderDashSymbols(data.symbols || data.repeats || [], data.period || _dashPeriod);
     renderDashHours(data.hours || [], data.chart_mode || "hour");
     renderDashUpcoming(data.upcoming || []);
+    const live = (data.active_scans || []).some((r) =>
+      ["running", "queued"].includes(String(r.status || ""))
+    );
+    if (live) startDashProgressPoll();
+    else stopDashProgressPoll();
   } catch (err) {
-    if (hint) hint.textContent = err.message || "Özet yüklenemedi.";
+    if (!silent && hint) hint.textContent = err.message || "Özet yüklenemedi.";
     await pingHealthz();
   }
 }

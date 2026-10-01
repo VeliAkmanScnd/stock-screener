@@ -1795,6 +1795,85 @@ body {
   background: rgba(231, 76, 60, 0.08);
 }
 
+.dash-active-scans {
+  display: grid;
+  gap: 0.55rem;
+  margin-block: 0 1rem;
+}
+
+.dash-active-scans.hidden {
+  display: none;
+}
+
+.dash-active-card {
+  padding: 0.7rem 0.85rem;
+  border: 1px solid rgba(46, 204, 113, 0.35);
+  border-radius: 10px;
+  background: rgba(46, 204, 113, 0.06);
+}
+
+.dash-active-card.is-queued {
+  border-color: rgba(241, 196, 15, 0.4);
+  background: rgba(241, 196, 15, 0.06);
+}
+
+.dash-active-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.35rem 0.75rem;
+  margin-bottom: 0.45rem;
+}
+
+.dash-active-head strong {
+  font-size: 0.92rem;
+}
+
+.dash-active-head span {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.dash-active-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.dash-active-track {
+  flex: 1;
+  height: 8px;
+  background: var(--surface2);
+  border-radius: 999px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+
+.dash-active-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, var(--accent), #22c55e);
+  border-radius: 999px;
+  transition: width 0.35s ease;
+}
+
+.dash-active-pct {
+  font-size: 0.82rem;
+  font-weight: 700;
+  min-width: 2.75rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.dash-row-progress {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 0.75rem;
+  color: var(--muted);
+  font-weight: 500;
+}
+
 .dash-service-pill {
   display: inline-flex;
   align-items: center;

@@ -111,27 +111,194 @@ def get_scan_job(job_id: str) -> dict[str, Any] | None:
 
 def make_progress_callback(job_id: str) -> ProgressCallback:
     def report(phase: str, done: int, total: int, detail: str = "") -> None:
-        if total <= 0:
-            pct = 0
-        elif phase == "downloading":
-            pct = int(min(70, max(0, (done / total) * 70)))
-        elif phase == "scanning":
-            pct = 70 + int(min(30, max(0, (done / total) * 30)))
-        else:
-            pct = int(min(100, max(0, (done / total) * 100)))
-
-        if phase == "downloading":
-            msg = f"Veri indiriliyor {done}/{total}"
-        elif phase == "scanning":
-            msg = f"Taranıyor {done}/{total}"
-        else:
-            msg = detail or "Tarama…"
-
-        if detail:
-            msg += f" — {detail}"
+        pct, msg = _format_progress(phase, done, total, detail)
         _update(job_id, progress=pct, phase=phase, message=msg)
 
     return report
+
+
+def _format_progress(phase: str, done: int, total: int, detail: str = "") -> tuple[int, str]:
+    if total <= 0:
+        pct = 0
+    elif phase == "downloading":
+        pct = int(min(70, max(0, (done / total) * 70)))
+    elif phase == "scanning":
+        pct = 70 + int(min(25, max(0, (done / total) * 25)))
+    elif phase in ("notify", "dedupe", "saving"):
+        pct = 95
+    elif phase == "done":
+        pct = 100
+    else:
+        pct = int(min(100, max(0, (done / total) * 100)))
+
+    phase_tr = {
+        "starting": "Başlatılıyor",
+        "downloading": "Veri indiriliyor",
+        "scanning": "Taranıyor",
+        "dedupe": "Tekrarlar eleniyor",
+        "notify": "Bildirimler",
+        "saving": "Kaydediliyor",
+        "queued": "Kuyrukta",
+        "done": "Tamamlandı",
+        "error": "Hata",
+    }
+    label = phase_tr.get(phase, phase or "Tarama")
+    if phase == "downloading" and total > 0:
+        msg = f"{label} {done}/{total}"
+    elif phase == "scanning" and total > 0:
+        msg = f"{label} {done}/{total}"
+    else:
+        msg = detail or label
+    if detail and detail not in msg:
+        msg = f"{msg} — {detail}"
+    return pct, msg
+
+
+# --- Scheduled-scan progress (keyed by scheduled_scan_id) ---
+
+@dataclass
+class ScheduleProgress:
+    scheduled_id: int
+    run_id: int | None = None
+    name: str = ""
+    status: str = "running"  # queued | running | done | error
+    progress: int = 0
+    phase: str = "starting"
+    message: str = "Tarama başlatılıyor…"
+    updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+_schedule_progress: dict[int, ScheduleProgress] = {}
+_schedule_lock = threading.Lock()
+
+
+def begin_schedule_progress(
+    scheduled_id: int,
+    *,
+    run_id: int | None = None,
+    name: str = "",
+    queued: bool = False,
+) -> None:
+    with _schedule_lock:
+        _schedule_progress[scheduled_id] = ScheduleProgress(
+            scheduled_id=scheduled_id,
+            run_id=run_id,
+            name=name or f"#{scheduled_id}",
+            status="queued" if queued else "running",
+            progress=0,
+            phase="queued" if queued else "starting",
+            message="Kuyrukta bekliyor…" if queued else "Tarama başlatılıyor…",
+        )
+
+
+def update_schedule_progress(
+    scheduled_id: int,
+    *,
+    progress: int | None = None,
+    phase: str | None = None,
+    message: str | None = None,
+    status: str | None = None,
+    run_id: int | None = None,
+) -> None:
+    with _schedule_lock:
+        row = _schedule_progress.get(scheduled_id)
+        if not row:
+            return
+        if progress is not None:
+            row.progress = int(max(0, min(100, progress)))
+        if phase is not None:
+            row.phase = phase
+        if message is not None:
+            row.message = message
+        if status is not None:
+            row.status = status
+        if run_id is not None:
+            row.run_id = run_id
+        row.updated_at = datetime.now(timezone.utc)
+
+
+def make_schedule_progress_callback(scheduled_id: int) -> ProgressCallback:
+    def report(phase: str, done: int, total: int, detail: str = "") -> None:
+        pct, msg = _format_progress(phase, done, total, detail)
+        update_schedule_progress(
+            scheduled_id,
+            progress=pct,
+            phase=phase,
+            message=msg,
+            status="running",
+        )
+
+    return report
+
+
+def finish_schedule_progress(
+    scheduled_id: int,
+    *,
+    ok: bool = True,
+    message: str | None = None,
+) -> None:
+    with _schedule_lock:
+        row = _schedule_progress.get(scheduled_id)
+        if not row:
+            return
+        row.status = "done" if ok else "error"
+        row.progress = 100 if ok else row.progress
+        row.phase = "done" if ok else "error"
+        row.message = message or ("Tamamlandı" if ok else "Hata")
+        row.updated_at = datetime.now(timezone.utc)
+
+
+def clear_schedule_progress(scheduled_id: int) -> None:
+    with _schedule_lock:
+        _schedule_progress.pop(scheduled_id, None)
+
+
+def get_schedule_progress(scheduled_id: int) -> dict[str, Any] | None:
+    with _schedule_lock:
+        row = _schedule_progress.get(scheduled_id)
+        if not row:
+            return None
+        # Drop stale finished entries after a short while
+        age = (datetime.now(timezone.utc) - row.updated_at).total_seconds()
+        if row.status in ("done", "error") and age > 120:
+            _schedule_progress.pop(scheduled_id, None)
+            return None
+        return {
+            "scheduled_id": row.scheduled_id,
+            "run_id": row.run_id,
+            "name": row.name,
+            "status": row.status,
+            "progress": row.progress,
+            "phase": row.phase,
+            "message": row.message,
+        }
+
+
+def get_active_schedule_progress() -> dict[int, dict[str, Any]]:
+    with _schedule_lock:
+        now = datetime.now(timezone.utc)
+        out: dict[int, dict[str, Any]] = {}
+        stale: list[int] = []
+        for sid, row in _schedule_progress.items():
+            age = (now - row.updated_at).total_seconds()
+            if row.status in ("done", "error") and age > 120:
+                stale.append(sid)
+                continue
+            if row.status not in ("queued", "running") and age > 30:
+                stale.append(sid)
+                continue
+            out[sid] = {
+                "scheduled_id": row.scheduled_id,
+                "run_id": row.run_id,
+                "name": row.name,
+                "status": row.status,
+                "progress": row.progress,
+                "phase": row.phase,
+                "message": row.message,
+            }
+        for sid in stale:
+            _schedule_progress.pop(sid, None)
+        return out
 
 
 def start_scan_job(body: dict[str, Any], user_id: int | None = None) -> str:
