@@ -98,6 +98,14 @@ def utc_iso(dt: datetime | None) -> str | None:
     return aware.strftime("%Y-%m-%dT%H:%M:%S") + "Z"
 
 
+def istanbul_short(dt: datetime | None) -> str | None:
+    """Compact Europe/Istanbul label for dashboards (DD/MM HH:MM)."""
+    aware = as_utc(dt)
+    if aware is None:
+        return None
+    return aware.astimezone(_ISTANBUL).strftime("%d/%m %H:%M")
+
+
 def istanbul_now_label() -> str:
     now = effective_utc_now().astimezone(_ISTANBUL)
     return now.strftime("%Y-%m-%d %H:%M:%S %z")

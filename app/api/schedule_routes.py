@@ -36,7 +36,7 @@ from app.services.scheduler import (
     scheduler_status,
     unregister_job,
 )
-from app.utils.datetime_fmt import utc_iso
+from app.utils.datetime_fmt import istanbul_short, utc_iso
 router = APIRouter(prefix="/api/scheduled-scans", tags=["scheduled-scans"])
 
 def _validate_weekdays_list(days: list[int] | None) -> list[int] | None:
@@ -142,6 +142,7 @@ def _row_weekdays(row: ScheduledScan) -> list[int]:
 
 def _row_to_dict(row: ScheduledScan, *, owner_username: str | None = None) -> dict[str, Any]:
     window = schedule_window_snapshot(row)
+    next_at = next_run_for_schedule(row)
     return {
         "id": row.id,
         "user_id": row.user_id,
@@ -161,7 +162,9 @@ def _row_to_dict(row: ScheduledScan, *, owner_username: str | None = None) -> di
         "notify_telegram": bool(getattr(row, "notify_telegram", True)),
         "enabled": row.enabled,
         "last_run_at": utc_iso(row.last_run_at),
-        "next_run_at": utc_iso(next_run_for_schedule(row)),
+        "last_run_istanbul": istanbul_short(row.last_run_at),
+        "next_run_at": utc_iso(next_at),
+        "next_run_istanbul": istanbul_short(next_at),
         "window": window,
         "last_status": row.last_status,
         "last_match_count": row.last_match_count,

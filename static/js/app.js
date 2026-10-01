@@ -1876,12 +1876,16 @@ async function loadScheduledScans() {
     tbody.innerHTML = rows
       .map((r) => {
         const tz = r.timezone || "Europe/Istanbul";
-        const last = r.last_run_at
+        const last = r.last_run_istanbul
+          ? `${r.last_run_istanbul} · ${r.last_match_count ?? 0} eşleşme`
+          : r.last_run_at
           ? `${formatLocalDateTime(r.last_run_at, tz)} · ${r.last_match_count ?? 0} eşleşme`
           : "—";
         const nextAt = resolveNextRunAt(r);
         let next =
-          r.enabled && nextAt
+          r.enabled && r.next_run_istanbul
+            ? r.next_run_istanbul
+            : r.enabled && nextAt
             ? formatLocalDateTime(nextAt, tz)
             : r.enabled
               ? "—"

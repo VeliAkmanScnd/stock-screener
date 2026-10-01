@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import heapq
+import itertools
 import json
 import logging
-import queue
 import threading
 from datetime import datetime, timedelta, timezone
 
@@ -19,10 +20,25 @@ from app.services.schedule_helpers import min_run_interval_seconds
 
 logger = logging.getLogger(__name__)
 
+# Single-flight: at most one scan executes; others wait in a priority heap.
+# Lower number = higher priority (VIOP before BIST before US markets).
+_UNIVERSE_PRIORITY = {
+    "viop": 0,
+    "bist": 1,
+    "nasdaq": 2,
+    "nyse": 3,
+    "sp500": 4,
+    "all_us": 5,
+    "binance": 6,
+    "custom": 7,
+}
+
 _scan_lock = threading.Lock()
-_scan_queue: queue.Queue[int] = queue.Queue()
-_queued_ids: set[int] = set()
+_worker_running = False
 _queue_lock = threading.Lock()
+_pending_heap: list[tuple[int, int, int]] = []  # (priority, seq, scheduled_id)
+_pending_meta: dict[int, dict[str, bool]] = {}  # id -> {force, bypass_min_gap}
+_seq = itertools.count()
 
 _RACE_WINDOW = timedelta(minutes=3)
 _STALE_RUNNING = timedelta(minutes=45)
@@ -45,6 +61,25 @@ def _utc_now() -> datetime:
 
 def _utc_now_naive() -> datetime:
     return _utc_now().replace(tzinfo=None)
+
+
+def _schedule_priority(sched: ScheduledScan | None, scheduled_id: int = 0) -> int:
+    """VIOP first, then BIST, then others — stable by id for ties."""
+    if sched is None:
+        return 50 + max(0, scheduled_id)
+    try:
+        cfg = json.loads(sched.config_json or "{}")
+    except json.JSONDecodeError:
+        cfg = {}
+    universe = str(cfg.get("custom_source_universe") or cfg.get("universe") or "").strip().lower()
+    name = (sched.name or "").strip().lower()
+    if universe == "viop" or "viop" in name:
+        base = 0
+    elif universe == "bist" or name.startswith("bist") or " bist" in f" {name}":
+        base = 1
+    else:
+        base = _UNIVERSE_PRIORITY.get(universe, 40)
+    return base * 1000 + int(sched.id)
 
 
 def cleanup_stale_running_scans(max_age: timedelta | None = None) -> int:
@@ -147,36 +182,87 @@ def _duplicate_skip_reason(
     return None
 
 
-def _enqueue_scheduled_scan(scheduled_id: int) -> None:
+def _enqueue_scheduled_scan(
+    scheduled_id: int,
+    *,
+    force: bool = False,
+    bypass_min_gap: bool = False,
+) -> None:
+    db = SessionLocal()
+    try:
+        sched = db.query(ScheduledScan).filter(ScheduledScan.id == scheduled_id).first()
+        priority = _schedule_priority(sched, scheduled_id)
+    finally:
+        db.close()
+
     with _queue_lock:
-        if scheduled_id in _queued_ids:
-            logger.info("Scheduled scan %s already queued", scheduled_id)
+        meta = _pending_meta.get(scheduled_id)
+        if meta is not None:
+            # Already queued: keep highest urgency flags.
+            meta["force"] = bool(meta.get("force") or force)
+            meta["bypass_min_gap"] = bool(meta.get("bypass_min_gap") or bypass_min_gap)
+            logger.info("Scheduled scan %s already queued — flags refreshed", scheduled_id)
             return
-        _queued_ids.add(scheduled_id)
-        _scan_queue.put(scheduled_id)
-    logger.info("Scheduled scan %s queued — another scan is running", scheduled_id)
+        _pending_meta[scheduled_id] = {
+            "force": bool(force),
+            "bypass_min_gap": bool(bypass_min_gap),
+        }
+        heapq.heappush(_pending_heap, (priority, next(_seq), scheduled_id))
+    logger.info(
+        "Scheduled scan %s queued (priority=%s, force=%s)",
+        scheduled_id,
+        priority,
+        force,
+    )
 
 
-def _dequeue_next() -> int | None:
+def _dequeue_next() -> tuple[int, bool, bool] | None:
     with _queue_lock:
-        try:
-            scheduled_id = _scan_queue.get_nowait()
-        except queue.Empty:
-            return None
-        _queued_ids.discard(scheduled_id)
-        return scheduled_id
+        while _pending_heap:
+            _priority, _seq_n, scheduled_id = heapq.heappop(_pending_heap)
+            meta = _pending_meta.pop(scheduled_id, None)
+            if meta is None:
+                continue
+            return (
+                scheduled_id,
+                bool(meta.get("force")),
+                bool(meta.get("bypass_min_gap")),
+            )
+        return None
 
 
-def _run_next_queued() -> None:
-    next_id = _dequeue_next()
-    if next_id is not None:
-        # Kuyruktan gelen tur gecikti; min-gap ile sonraki slotu öldürme.
-        threading.Thread(
-            target=run_scheduled_scan,
-            args=(next_id,),
-            kwargs={"bypass_min_gap": True},
-            daemon=True,
-        ).start()
+def _kick_worker() -> None:
+    global _worker_running
+    with _queue_lock:
+        if _worker_running:
+            return
+        if not _pending_heap:
+            return
+        _worker_running = True
+    threading.Thread(target=_worker_loop, daemon=True, name="scheduled-scan-worker").start()
+
+
+def _worker_loop() -> None:
+    global _worker_running
+    try:
+        while True:
+            item = _dequeue_next()
+            if item is None:
+                break
+            scheduled_id, force, bypass_min_gap = item
+            # Hold the scan lock for the duration of one job so callers know work is in flight.
+            with _scan_lock:
+                _execute_scheduled_scan(
+                    scheduled_id,
+                    force=force,
+                    bypass_min_gap=bypass_min_gap,
+                )
+    finally:
+        with _queue_lock:
+            _worker_running = False
+            has_more = bool(_pending_heap)
+        if has_more:
+            _kick_worker()
 
 
 def run_scheduled_scan(
@@ -185,17 +271,28 @@ def run_scheduled_scan(
     force: bool = False,
     bypass_min_gap: bool = False,
 ) -> None:
-    """Background job entry point."""
-    if not _scan_lock.acquire(blocking=False):
-        _enqueue_scheduled_scan(scheduled_id)
-        return
+    """Queue a scheduled scan; VIOP runs before BIST when both are due."""
+    _enqueue_scheduled_scan(
+        scheduled_id,
+        force=force,
+        bypass_min_gap=bypass_min_gap,
+    )
+    _kick_worker()
 
+
+def _execute_scheduled_scan(
+    scheduled_id: int,
+    *,
+    force: bool = False,
+    bypass_min_gap: bool = False,
+) -> None:
+    """Run one scheduled scan (caller holds _scan_lock)."""
     db = SessionLocal()
     run_row: ScanRun | None = None
     try:
         db.execute(text("BEGIN IMMEDIATE"))
         sched = db.query(ScheduledScan).filter(ScheduledScan.id == scheduled_id).first()
-        if not sched or not sched.enabled:
+        if not sched or (not sched.enabled and not force):
             db.rollback()
             return
 
@@ -377,5 +474,3 @@ def run_scheduled_scan(
             db.commit()
     finally:
         db.close()
-        _scan_lock.release()
-        _run_next_queued()

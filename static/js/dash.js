@@ -171,7 +171,7 @@ function renderDashScans(rows) {
         <td>${r.runs || 0}${idle ? ' <span class="dash-muted">dönemde yok</span>' : ""}</td>
         <td>${r.hits || 0}</td>
         <td>${r.unique_symbols || 0}</td>
-        <td>${dashStatus(r.last_status)} ${dashFmt(r.last_run_at)}</td>
+        <td>${dashStatus(r.last_status)} ${dashEsc(r.last_run_istanbul) || dashFmt(r.last_run_at)}</td>
       </tr>`;
     })
     .join("");
@@ -248,7 +248,7 @@ function renderDashUpcoming(rows) {
       (r) => `<li>
         <strong>${dashEsc(r.name)}</strong>
         <span>${dashEsc(r.universe_label)} · ${dashEsc(r.timeframe_label)}</span>
-        <em>${dashFmt(r.next_run_at)}</em>
+        <em>${dashEsc(r.next_run_istanbul) || dashFmt(r.next_run_at)}</em>
       </li>`
     )
     .join("");

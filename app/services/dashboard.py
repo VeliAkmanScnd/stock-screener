@@ -15,7 +15,7 @@ from app.database import ScanRun, ScheduledScan, User
 from app.services.scheduler import next_run_for_schedule
 from app.services.runtime_status import build_runtime_status
 from app.services.track_levels import TIMEFRAME_LEVEL_BENCHMARKS
-from app.utils.datetime_fmt import utc_iso
+from app.utils.datetime_fmt import istanbul_short, utc_iso
 
 Period = Literal["day", "week", "all"]
 
@@ -345,8 +345,10 @@ def build_today_dashboard(db: Session, user: User, period: str | None = "day") -
                 "skipped_repeat_price": local_skipped,
                 "last_status": display_status,
                 "last_run_at": utc_iso(display_at),
+                "last_run_istanbul": istanbul_short(display_at),
                 "is_running": running_now is not None,
                 "next_run_at": utc_iso(next_at),
+                "next_run_istanbul": istanbul_short(next_at),
             }
         )
 
@@ -391,6 +393,7 @@ def build_today_dashboard(db: Session, user: User, period: str | None = "day") -
             "timeframe_label": row["timeframe_label"],
             "universe_label": row["universe_label"],
             "next_run_at": row["next_run_at"],
+            "next_run_istanbul": row.get("next_run_istanbul"),
         }
         for row in scan_rows
         if row["enabled"] and row["next_run_at"]
