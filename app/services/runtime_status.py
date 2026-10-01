@@ -26,7 +26,10 @@ def _watchdog_tail() -> str | None:
 
 
 def build_runtime_status() -> dict:
+    from zoneinfo import ZoneInfo
+
     from app.services.scheduler import scheduler_status
+    from app.utils.datetime_fmt import istanbul_now_label
 
     sched = scheduler_status()
     started = _STARTED_AT
@@ -36,6 +39,7 @@ def build_runtime_status() -> dict:
     next_jobs = [j for j in jobs if j.get("next_run")]
     next_jobs.sort(key=lambda j: j.get("next_run") or "")
     next_at = next_jobs[0]["next_run"] if next_jobs else None
+    istanbul = now.astimezone(ZoneInfo("Europe/Istanbul"))
 
     return {
         "ok": True,
@@ -48,6 +52,10 @@ def build_runtime_status() -> dict:
         "next_job_at": next_at,
         "watchdog_last": _watchdog_tail(),
         "checked_at": utc_iso(now),
+        "server_utc": utc_iso(now),
+        "server_istanbul": istanbul_now_label(),
+        "server_istanbul_hour": istanbul.hour,
+        "server_istanbul_minute": istanbul.minute,
         "hint_if_down": (
             "ERR_CONNECTION_REFUSED = sunucu kapalı. VPS'te: "
             "git pull && .\\install-windows-task.ps1  veya  start-tradelab.bat"

@@ -197,7 +197,7 @@ def run_scheduled_scan(
 
         run_row = ScanRun(
             scheduled_scan_id=sched.id,
-            started_at=datetime.now(timezone.utc),
+        started_at=datetime.now(timezone.utc).replace(tzinfo=None),
             status="running",
         )
         db.add(run_row)
@@ -294,7 +294,7 @@ def run_scheduled_scan(
                 logger.exception("Telegram failed for schedule %s", scheduled_id)
 
         notify_error = " | ".join(notify_errors) if notify_errors else None
-        run_row.finished_at = datetime.now(timezone.utc)
+        run_row.finished_at = datetime.now(timezone.utc).replace(tzinfo=None)
         run_row.status = "success"
         run_row.match_count = match_count
         payload["email_sent"] = email_sent
@@ -350,13 +350,13 @@ def run_scheduled_scan(
     except Exception as exc:
         logger.exception("Scheduled scan %s failed", scheduled_id)
         if run_row:
-            run_row.finished_at = datetime.now(timezone.utc)
+            run_row.finished_at = datetime.now(timezone.utc).replace(tzinfo=None)
             run_row.status = "error"
             run_row.error_message = str(exc)
             db.commit()
         sched = db.query(ScheduledScan).filter(ScheduledScan.id == scheduled_id).first()
         if sched:
-            sched.last_run_at = datetime.now(timezone.utc)
+            sched.last_run_at = datetime.now(timezone.utc).replace(tzinfo=None)
             sched.last_status = "error"
             sched.last_error = str(exc)
             db.commit()

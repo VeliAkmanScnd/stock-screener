@@ -83,6 +83,9 @@ function renderDashService(svc) {
     schedOk ? `zamanlayıcı açık (${jobs} iş)` : "zamanlayıcı kapalı",
     svc.next_job_at ? `sonraki iş ${dashFmt(svc.next_job_at)}` : "planlı iş yok",
   ];
+  if (svc.server_istanbul) {
+    parts.unshift(`sunucu ${svc.server_istanbul}`);
+  }
   if (svc.watchdog_last) {
     parts.push(`watchdog: ${String(svc.watchdog_last).slice(0, 80)}`);
   }

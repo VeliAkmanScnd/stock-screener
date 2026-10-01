@@ -158,8 +158,16 @@ def _trigger_scheduled_scan(scheduled_id: int) -> None:
     ).start()
 
 
+def _as_utc_ts(dt):
+    from datetime import timezone as tz
+
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=tz.utc)
+    return dt.astimezone(tz.utc)
+
+
 def next_run_for_schedule(sched: ScheduledScan):
-    """Return next fire datetime (always recompute from trigger; heal stale jobs)."""
+    """Return next fire datetime in absolute time (computed from cron, not stale job TZ)."""
     if not sched.enabled:
         return None
     from datetime import datetime, timezone
@@ -171,41 +179,48 @@ def next_run_for_schedule(sched: ScheduledScan):
         logger.debug("Could not compute next run for schedule %s", sched.id, exc_info=True)
         computed = None
 
-    job_id = f"{JOB_PREFIX}{sched.id}"
-    if _scheduler is not None:
+    # Keep APScheduler job in sync, but always trust freshly computed fire time
+    # (scheduler/job TZ mismatches were shifting 'Sonraki' by hours).
+    if _scheduler is not None and computed is not None:
         try:
+            job_id = f"{JOB_PREFIX}{sched.id}"
             job = _scheduler.get_job(job_id)
             job_next = job.next_run_time if job is not None else None
-            # Job yoksa veya sonraki ateş tetikleyiciden belirgin sapıyorsa yeniden kaydet.
-            if job is None or (
-                computed is not None
-                and job_next is not None
-                and abs((job_next - computed).total_seconds()) > 90
-            ):
+            if job is None or job_next is None:
                 register_job(sched)
-                job = _scheduler.get_job(job_id)
-                if job is not None and job.next_run_time is not None:
-                    return job.next_run_time
-            elif job_next is not None:
-                return job_next
+            elif abs((_as_utc_ts(job_next) - _as_utc_ts(computed)).total_seconds()) > 90:
+                logger.warning(
+                    "Schedule %s job next=%s drift vs computed=%s — re-registering",
+                    sched.id,
+                    job_next,
+                    computed,
+                )
+                register_job(sched)
         except Exception:
-            logger.debug("Job next_run read failed for %s", sched.id, exc_info=True)
+            logger.debug("Job heal failed for %s", sched.id, exc_info=True)
 
     return computed
 
 def scheduler_status() -> dict[str, object]:
     """Lightweight health info for the UI / debugging."""
+    from app.utils.datetime_fmt import utc_iso
+
     jobs = []
     if _scheduler is not None:
-        jobs = [
-            {"id": job.id, "next_run": job.next_run_time.isoformat() if job.next_run_time else None}
-            for job in _scheduler.get_jobs()
-        ]
+        for job in _scheduler.get_jobs():
+            jobs.append(
+                {
+                    "id": job.id,
+                    "next_run": utc_iso(job.next_run_time) if job.next_run_time else None,
+                }
+            )
     return {
         "running": _scheduler is not None,
         "job_count": len(jobs),
         "jobs": jobs[:20],
+        "timezone": "UTC",
     }
+
 
 def sync_jobs_from_db() -> None:
     """Reconcile APScheduler jobs with enabled DB schedules (no needless re-register)."""
@@ -262,9 +277,9 @@ def start_scheduler() -> None:
         cleanup_stale_running_scans()
     except Exception:
         logger.exception("Stale running scan cleanup failed")
-    # Schedule triggers use Europe/Istanbul; keep scheduler clock aligned.
+    # CronTrigger carries Europe/Istanbul; keep scheduler clock in UTC to avoid double offsets.
     _scheduler = BackgroundScheduler(
-        timezone="Europe/Istanbul",
+        timezone="UTC",
         executors={"default": ThreadPoolExecutor(max_workers=4)},
         job_defaults={
             "coalesce": True,
