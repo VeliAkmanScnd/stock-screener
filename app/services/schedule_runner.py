@@ -34,12 +34,26 @@ def _as_utc(dt: datetime) -> datetime:
     return dt.astimezone(timezone.utc)
 
 
+def _utc_now() -> datetime:
+    try:
+        from app.utils.datetime_fmt import effective_utc_now
+
+        return effective_utc_now()
+    except Exception:
+        return datetime.now(timezone.utc)
+
+
+def _utc_now_naive() -> datetime:
+    return _utc_now().replace(tzinfo=None)
+
+
 def cleanup_stale_running_scans(max_age: timedelta | None = None) -> int:
     """Mark orphan 'running' rows as error so schedules are not blocked after restart."""
     age_limit = max_age if max_age is not None else timedelta(minutes=15)
     db = SessionLocal()
     try:
-        now = datetime.now(timezone.utc)
+        now = _utc_now()
+        now_naive = now.replace(tzinfo=None)
         rows = (
             db.query(ScanRun)
             .filter(ScanRun.status == "running")
@@ -52,7 +66,7 @@ def cleanup_stale_running_scans(max_age: timedelta | None = None) -> int:
             if started is not None and (now - started) < age_limit:
                 continue
             row.status = "error"
-            row.finished_at = now
+            row.finished_at = now_naive
             row.error_message = "Kesildi: süreç yeniden başladı veya tarama takıldı"
             fixed += 1
             sched = (
@@ -63,7 +77,7 @@ def cleanup_stale_running_scans(max_age: timedelta | None = None) -> int:
             if sched and (sched.last_status or "") == "running":
                 sched.last_status = "error"
                 sched.last_error = row.error_message
-                sched.last_run_at = now
+                sched.last_run_at = now_naive
         if fixed:
             db.commit()
             logger.warning("Cleared %s stale running ScanRun row(s)", fixed)
@@ -86,7 +100,8 @@ def _duplicate_skip_reason(
     if force:
         return None
 
-    now = datetime.now(timezone.utc)
+    now = _utc_now()
+    now_naive = now.replace(tzinfo=None)
     running = (
         db.query(ScanRun)
         .filter(
@@ -101,7 +116,7 @@ def _duplicate_skip_reason(
         if age < _STALE_RUNNING:
             return f"already running (run #{running.id})"
         running.status = "error"
-        running.finished_at = now
+        running.finished_at = now_naive
         running.error_message = "Kesildi: takılı running kaydı"
         logger.warning(
             "Marked stale running ScanRun #%s for schedule %s",
@@ -113,7 +128,7 @@ def _duplicate_skip_reason(
         db.query(ScanRun)
         .filter(
             ScanRun.scheduled_scan_id == sched.id,
-            ScanRun.started_at >= now - _RACE_WINDOW,
+            ScanRun.started_at >= now_naive - _RACE_WINDOW,
         )
         .first()
     )
@@ -197,7 +212,7 @@ def run_scheduled_scan(
 
         run_row = ScanRun(
             scheduled_scan_id=sched.id,
-        started_at=datetime.now(timezone.utc).replace(tzinfo=None),
+            started_at=_utc_now_naive(),
             status="running",
         )
         db.add(run_row)
@@ -294,7 +309,7 @@ def run_scheduled_scan(
                 logger.exception("Telegram failed for schedule %s", scheduled_id)
 
         notify_error = " | ".join(notify_errors) if notify_errors else None
-        run_row.finished_at = datetime.now(timezone.utc).replace(tzinfo=None)
+        run_row.finished_at = _utc_now_naive()
         run_row.status = "success"
         run_row.match_count = match_count
         payload["email_sent"] = email_sent
@@ -350,13 +365,13 @@ def run_scheduled_scan(
     except Exception as exc:
         logger.exception("Scheduled scan %s failed", scheduled_id)
         if run_row:
-            run_row.finished_at = datetime.now(timezone.utc).replace(tzinfo=None)
+            run_row.finished_at = _utc_now_naive()
             run_row.status = "error"
             run_row.error_message = str(exc)
             db.commit()
         sched = db.query(ScheduledScan).filter(ScheduledScan.id == scheduled_id).first()
         if sched:
-            sched.last_run_at = datetime.now(timezone.utc).replace(tzinfo=None)
+            sched.last_run_at = _utc_now_naive()
             sched.last_status = "error"
             sched.last_error = str(exc)
             db.commit()

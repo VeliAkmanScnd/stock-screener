@@ -75,14 +75,14 @@ def _build_trigger(sched: ScheduledScan) -> CronTrigger:
 
 def schedule_window_snapshot(sched: ScheduledScan) -> dict:
     """Explain whether 'now' is inside the schedule window (Istanbul/local TZ)."""
-    from datetime import datetime, timezone
+    from app.utils.datetime_fmt import effective_utc_now
 
     tz_name = (sched.timezone or "Europe/Istanbul").strip() or "Europe/Istanbul"
     try:
         tz = ZoneInfo(tz_name)
     except Exception:
         tz = ZoneInfo("Europe/Istanbul")
-    now_local = datetime.now(timezone.utc).astimezone(tz)
+    now_local = effective_utc_now().astimezone(tz)
     stype = normalize_schedule_type(sched.schedule_type)
     days = parse_weekdays_field(sched.weekdays)
     hour = int(sched.hour or 0)
@@ -170,9 +170,9 @@ def next_run_for_schedule(sched: ScheduledScan):
     """Return next fire datetime in absolute time (computed from cron, not stale job TZ)."""
     if not sched.enabled:
         return None
-    from datetime import datetime, timezone
+    from app.utils.datetime_fmt import effective_utc_now
 
-    now_utc = datetime.now(timezone.utc)
+    now_utc = effective_utc_now()
     try:
         computed = _build_trigger(sched).get_next_fire_time(None, now_utc)
     except Exception:
@@ -277,7 +277,19 @@ def start_scheduler() -> None:
         cleanup_stale_running_scans()
     except Exception:
         logger.exception("Stale running scan cleanup failed")
-    # CronTrigger carries Europe/Istanbul; keep scheduler clock in UTC to avoid double offsets.
+    # CronTrigger carries Europe/Istanbul; scheduler clock stays UTC.
+    # Wrong Windows *display* TZ is fine if automatic time (correct UTC) is on.
+    from app.utils.datetime_fmt import clock_skew_info
+
+    skew = clock_skew_info()
+    if skew.get("windows_tz_mismatch"):
+        logger.info(
+            "Windows local face ≠ Istanbul (drift=%ss, mode=%s). "
+            "Schedules use UTC→Europe/Istanbul; keep automatic time ON.",
+            skew.get("drift_seconds"),
+            skew.get("mode"),
+        )
+
     _scheduler = BackgroundScheduler(
         timezone="UTC",
         executors={"default": ThreadPoolExecutor(max_workers=4)},
@@ -334,7 +346,9 @@ def register_job(sched: ScheduledScan) -> None:
     )
     from datetime import datetime, timezone
 
-    nxt = trigger.get_next_fire_time(None, datetime.now(timezone.utc))
+    from app.utils.datetime_fmt import effective_utc_now
+
+    nxt = trigger.get_next_fire_time(None, effective_utc_now())
     logger.info(
         "Registered schedule job %s (%s) trigger=%s next=%s",
         sched.id,

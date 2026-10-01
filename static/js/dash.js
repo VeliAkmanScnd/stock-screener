@@ -76,22 +76,31 @@ function renderDashService(svc) {
     );
     return;
   }
-  const schedOk = !!svc.scheduler_running;
+  const skew = svc.clock_skew || {};
+  const wallCorrecting = !!skew.skewed;
+  const tzMismatch = !!skew.windows_tz_mismatch;
+  const schedOk = !!svc.scheduler_running && !wallCorrecting;
   const jobs = svc.scheduler_jobs ?? 0;
-  const parts = [
-    `çalışma süresi ${dashUptime(svc.uptime_seconds)}`,
-    schedOk ? `zamanlayıcı açık (${jobs} iş)` : "zamanlayıcı kapalı",
-    svc.next_job_at ? `sonraki iş ${dashFmt(svc.next_job_at)}` : "planlı iş yok",
-  ];
+  const parts = [];
   if (svc.server_istanbul) {
-    parts.unshift(`sunucu ${svc.server_istanbul}`);
+    parts.push(`İstanbul ${svc.server_istanbul}`);
+  }
+  parts.push(`çalışma süresi ${dashUptime(svc.uptime_seconds)}`);
+  parts.push(schedOk || svc.scheduler_running ? `zamanlayıcı açık (${jobs} iş)` : "zamanlayıcı kapalı");
+  parts.push(svc.next_job_at ? `sonraki iş ${dashFmt(svc.next_job_at)}` : "planlı iş yok");
+  if (tzMismatch && !wallCorrecting) {
+    parts.push(
+      `Windows yerel ≠ İstanbul (~${Math.round(Math.abs(Number(skew.drift_seconds || 0) / 3600))} sa) — otomatik saati açık tutun; planlar İstanbul’a göre`
+    );
+  } else if (wallCorrecting) {
+    parts.push("yerel saat İstanbul kabul ediliyor (TRADELAB_WALL_CLOCK_AS_ISTANBUL)");
   }
   if (svc.watchdog_last) {
     parts.push(`watchdog: ${String(svc.watchdog_last).slice(0, 80)}`);
   }
   setDashServiceUI(
-    schedOk ? "is-ok" : "is-warn",
-    schedOk ? "Servis ayakta" : "Servis kısmi",
+    wallCorrecting ? "is-warn" : schedOk ? "is-ok" : "is-warn",
+    wallCorrecting ? "Saat uyarısı" : schedOk ? "Servis ayakta" : "Servis kısmi",
     parts.join(" · ")
   );
 }
