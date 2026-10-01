@@ -2,6 +2,7 @@
 from __future__ import annotations
 import logging
 import threading
+from datetime import timedelta
 from zoneinfo import ZoneInfo
 from apscheduler.executors.pool import ThreadPoolExecutor
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -274,7 +275,9 @@ def start_scheduler() -> None:
     try:
         from app.services.schedule_runner import cleanup_stale_running_scans
 
-        cleanup_stale_running_scans()
+        # After restart nothing is truly running — clear all orphan rows
+        # (including future started_at left by clock skew).
+        cleanup_stale_running_scans(max_age=timedelta(0))
     except Exception:
         logger.exception("Stale running scan cleanup failed")
     # CronTrigger carries Europe/Istanbul; scheduler clock stays UTC.

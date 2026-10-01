@@ -82,9 +82,19 @@ def _schedule_priority(sched: ScheduledScan | None, scheduled_id: int = 0) -> in
     return base * 1000 + int(sched.id)
 
 
-def cleanup_stale_running_scans(max_age: timedelta | None = None) -> int:
-    """Mark orphan 'running' rows as error so schedules are not blocked after restart."""
-    age_limit = max_age if max_age is not None else timedelta(minutes=15)
+def cleanup_stale_running_scans(
+    max_age: timedelta | None = None,
+    *,
+    protect_schedule_ids: set[int] | None = None,
+) -> int:
+    """Mark orphan 'running' rows as error so schedules are not blocked after restart.
+
+    Also clears rows whose started_at is in the future (clock-skew leftovers) —
+    those would otherwise look 'young' forever and block the schedule.
+    """
+    # max_age=0 → clear every running row not in protect set (use on process start).
+    age_limit = max_age if max_age is not None else timedelta(minutes=10)
+    protected = protect_schedule_ids or set()
     db = SessionLocal()
     try:
         now = _utc_now()
@@ -97,9 +107,15 @@ def cleanup_stale_running_scans(max_age: timedelta | None = None) -> int:
         )
         fixed = 0
         for row in rows:
-            started = _as_utc(row.started_at) if row.started_at else None
-            if started is not None and (now - started) < age_limit:
+            sid = int(row.scheduled_scan_id) if row.scheduled_scan_id is not None else None
+            if sid is not None and sid in protected:
                 continue
+            started = _as_utc(row.started_at) if row.started_at else None
+            if started is not None:
+                age = now - started
+                # Keep only truly recent, non-future rows within grace.
+                if age_limit > timedelta(0) and timedelta(0) <= age < age_limit:
+                    continue
             row.status = "error"
             row.finished_at = now_naive
             row.error_message = "Kesildi: süreç yeniden başladı veya tarama takıldı"
@@ -113,6 +129,13 @@ def cleanup_stale_running_scans(max_age: timedelta | None = None) -> int:
                 sched.last_status = "error"
                 sched.last_error = row.error_message
                 sched.last_run_at = now_naive
+            try:
+                from app.services.scan_jobs import clear_schedule_progress
+
+                if sid is not None:
+                    clear_schedule_progress(sid)
+            except Exception:
+                pass
         if fixed:
             db.commit()
             logger.warning("Cleared %s stale running ScanRun row(s)", fixed)
@@ -148,16 +171,22 @@ def _duplicate_skip_reason(
     )
     if running and running.started_at:
         age = now - _as_utc(running.started_at)
-        if age < _STALE_RUNNING:
+        # Future started_at (clock skew) or older than grace → cut and continue.
+        if age < timedelta(0) or age >= _STALE_RUNNING:
+            running.status = "error"
+            running.finished_at = now_naive
+            running.error_message = "Kesildi: takılı running kaydı"
+            logger.warning(
+                "Marked stale running ScanRun #%s for schedule %s",
+                running.id,
+                sched.id,
+            )
+        else:
             return f"already running (run #{running.id})"
+    elif running:
         running.status = "error"
         running.finished_at = now_naive
         running.error_message = "Kesildi: takılı running kaydı"
-        logger.warning(
-            "Marked stale running ScanRun #%s for schedule %s",
-            running.id,
-            sched.id,
-        )
 
     recent = (
         db.query(ScanRun)
@@ -326,15 +355,8 @@ def _execute_scheduled_scan(
                 pass
             return
 
-        run_row = ScanRun(
-            scheduled_scan_id=sched.id,
-            started_at=_utc_now_naive(),
-            status="running",
-        )
-        db.add(run_row)
-        db.commit()
-        db.refresh(run_row)
-
+        # Register live progress before the DB 'running' row so Özet never shows
+        # a ghost "sürüyor" without percent/phase after refresh.
         from app.services.scan_jobs import (
             begin_schedule_progress,
             finish_schedule_progress,
@@ -344,10 +366,19 @@ def _execute_scheduled_scan(
 
         begin_schedule_progress(
             scheduled_id,
-            run_id=run_row.id,
             name=sched.name or f"#{scheduled_id}",
             queued=False,
         )
+
+        run_row = ScanRun(
+            scheduled_scan_id=sched.id,
+            started_at=_utc_now_naive(),
+            status="running",
+        )
+        db.add(run_row)
+        db.commit()
+        db.refresh(run_row)
+        update_schedule_progress(scheduled_id, run_id=run_row.id, status="running")
         progress = make_schedule_progress_callback(scheduled_id)
 
         config = json.loads(sched.config_json)

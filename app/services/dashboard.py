@@ -171,6 +171,25 @@ def _email_delivered(payload: dict[str, Any], run: ScanRun) -> bool:
 
 
 def build_today_dashboard(db: Session, user: User, period: str | None = "day") -> dict[str, Any]:
+    # Drop orphan DB 'running' rows that have no live in-memory progress
+    # (restart / clock-skew future started_at used to block schedules all day).
+    try:
+        from app.services.schedule_runner import cleanup_stale_running_scans
+        from app.services.scan_jobs import get_active_schedule_progress
+
+        live_ids = {
+            sid
+            for sid, p in get_active_schedule_progress().items()
+            if p.get("status") in ("running", "queued")
+        }
+        # Protect live jobs; clear everything else that is stale/future/orphan.
+        cleanup_stale_running_scans(
+            max_age=timedelta(minutes=2),
+            protect_schedule_ids=live_ids,
+        )
+    except Exception:
+        pass
+
     period_key = _normalize_period(period)
     start_local, _end_local, range_label, period_key = _period_bounds(period_key)
     start_utc = _naive_utc(start_local) if start_local else None
@@ -212,12 +231,16 @@ def build_today_dashboard(db: Session, user: User, period: str | None = "day") -
     telegram_sent = 0
     error_runs = 0
     success_runs = 0
-    running_runs = 0
     finished_runs = 0
     tf_hits: Counter = Counter()
 
     scan_rows = []
     active_progress = get_active_schedule_progress()
+    running_runs = sum(
+        1
+        for p in active_progress.values()
+        if p.get("status") in ("running", "queued")
+    )
     for sched in scans:
         meta = _config_meta(sched.config_json)
         sched_runs = by_scan.get(sched.id, [])
@@ -228,7 +251,7 @@ def build_today_dashboard(db: Session, user: User, period: str | None = "day") -
         for run in sched_runs:
             status = str(run.status or "").strip().lower()
             if status == "running":
-                running_runs += 1
+                # Count only if still truly live after cleanup; orphan rows are cleared above.
                 continue
             finished_runs += 1
             finished_sched_runs += 1
@@ -306,16 +329,28 @@ def build_today_dashboard(db: Session, user: User, period: str | None = "day") -
 
         last = None
         running_now = None
+        now_utc = datetime.now(timezone.utc)
         for run in reversed(sched_runs):
             st = str(run.status or "").strip().lower()
             if st == "running" and running_now is None:
                 running_now = run
                 continue
-            if st != "running":
-                last = run
-                break
-        if last is None and running_now is None and sched_runs:
-            last = sched_runs[-1]
+            if st == "running":
+                continue
+            # Prefer last finished that is not in the future (skew leftovers).
+            at = run.finished_at or run.started_at
+            if at is not None:
+                aware = at if at.tzinfo else at.replace(tzinfo=timezone.utc)
+                if aware - now_utc > timedelta(minutes=2):
+                    continue
+            last = run
+            break
+        if last is None:
+            for run in reversed(sched_runs):
+                st = str(run.status or "").strip().lower()
+                if st != "running":
+                    last = run
+                    break
 
         if last is not None:
             display_status = last.status
@@ -332,9 +367,12 @@ def build_today_dashboard(db: Session, user: User, period: str | None = "day") -
             tf_hits[meta["timeframe_label"]] += hits
         next_at = next_run_for_schedule(sched) if sched.enabled else None
         progress = active_progress.get(sched.id) or get_schedule_progress(sched.id)
-        is_running = running_now is not None or (
-            isinstance(progress, dict) and progress.get("status") in ("running", "queued")
+        # Only trust in-memory progress for "sürüyor" — orphan DB rows are cleaned above.
+        live_prog = isinstance(progress, dict) and progress.get("status") in (
+            "running",
+            "queued",
         )
+        is_running = live_prog
         scan_rows.append(
             {
                 "id": sched.id,
@@ -353,7 +391,7 @@ def build_today_dashboard(db: Session, user: User, period: str | None = "day") -
                 "last_run_at": utc_iso(display_at),
                 "last_run_istanbul": istanbul_short(display_at),
                 "is_running": is_running,
-                "progress": progress,
+                "progress": progress if live_prog else None,
                 "next_run_at": utc_iso(next_at),
                 "next_run_istanbul": istanbul_short(next_at),
             }
