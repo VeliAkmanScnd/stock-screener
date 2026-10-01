@@ -41,7 +41,9 @@ SP500_WIKI_URL = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
 CACHE_DIR = BASE_DIR / "storage" / "symbol_cache"
 CACHE_TTL = timedelta(hours=24)
 # Bump when list filtering logic changes (invalidates old caches)
-SYMBOL_CACHE_VERSION = "v2"
+SYMBOL_CACHE_VERSION = "v3"
+NASDAQ_LIQUID_CACHE = "nasdaq"
+NASDAQ_ALL_CACHE = "nasdaq_all"
 
 INTRADAY_TIMEFRAMES = {"5m", "15m", "30m", "1h"}
 INTRADAY_PERIOD = "60d"
@@ -195,13 +197,29 @@ def _parse_nasdaq_pipe(text: str) -> tuple[str, ...]:
     return tuple(sorted(set(syms)))
 
 
-def _fetch_nasdaq_live() -> tuple[str, ...]:
+def _fetch_nasdaq_all_live() -> tuple[str, ...]:
     text = _http_get(NASDAQ_LISTED_URL)
     syms = _parse_nasdaq_pipe(text)
     if len(syms) < 400:
         raise ValueError(f"NASDAQ listesi eksik görünüyor ({len(syms)})")
-    logger.info("NASDAQ common stocks: %d", len(syms))
+    logger.info("NASDAQ common stocks (full): %d", len(syms))
     return syms
+
+
+def _fetch_nasdaq_liquid_live() -> tuple[str, ...]:
+    """Full NASDAQ list ranked to top ~1000 by 20d average dollar volume."""
+    from app.services.nasdaq_liquid import rank_nasdaq_by_dollar_volume
+
+    full = _fetch_nasdaq_all_live()
+    ranked = rank_nasdaq_by_dollar_volume(full)
+    if len(ranked) < 200:
+        raise ValueError(f"NASDAQ likit liste çok kısa ({len(ranked)})")
+    return ranked
+
+
+def _fetch_nasdaq_live() -> tuple[str, ...]:
+    # Back-compat name used by older call sites → liquid top list.
+    return _fetch_nasdaq_liquid_live()
 
 
 def _fetch_nyse_live() -> tuple[str, ...]:
@@ -229,8 +247,19 @@ def get_sp500_symbols() -> tuple[str, ...]:
 
 
 @lru_cache(maxsize=1)
+def get_nasdaq_all_symbols() -> tuple[str, ...]:
+    symbols, _ = _resolve_cached(NASDAQ_ALL_CACHE, _fetch_nasdaq_all_live, "NASDAQ (tümü)")
+    return symbols
+
+
+@lru_cache(maxsize=1)
 def get_nasdaq_symbols() -> tuple[str, ...]:
-    symbols, _ = _resolve_cached("nasdaq", _fetch_nasdaq_live, "NASDAQ")
+    """NASDAQ scan universe: top ~1000 by 20d avg dollar volume (daily cache)."""
+    symbols, _ = _resolve_cached(
+        NASDAQ_LIQUID_CACHE,
+        _fetch_nasdaq_liquid_live,
+        "NASDAQ en hacimli 1000 (20g)",
+    )
     return symbols
 
 
@@ -270,7 +299,9 @@ def get_all_us_symbols() -> tuple[str, ...]:
         cached = _load_disk_cache("all_us")
         if cached:
             return cached
-    combined = sorted(set(get_sp500_symbols()) | set(get_nasdaq_symbols()) | set(get_nyse_symbols()))
+    combined = sorted(
+        set(get_sp500_symbols()) | set(get_nasdaq_all_symbols()) | set(get_nyse_symbols())
+    )
     out = tuple(combined)
     _save_disk_cache("all_us", out, "NASDAQ+NYSE+S&P500")
     return out
@@ -282,7 +313,15 @@ def get_universe_meta(universe: str) -> UniverseMeta:
         if key == "sp500":
             _, meta = _resolve_cached("sp500", _fetch_sp500_live, "S&P 500")
         elif key == "nasdaq":
-            _, meta = _resolve_cached("nasdaq", _fetch_nasdaq_live, "NASDAQ")
+            _, meta = _resolve_cached(
+                NASDAQ_LIQUID_CACHE,
+                _fetch_nasdaq_liquid_live,
+                "NASDAQ en hacimli 1000 (20g)",
+            )
+        elif key == "nasdaq_all":
+            _, meta = _resolve_cached(
+                NASDAQ_ALL_CACHE, _fetch_nasdaq_all_live, "NASDAQ (tümü)"
+            )
         elif key == "nyse":
             _, meta = _resolve_cached("nyse", _fetch_nyse_live, "NYSE")
         elif key == "bist":
@@ -313,6 +352,8 @@ def get_universe_symbols(universe: str) -> list[str]:
         return list(get_sp500_symbols())
     if key == "nasdaq":
         return list(get_nasdaq_symbols())
+    if key == "nasdaq_all":
+        return list(get_nasdaq_all_symbols())
     if key == "nyse":
         return list(get_nyse_symbols())
     if key == "bist":
@@ -330,10 +371,43 @@ def get_universe_count(universe: str) -> int:
     return len(get_universe_symbols(universe))
 
 
+def refresh_nasdaq_liquid_universe(*, force: bool = False) -> dict[str, object]:
+    """Rebuild NASDAQ top-1000 liquid list (call daily from scheduler)."""
+    from app.services.nasdaq_liquid import EXPORT_PATH
+
+    if not force and _cache_fresh(NASDAQ_LIQUID_CACHE):
+        cached = _load_disk_cache(NASDAQ_LIQUID_CACHE) or ()
+        return {
+            "ok": True,
+            "cached": True,
+            "count": len(cached),
+            "message": "Önbellek taze — atlandı",
+            "export": str(EXPORT_PATH),
+        }
+    get_nasdaq_symbols.cache_clear()
+    get_nasdaq_all_symbols.cache_clear()
+    # Drop liquid cache file so _resolve_cached refetches + re-ranks.
+    path = _cache_path(NASDAQ_LIQUID_CACHE)
+    if path.exists():
+        try:
+            path.unlink()
+        except OSError:
+            pass
+    symbols = get_nasdaq_symbols()
+    return {
+        "ok": True,
+        "cached": False,
+        "count": len(symbols),
+        "message": f"NASDAQ likit liste yenilendi ({len(symbols)})",
+        "export": str(EXPORT_PATH),
+    }
+
+
 def refresh_universe_cache(universe: str | None = None) -> dict[str, int]:
     """Force refresh symbol lists (clears lru_cache and stale cache files)."""
     get_sp500_symbols.cache_clear()
     get_nasdaq_symbols.cache_clear()
+    get_nasdaq_all_symbols.cache_clear()
     get_nyse_symbols.cache_clear()
     get_bist_symbols.cache_clear()
     get_binance_symbols.cache_clear()
@@ -348,8 +422,8 @@ def refresh_universe_cache(universe: str | None = None) -> dict[str, int]:
 
     targets = (
         [universe]
-        if universe and universe != "all_us"
-        else ["sp500", "nasdaq", "nyse", "bist", "viop", "binance", "all_us"]
+        if universe and universe not in ("all_us", "all")
+        else ["sp500", "nasdaq", "nasdaq_all", "nyse", "bist", "viop", "binance", "all_us"]
     )
     counts: dict[str, int] = {}
     for name in targets:

@@ -103,7 +103,8 @@ def api_sp500_count():
 def api_universe_info(universe: str = "sp500", refresh: bool = False):
     labels = {
         "sp500": "S&P 500",
-        "nasdaq": "NASDAQ",
+        "nasdaq": "NASDAQ (en hacimli 1000, 20g)",
+        "nasdaq_all": "NASDAQ (tüm aktif)",
         "nyse": "NYSE",
         "all_us": "NASDAQ + NYSE + S&P 500",
         "bist": "BIST (Borsa İstanbul)",
@@ -173,10 +174,30 @@ def api_universe_info(universe: str = "sp500", refresh: bool = False):
 @router.post("/api/symbols/refresh")
 def api_refresh_symbols(universe: str = "all_us"):
     try:
+        if universe == "nasdaq":
+            from app.services.data_fetcher import refresh_nasdaq_liquid_universe
+
+            result = refresh_nasdaq_liquid_universe(force=True)
+            return {"ok": True, "counts": {"nasdaq": int(result.get("count") or 0)}, **result}
         counts = refresh_universe_cache(universe if universe != "all_us" else None)
         return {"ok": True, "counts": counts}
     except Exception as exc:
         raise HTTPException(500, str(exc)) from exc
+
+
+@router.get("/api/symbols/nasdaq-top")
+def api_nasdaq_top_list():
+    """Plain-text NASDAQ top-1000 list for custom lists / download."""
+    from fastapi.responses import PlainTextResponse
+
+    from app.services.data_fetcher import get_nasdaq_symbols
+    from app.services.nasdaq_liquid import read_exported_nasdaq_top_list
+
+    text = read_exported_nasdaq_top_list()
+    if not text:
+        symbols = get_nasdaq_symbols()
+        text = "\n".join(symbols) + "\n"
+    return PlainTextResponse(text, media_type="text/plain; charset=utf-8")
 
 
 @router.get("/api/pine/scripts")

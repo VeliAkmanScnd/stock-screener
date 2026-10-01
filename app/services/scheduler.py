@@ -32,6 +32,17 @@ TRACK_PRICE_JOB = "track_price_update"
 TRACK_WEEKEND_JOB = "track_weekend_expire"
 TRACK_ARCHIVE_JOB = "track_archive_expired"
 SCHEDULE_SYNC_JOB = "scheduled_scan_sync"
+NASDAQ_LIQUID_JOB = "nasdaq_liquid_refresh"
+
+
+def _refresh_nasdaq_liquid_job() -> None:
+    try:
+        from app.services.data_fetcher import refresh_nasdaq_liquid_universe
+
+        result = refresh_nasdaq_liquid_universe(force=True)
+        logger.info("NASDAQ liquid refresh: %s", result)
+    except Exception:
+        logger.exception("NASDAQ liquid daily refresh failed")
 
 def _build_trigger(sched: ScheduledScan) -> CronTrigger:
     tz_name = (sched.timezone or "Europe/Istanbul").strip() or "Europe/Istanbul"
@@ -305,6 +316,12 @@ def start_scheduler() -> None:
     _scheduler.start()
     reload_all_jobs()
     register_track_jobs()
+    # Warm NASDAQ liquid list in background (first build can take several minutes).
+    threading.Thread(
+        target=_refresh_nasdaq_liquid_job,
+        daemon=True,
+        name="nasdaq-liquid-warmup",
+    ).start()
     logger.info("Scan scheduler started")
 
 def stop_scheduler() -> None:
@@ -405,5 +422,15 @@ def register_track_jobs() -> None:
         max_instances=1,
         coalesce=True,
         misfire_grace_time=300,
+    )
+    # US seansı öncesi: NASDAQ en hacimli 1000 listesini yenile (İstanbul 08:00).
+    _scheduler.add_job(
+        _refresh_nasdaq_liquid_job,
+        trigger=CronTrigger(hour=8, minute=0, timezone=tz),
+        id=NASDAQ_LIQUID_JOB,
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=3600,
     )
     logger.info("Track price jobs registered (%s)", tz)

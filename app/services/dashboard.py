@@ -24,6 +24,7 @@ UNIVERSE_LABELS = {
     "bist": "BIST",
     "viop": "VIOP",
     "nasdaq": "NASDAQ",
+    "nasdaq_all": "NASDAQ (tümü)",
     "nyse": "NYSE",
     "sp500": "S&P 500",
     "all_us": "NASDAQ + NYSE + S&P 500",
