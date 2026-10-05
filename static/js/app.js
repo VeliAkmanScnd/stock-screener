@@ -921,15 +921,11 @@ async function loadSavedPine(selectId) {
   scripts.forEach((s) => {
     const opt = document.createElement("option");
     opt.value = s.id;
-    const dual =
-      s.al_source === "bias_ts" || s.al_source === "guven_skoru";
-    const status = !s.available
-      ? "eksik"
-      : dual
-        ? "AL/SAT ✓"
-        : s.al_condition
-          ? "AL ✓"
-          : "AL ?";
+    let status = "AL ?";
+    if (!s.available) status = "eksik";
+    else if (s.al_source === "guven_skoru") status = "eşik ✓";
+    else if (s.al_source === "bias_ts") status = "AL/SAT ✓";
+    else if (s.al_condition) status = "AL ✓";
     opt.textContent = `${s.name} (${status})`;
     opt.dataset.available = s.available ? "1" : "0";
     opt.dataset.condition = s.al_condition || "";

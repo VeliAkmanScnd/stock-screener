@@ -59,10 +59,8 @@ def pine_inputs_for_api(
         d["pine_default"] = d["default"]
         out.append(d)
     from app.services.pine_bias_ts import is_bias_ts_script
-    from app.services.pine_guven_skoru import is_guven_skoru_script
 
-    dual_side = is_bias_ts_script(pine_code) or is_guven_skoru_script(pine_code)
-    if dual_side and not any(p["name"] == "scan_side" for p in out):
+    if is_bias_ts_script(pine_code) and not any(p["name"] == "scan_side" for p in out):
         saved = (saved_defaults or {}).get("scan_side") or "both"
         out.insert(
             0,

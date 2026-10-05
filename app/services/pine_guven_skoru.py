@@ -72,10 +72,6 @@ def _as_int(val, default: int) -> int:
 
 def guven_params_from_script(pine_code: str, overrides: dict | None = None) -> dict:
     inputs = merge_pine_inputs(pine_code, overrides)
-    extra = overrides or {}
-    side = str(extra.get("scan_side") or inputs.get("scan_side") or "both").strip().lower()
-    if side not in ("buy", "sell", "both"):
-        side = "both"
     return {
         "thr": _as_float(inputs.get("thr"), 80.0),
         "only_conf": _as_bool(inputs.get("onlyConf"), True),
@@ -95,15 +91,15 @@ def guven_params_from_script(pine_code: str, overrides: dict | None = None) -> d
         "per_len": _as_int(inputs.get("perLen"), 21),
         "med_len": _as_int(inputs.get("medLen"), 21),
         "med_mult": _as_float(inputs.get("medMult"), 1.8),
-        "side": side,
+        # Always match either long or short threshold signal.
+        "side": "both",
     }
 
 
 def guven_display_label(pine_code: str, overrides: dict | None = None) -> str:
     p = guven_params_from_script(pine_code, overrides)
-    side = {"buy": "AL", "sell": "SAT", "both": "AL/SAT"}.get(p["side"], "AL/SAT")
     title = _parse_indicator_title(pine_code)
-    return f"Güven Skoru {side} (eşik {p['thr']:g}%) — {title}"
+    return f"Güven Skoru eşik {p['thr']:g}% — {title}"
 
 
 def _ramp(x: pd.Series, xs: np.ndarray, ys: np.ndarray) -> pd.Series:

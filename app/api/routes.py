@@ -375,8 +375,8 @@ async def upload_pine(
         )
     elif al and al.source == "guven_skoru":
         msg = (
-            "Güven Skoru motoru aktif (AL + SAT). "
-            "Varsayılan tarama yönü: both. Parametrelerden buy/sell/both seçebilirsiniz."
+            "Güven Skoru motoru aktif. "
+            "Son barda güven eşiği (long veya short) aşıldığında filtreye takılır."
         )
     elif al and al.source == "merged_triple":
         msg = (
