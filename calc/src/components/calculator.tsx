@@ -228,17 +228,6 @@ export function Calculator() {
         loadingHint="THYAO, bankalar ve diğer paylar sıralanıyor…"
       />
 
-      <ViopStatsTable
-        selectedTicker={contract?.ticker}
-        onSelect={(ticker) => {
-          const next = findContract(ticker);
-          if (next) {
-            handleContractChange(next);
-            setGroupFilter("pay");
-          }
-        }}
-      />
-
       <div className="grid gap-6 lg:grid-cols-[minmax(28rem,34rem)_minmax(0,1fr)]">
         <Card className="h-fit overflow-visible! ring-ticker/20">
           <CardHeader className="border-b border-ticker/15">
@@ -714,6 +703,17 @@ export function Calculator() {
           </Table>
         </CardContent>
       </Card>
+
+      <ViopStatsTable
+        selectedTicker={contract?.ticker}
+        onSelect={(ticker) => {
+          const next = findContract(ticker);
+          if (next) {
+            handleContractChange(next);
+            setGroupFilter("pay");
+          }
+        }}
+      />
     </div>
   );
 }
