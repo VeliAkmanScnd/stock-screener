@@ -6,7 +6,7 @@
   <title>TradeLABtr Stock Screener</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/css/style.css?v=41" />
+  <link rel="stylesheet" href="/static/css/style.css?v=42" />
   <link rel="stylesheet" href="/static/css/auth.css?v=5" />
 </head>
 <body>
@@ -269,20 +269,22 @@
           </button>
         </section>
 
-        <section class="card filters-card">
-          <h2>Teknik Filtreler</h2>
-          <p class="hint filters-hint">Delist / güncel olmayan hisseler otomatik elenir; veri toplu indirilir.</p>
-          <div class="filter-list-2col">
-            <div class="filter-list-col" id="filterListColA"></div>
-            <div class="filter-list-col" id="filterListColB"></div>
-          </div>
+        <div class="panel filters-stack">
+          <section class="card filters-card">
+            <h2>Teknik Filtreler</h2>
+            <p class="hint filters-hint">Delist / güncel olmayan hisseler otomatik elenir; veri toplu indirilir.</p>
+            <div class="filter-list-2col">
+              <div class="filter-list-col" id="filterListColA"></div>
+              <div class="filter-list-col" id="filterListColB"></div>
+            </div>
+          </section>
 
-          <div class="pine-settings-area" id="pineParamsBox" hidden>
+          <section class="card pine-settings-area" id="pineParamsBox" hidden>
             <div class="pine-params-head">
               <div>
-                <h3 class="pine-params-title">Script parametreleri</h3>
+                <h2>Script parametreleri</h2>
                 <p class="hint pine-settings-hint" id="pineParamsHint">
-                  Seçili Pine script ayarları. Değişiklikleri kaydedin veya Pine dosyası varsayılanına dönün.
+                  Seçili Pine script’e özel ayarlar. Değişiklikleri kaydedin veya Pine dosyası varsayılanına dönün.
                 </p>
               </div>
               <div class="pine-params-actions">
@@ -295,8 +297,8 @@
               </div>
             </div>
             <form id="pineInputsForm" class="pine-inputs-form" autocomplete="off"></form>
-          </div>
-        </section>
+          </section>
+        </div>
 
         <aside class="panel pine-panel">
           <section class="card pine-card">
