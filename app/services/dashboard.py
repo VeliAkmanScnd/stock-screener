@@ -84,10 +84,19 @@ def _universe_label(universe: str | None) -> str:
 def _direction(signals: Any) -> str:
     if not isinstance(signals, dict):
         return "AL"
-    buy = bool(signals.get("bias_ts_buy") or signals.get("buy"))
-    sell = bool(signals.get("bias_ts_sell") or signals.get("sell"))
+    buy = bool(
+        signals.get("bias_ts_buy") or signals.get("guven_buy") or signals.get("buy")
+    )
+    sell = bool(
+        signals.get("bias_ts_sell") or signals.get("guven_sell") or signals.get("sell")
+    )
     if buy and sell:
-        side = str(signals.get("bias_ts_side") or signals.get("side") or "buy").strip().lower()
+        side = str(
+            signals.get("bias_ts_side")
+            or signals.get("guven_side")
+            or signals.get("side")
+            or "buy"
+        ).strip().lower()
         return "SAT" if side == "sell" else "AL"
     if sell and not buy:
         return "SAT"

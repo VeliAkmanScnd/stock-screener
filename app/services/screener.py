@@ -293,6 +293,15 @@ def scan_dataframe(
                 )
                 signals.update(snap)
                 pine_ok = bool(snap.get("pine_al"))
+            elif pine_source == "guven_skoru" and pine_code:
+                from app.services.pine_guven_skoru import (
+                    guven_params_from_script,
+                    guven_snapshot,
+                )
+
+                snap = guven_snapshot(df, **guven_params_from_script(pine_code, overrides))
+                signals.update(snap)
+                pine_ok = bool(snap.get("pine_al"))
             elif pine_source == "candle_green_first" and pine_code:
                 from app.services.pine_fibo import fibo_params_from_script, fibo_trend_snapshot
 

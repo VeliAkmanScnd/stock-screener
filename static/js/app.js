@@ -278,6 +278,11 @@ const SIGNAL_LABELS = {
   bias_ts_buy: "Bias×TS BUY",
   bias_ts_sell: "Bias×TS SELL",
   bias_ts_side: "Bias×TS yön",
+  guven_buy: "Güven AL",
+  guven_sell: "Güven SAT",
+  guven_side: "Güven yön",
+  guven_buy_score: "Güven AL %",
+  guven_sell_score: "Güven SAT %",
   bias_bull: "Bias yeşil",
   ts_green: "TS yeşil",
   bias_dist_pct: "Bias uzaklık %",
@@ -916,7 +921,15 @@ async function loadSavedPine(selectId) {
   scripts.forEach((s) => {
     const opt = document.createElement("option");
     opt.value = s.id;
-    const status = !s.available ? "eksik" : s.al_condition ? "AL ✓" : "AL ?";
+    const dual =
+      s.al_source === "bias_ts" || s.al_source === "guven_skoru";
+    const status = !s.available
+      ? "eksik"
+      : dual
+        ? "AL/SAT ✓"
+        : s.al_condition
+          ? "AL ✓"
+          : "AL ?";
     opt.textContent = `${s.name} (${status})`;
     opt.dataset.available = s.available ? "1" : "0";
     opt.dataset.condition = s.al_condition || "";

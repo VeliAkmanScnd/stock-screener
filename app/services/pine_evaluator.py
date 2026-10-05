@@ -179,6 +179,7 @@ def evaluate_pine_al(
     from app.services.pine_fibo import FIBO_MARKER, fibo_first_green_from_script
     from app.services.pine_bias_ts import BIAS_TS_MARKER, bias_ts_from_script
     from app.services.pine_choch import CHOCH_BULLISH_MARKER, choch_bullish_from_script
+    from app.services.pine_guven_skoru import GUVEN_SKORU_MARKER, guven_from_script
     from app.services.pine_merged_triple import MERGED_TRIPLE_MARKER, merged_triple_buy_last_bar
     from app.services.pine_parser import _inline_variables
     from app.services.pine_params import merge_pine_inputs
@@ -187,6 +188,10 @@ def evaluate_pine_al(
         if not pine_code:
             raise PineEvalError("Pine script dosyası gerekli (Bias x Trend Strength)")
         return bias_ts_from_script(df, pine_code, pine_input_overrides)
+    if source == "guven_skoru" or condition == GUVEN_SKORU_MARKER:
+        if not pine_code:
+            raise PineEvalError("Pine script dosyası gerekli (Güven Skoru)")
+        return guven_from_script(df, pine_code, pine_input_overrides)
     if source == "merged_triple" or condition == MERGED_TRIPLE_MARKER:
         if not pine_code:
             raise PineEvalError("Merged-Triple script dosyası gerekli")

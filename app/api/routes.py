@@ -209,18 +209,35 @@ def list_pine_scripts(db: Session = Depends(get_db)):
         content_ok = bool(r.pine_content and r.pine_content.strip())
         al_condition = r.al_condition
         al_source = r.al_source
-        if not al_condition and (path_ok or content_ok):
-            content = load_pine_content(r)
-            al = extract_al_condition(content)
-            if al:
-                al_source = al.source
-                if al.source in ("candle_green_first", "merged_triple", "choch_bullish", "bias_ts"):
-                    al_condition = al.display_condition
-                else:
-                    al_condition = al.display_condition or al.condition
-                r.al_condition = al_condition
-                r.al_source = al_source
-                db.commit()
+        if path_ok or content_ok:
+            content = None
+            if not al_condition:
+                content = load_pine_content(r)
+            elif al_source not in ("bias_ts", "guven_skoru"):
+                # Upgrade scripts that were saved as generic AL before dual engines.
+                from app.services.pine_bias_ts import is_bias_ts_script
+                from app.services.pine_guven_skoru import is_guven_skoru_script
+
+                content = load_pine_content(r)
+                if not (is_bias_ts_script(content) or is_guven_skoru_script(content)):
+                    content = None
+            if content is not None:
+                al = extract_al_condition(content)
+                if al:
+                    al_source = al.source
+                    if al.source in (
+                        "candle_green_first",
+                        "merged_triple",
+                        "choch_bullish",
+                        "bias_ts",
+                        "guven_skoru",
+                    ):
+                        al_condition = al.display_condition
+                    else:
+                        al_condition = al.display_condition or al.condition
+                    r.al_condition = al_condition
+                    r.al_source = al_source
+                    db.commit()
         out.append(
             {
                 "id": r.id,
@@ -329,7 +346,13 @@ async def upload_pine(
 
     stored_condition = None
     if al:
-        if al.source in ("candle_green_first", "merged_triple", "choch_bullish", "bias_ts"):
+        if al.source in (
+            "candle_green_first",
+            "merged_triple",
+            "choch_bullish",
+            "bias_ts",
+            "guven_skoru",
+        ):
             stored_condition = al.display_condition
         else:
             stored_condition = al.display_condition or al.condition
@@ -349,6 +372,11 @@ async def upload_pine(
         msg = (
             "Bias × Trend Strength motoru aktif. "
             "Son barda BUY (veya seçilen yön) taranır. VIOP için evreni VIOP seçin."
+        )
+    elif al and al.source == "guven_skoru":
+        msg = (
+            "Güven Skoru motoru aktif (AL + SAT). "
+            "Varsayılan tarama yönü: both. Parametrelerden buy/sell/both seçebilirsiniz."
         )
     elif al and al.source == "merged_triple":
         msg = (

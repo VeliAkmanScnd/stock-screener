@@ -184,10 +184,23 @@ def _tr_price(value: float) -> str:
 
 def _signal_direction(signals: dict | None) -> str:
     sig = signals or {}
-    buy = bool(sig.get("bias_ts_buy"))
-    sell = bool(sig.get("bias_ts_sell"))
+    buy = bool(
+        sig.get("bias_ts_buy")
+        or sig.get("guven_buy")
+        or sig.get("buy")
+    )
+    sell = bool(
+        sig.get("bias_ts_sell")
+        or sig.get("guven_sell")
+        or sig.get("sell")
+    )
     if buy and sell:
-        side = str(sig.get("bias_ts_side") or "buy").strip().lower()
+        side = str(
+            sig.get("bias_ts_side")
+            or sig.get("guven_side")
+            or sig.get("side")
+            or "buy"
+        ).strip().lower()
         return "SAT" if side == "sell" else "AL"
     if sell:
         return "SAT"

@@ -191,6 +191,24 @@ def _extract_bias_ts(code: str) -> PineALSignal | None:
     )
 
 
+def _extract_guven_skoru(code: str) -> PineALSignal | None:
+    from app.services.pine_guven_skoru import (
+        GUVEN_SKORU_MARKER,
+        guven_display_label,
+        is_guven_skoru_script,
+    )
+
+    if not is_guven_skoru_script(code):
+        return None
+    return PineALSignal(
+        condition=GUVEN_SKORU_MARKER,
+        source="guven_skoru",
+        variable_name="buyCond|sellCond",
+        first_bar_only=False,
+        display_condition=guven_display_label(code),
+    )
+
+
 def _extract_choch_bullish(code: str) -> PineALSignal | None:
     """Market structure scripts: bullish ChoCh flip (BigBeluga-style)."""
     from app.services.pine_choch import CHOCH_BULLISH_MARKER, choch_display_label, is_choch_market_structure_script
@@ -222,6 +240,10 @@ def extract_al_condition(pine_code: str) -> PineALSignal | None:
     bias_ts = _extract_bias_ts(pine_code)
     if bias_ts:
         return bias_ts
+
+    guven = _extract_guven_skoru(pine_code)
+    if guven:
+        return guven
 
     if _is_merged_triple(pine_code):
         from app.services.pine_merged_triple import MERGED_TRIPLE_MARKER, merged_triple_display_label
