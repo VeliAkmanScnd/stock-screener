@@ -6,7 +6,7 @@
   <title>TradeLABtr Stock Screener</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/css/style.css?v=40" />
+  <link rel="stylesheet" href="/static/css/style.css?v=41" />
   <link rel="stylesheet" href="/static/css/auth.css?v=5" />
 </head>
 <body>
@@ -276,6 +276,26 @@
             <div class="filter-list-col" id="filterListColA"></div>
             <div class="filter-list-col" id="filterListColB"></div>
           </div>
+
+          <div class="pine-settings-area" id="pineParamsBox" hidden>
+            <div class="pine-params-head">
+              <div>
+                <h3 class="pine-params-title">Script parametreleri</h3>
+                <p class="hint pine-settings-hint" id="pineParamsHint">
+                  Seçili Pine script ayarları. Değişiklikleri kaydedin veya Pine dosyası varsayılanına dönün.
+                </p>
+              </div>
+              <div class="pine-params-actions">
+                <button type="button" class="btn primary btn-sm" id="btnSavePineInputs" title="Mevcut değerleri bu script için kalıcı varsayılan yap">
+                  Varsayılan olarak kaydet
+                </button>
+                <button type="button" class="btn secondary btn-sm" id="btnResetPineInputs" title="Kayıtlı varsayılanları sil; Pine dosyası değerlerine dön">
+                  Pine varsayılanı
+                </button>
+              </div>
+            </div>
+            <form id="pineInputsForm" class="pine-inputs-form" autocomplete="off"></form>
+          </div>
         </section>
 
         <aside class="panel pine-panel">
@@ -349,26 +369,6 @@
           </section>
         </aside>
       </div>
-
-      <section class="card pine-settings-area" id="pineParamsBox" hidden>
-        <div class="pine-params-head">
-          <div>
-            <h2>Script parametreleri</h2>
-            <p class="hint pine-settings-hint" id="pineParamsHint">
-              Seçili Pine script ayarları. Değişiklikleri kaydedin veya Pine dosyası varsayılanına dönün.
-            </p>
-          </div>
-          <div class="pine-params-actions">
-            <button type="button" class="btn primary btn-sm" id="btnSavePineInputs" title="Mevcut değerleri bu script için kalıcı varsayılan yap">
-              Varsayılan olarak kaydet
-            </button>
-            <button type="button" class="btn secondary btn-sm" id="btnResetPineInputs" title="Kayıtlı varsayılanları sil; Pine dosyası değerlerine dön">
-              Pine varsayılanı
-            </button>
-          </div>
-        </div>
-        <form id="pineInputsForm" class="pine-inputs-form" autocomplete="off"></form>
-      </section>
 
       <section class="card scheduled-scans-area" id="scheduledScansSection">
         <div class="scheduled-scans-head">

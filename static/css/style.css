@@ -359,7 +359,7 @@ body {
   }
 
   .pine-inputs-form {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: 1fr 1fr;
   }
 }
 
@@ -374,6 +374,7 @@ body {
 
   .pine-inputs-form {
     grid-template-columns: 1fr;
+    max-height: none;
   }
 }
 
@@ -574,40 +575,53 @@ body {
   line-height: 1.4;
 }
 
+.filters-card .pine-settings-area {
+  margin-top: 0.85rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+
 .pine-settings-area {
-  border-left-color: var(--orange);
+  border-left-color: transparent;
   margin-bottom: 0;
 }
 
-.pine-settings-area h2 {
-  margin-bottom: 0.25rem;
+.pine-params-title {
+  margin: 0 0 0.2rem;
+  font-size: 0.92rem;
+  font-weight: 650;
+  color: var(--text);
 }
 
 .pine-settings-hint {
-  margin: 0 0 0.5rem;
+  margin: 0 0 0.35rem;
+  font-size: 0.72rem;
 }
 
 .pine-params-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 1rem;
-  margin-bottom: 0.85rem;
+  gap: 0.65rem;
+  margin-bottom: 0.65rem;
   flex-wrap: wrap;
 }
 
 .pine-params-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.45rem;
+  gap: 0.35rem;
   flex-shrink: 0;
 }
 
 .pine-inputs-form {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.5rem 1.25rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.4rem 0.85rem;
   align-items: start;
+  max-height: min(42vh, 22rem);
+  overflow-y: auto;
+  padding-right: 0.15rem;
 }
 
 .pine-input-group-title {
