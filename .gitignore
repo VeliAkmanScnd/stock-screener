@@ -9,4 +9,5 @@ calc/node_modules/
 calc/.next/
 calc/data/.screener-cache.json
 calc/data/.hype-cache.json
+calc/data/.social-hype-history.json
 

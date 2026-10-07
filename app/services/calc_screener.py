@@ -132,6 +132,12 @@ def _stats_from_frame(ticker: str, exchange: str, currency: str, close, volume) 
         "redditCount": None,
         "redditStatus": "unavailable",
         "trendsScore": None,
+        "twitterCount": None,
+        "twitterGrowth": None,
+        "twitterStatus": "unavailable",
+        "telegramCount": None,
+        "telegramGrowth": None,
+        "telegramStatus": "unavailable",
     }
 
 

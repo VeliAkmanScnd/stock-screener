@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { enrichSocialHype, socialHypeStatus } from "./hype-social.mjs";
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const seedPath = path.join(root, "data/hype-seed.json");
@@ -506,6 +507,7 @@ function markRedditUnavailable(row) {
 export async function enrichHype(rows, namesByTicker, options = {}) {
   const newsLimit = options.newsLimit ?? 250;
   const redditLimit = options.redditLimit ?? 36;
+  const xLimit = options.xLimit ?? 80;
   const kapMap = (await fetchKapBulk()) ?? null;
   const kapOk = Boolean(kapMap);
 
@@ -557,12 +559,32 @@ export async function enrichHype(rows, namesByTicker, options = {}) {
     }
   }
 
+  let social = { twitter: "unavailable", telegram: "unavailable" };
+  try {
+    social = await enrichSocialHype(rows, { xLimit });
+  } catch {
+    for (const row of rows) {
+      if (row.twitterStatus == null) {
+        row.twitterCount = null;
+        row.twitterGrowth = null;
+        row.twitterStatus = "unavailable";
+      }
+      if (row.telegramStatus == null) {
+        row.telegramCount = null;
+        row.telegramGrowth = null;
+        row.telegramStatus = "unavailable";
+      }
+    }
+  }
+
   writeDisk();
   return {
     reddit: redditBlocked && !redditLiveOk ? "unavailable" : redditLiveOk ? "ok" : "unavailable",
     news: newsBlocked ? "unavailable" : "ok",
     kap: kapOk ? "ok" : "seed",
     trends: trendsBlocked ? "unavailable" : "ok",
+    twitter: social.twitter,
+    telegram: social.telegram,
   };
 }
 
@@ -585,5 +607,6 @@ export function hypeStatus() {
     reddit: redditBlocked && !redditLiveOk ? "unavailable" : redditLiveOk ? "ok" : "pending",
     news: newsBlocked ? "unavailable" : "ok",
     trends: trendsBlocked ? "unavailable" : "pending",
+    ...socialHypeStatus(),
   };
 }

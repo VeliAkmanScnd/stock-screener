@@ -35,6 +35,15 @@ export type MarketStat = {
   newsStatus?: "ok" | "unavailable";
   /** Google Trends 7d interest; null when the stub/API is unavailable. */
   trendsScore?: number | null;
+  /** X/Twitter posts in last ~24h matching #/$ticker (Basic recent search). */
+  twitterCount?: number | null;
+  /** today / avg(prior 7d). Null when history/API missing. */
+  twitterGrowth?: number | null;
+  twitterStatus?: "ok" | "unavailable";
+  /** Mentions across configured TR Telegram channels (~24h). */
+  telegramCount?: number | null;
+  telegramGrowth?: number | null;
+  telegramStatus?: "ok" | "unavailable";
   /** Percent return +1 session after the latest hype spike. */
   postHypeReturn1d?: number | null;
   /** Percent return +5 sessions after the latest hype spike. */
@@ -267,6 +276,16 @@ function redditSignal(item: MarketStat): number | null {
   return finiteOrNull(item.redditCount);
 }
 
+function twitterSignal(item: MarketStat): number | null {
+  if (item.twitterStatus === "unavailable") return null;
+  return finiteOrNull(item.twitterGrowth ?? item.twitterCount);
+}
+
+function telegramSignal(item: MarketStat): number | null {
+  if (item.telegramStatus === "unavailable") return null;
+  return finiteOrNull(item.telegramGrowth ?? item.telegramCount);
+}
+
 function impactFor(
   d1: number | null,
   d5: number | null,
@@ -307,6 +326,8 @@ export function rankStats(stats: MarketStat[]): RankedStat[] {
   const trendsPcts = percentilesSkippingMissing(
     stats.map((item) => item.trendsScore),
   );
+  const twitterPcts = percentilesSkippingMissing(stats.map(twitterSignal));
+  const telegramPcts = percentilesSkippingMissing(stats.map(telegramSignal));
   const hypeScores = stats.map((_, index) =>
     hypeFromPercentiles([
       relVolPcts[index],
@@ -314,6 +335,8 @@ export function rankStats(stats: MarketStat[]): RankedStat[] {
       newsPcts[index],
       redditPcts[index],
       trendsPcts[index],
+      twitterPcts[index],
+      telegramPcts[index],
     ]),
   );
   const hypeRanks = rankDesc(hypeScores);

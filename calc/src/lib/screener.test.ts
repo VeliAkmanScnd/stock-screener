@@ -315,6 +315,39 @@ test("hacim+vol+hype does not mix in değer / market cap", () => {
   assert.ok(byTicker.LARGE.scoreValue > byTicker.SMALL.scoreValue);
 });
 
+test("twitter and telegram growth lift hype when present", () => {
+  const ranked = rankStats([
+    {
+      ticker: "QUIET",
+      avgVolumeTl: 10,
+      lastVolumeTl: 10,
+      volatility: 20,
+      dailyMove: 1,
+      relativeVolume: 1,
+      shock: 1,
+      twitterGrowth: 1,
+      twitterStatus: "ok",
+      telegramGrowth: 1,
+      telegramStatus: "ok",
+    },
+    {
+      ticker: "LOUD",
+      avgVolumeTl: 10,
+      lastVolumeTl: 10,
+      volatility: 20,
+      dailyMove: 1,
+      relativeVolume: 1,
+      shock: 1,
+      twitterGrowth: 8,
+      twitterStatus: "ok",
+      telegramGrowth: 6,
+      telegramStatus: "ok",
+    },
+  ]);
+  const by = Object.fromEntries(ranked.map((row) => [row.ticker, row]));
+  assert.ok(by.LOUD.hype > by.QUIET.hype);
+});
+
 test("missing reddit or news does not produce NaN hype", () => {
   const ranked = rankStats([
     {

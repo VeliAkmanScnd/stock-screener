@@ -73,19 +73,39 @@ export function NewsRedditCell({
   const redditLabel = redditMissing
     ? "Reddit alınamadı"
     : String(item.redditCount ?? 0);
+  const xMissing = item.twitterStatus === "unavailable";
+  const tgMissing = item.telegramStatus === "unavailable";
+  const xLabel = xMissing
+    ? "X—"
+    : item.twitterGrowth != null
+      ? `X×${item.twitterGrowth.toFixed(1)}`
+      : `X${item.twitterCount ?? 0}`;
+  const tgLabel = tgMissing
+    ? "TG—"
+    : item.telegramGrowth != null
+      ? `TG×${item.telegramGrowth.toFixed(1)}`
+      : `TG${item.telegramCount ?? 0}`;
   return (
     <span
       className="whitespace-nowrap"
       title={
         kap
-          ? "7 günlük haber + KAP / Reddit"
-          : "7 günlük haber / Reddit"
+          ? "Haber+KAP / Reddit / X büyüme / Telegram"
+          : "Haber / Reddit / X büyüme / Telegram"
       }
     >
       {newsLabel}
       {" / "}
       <span className={redditMissing ? "text-muted-foreground" : undefined}>
         {redditLabel}
+      </span>
+      {" / "}
+      <span className={xMissing ? "text-muted-foreground" : undefined}>
+        {xLabel}
+      </span>
+      {" / "}
+      <span className={tgMissing ? "text-muted-foreground" : undefined}>
+        {tgLabel}
       </span>
     </span>
   );

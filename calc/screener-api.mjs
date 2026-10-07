@@ -125,6 +125,12 @@ function statsFromBars(item, bars) {
     redditCount: null,
     redditStatus: "unavailable",
     trendsScore: null,
+    twitterCount: null,
+    twitterGrowth: null,
+    twitterStatus: "unavailable",
+    telegramCount: null,
+    telegramGrowth: null,
+    telegramStatus: "unavailable",
   };
 }
 
