@@ -109,7 +109,7 @@ export function AppShell() {
         <footer className="border-t border-ticker/15 bg-card/30">
           <div className="mx-auto max-w-7xl px-4 py-4 text-xs text-muted-foreground sm:px-6">
             {isViop
-              ? "Teminat ve fiyatlar referans listedir; güncel BIST VIOP değerleriyle fark gösterebilir."
+              ? "Teminat, fiyat ve kaldıraç her iş günü otomatik yenilenir (VIOP kapanış sonrası); aracı kurum oranlarıyla küçük fark olabilir."
               : "Hisse fiyatları VIOP referans listesinden gelir veya elle girilir; Nasdaq ve NYSE tabloları bilgi amaçlıdır. Güncel borsa fiyatlarıyla fark gösterebilir."}{" "}
             Bu araç yatırım tavsiyesi değildir.
           </div>

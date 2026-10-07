@@ -71,7 +71,7 @@ const PAY: [string, string, number, number, number][] = [
   ["YKBNK", "Yapı Kredi", 724, 35.83, 4.95],
 ];
 
-export const CONTRACTS: Contract[] = [
+export const STATIC_CONTRACTS: Contract[] = [
   { ticker: "BIST30", name: "BIST 30", margin: 22353, price: 17800, leverage: 7.96, multiplier: 10, currency: "TL", group: "endeks" },
   { ticker: "XLBNK", name: "BIST Banka", margin: 26677, price: 15938, leverage: 5.97, multiplier: 10, currency: "TL", group: "endeks" },
   { ticker: "X10XB", name: "BIST 10 Banka", margin: 31003, price: 22141, leverage: 7.14, multiplier: 10, currency: "TL", group: "endeks" },
@@ -98,8 +98,42 @@ export const CONTRACTS: Contract[] = [
   })),
 ];
 
+/** Fallback alias — prefer getContracts() so daily API overlays apply. */
+export const CONTRACTS: Contract[] = STATIC_CONTRACTS;
+
+let liveContracts: Contract[] | null = null;
+let contractsUpdatedAt: string | null = null;
+const listeners = new Set<() => void>();
+
+function notifyContracts() {
+  for (const listener of listeners) listener();
+}
+
+export function getContracts(): Contract[] {
+  return liveContracts ?? STATIC_CONTRACTS;
+}
+
+export function getContractsUpdatedAt(): string | null {
+  return contractsUpdatedAt;
+}
+
+export function subscribeContracts(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
+export function setLiveContracts(
+  next: Contract[],
+  updatedAt?: string | null,
+): void {
+  if (!next.length) return;
+  liveContracts = next;
+  contractsUpdatedAt = updatedAt ?? contractsUpdatedAt;
+  notifyContracts();
+}
+
 export function usdTryRate(): number {
-  return CONTRACTS.find((c) => c.ticker === "USDTRY")?.price ?? 56.89;
+  return getContracts().find((c) => c.ticker === "USDTRY")?.price ?? 56.89;
 }
 
 export function marginTl(contract: Contract, fx = usdTryRate()): number {
@@ -123,12 +157,13 @@ export function unitLabel(contract: Contract): string {
 }
 
 export function findContract(ticker: string): Contract | undefined {
-  return CONTRACTS.find((c) => c.ticker === ticker);
+  return getContracts().find((c) => c.ticker === ticker);
 }
 
 export function contractsInGroup(group?: ContractGroup | "all"): Contract[] {
-  if (!group || group === "all") return CONTRACTS;
-  return CONTRACTS.filter((c) => c.group === group);
+  const all = getContracts();
+  if (!group || group === "all") return all;
+  return all.filter((c) => c.group === group);
 }
 
 export function searchContracts(

@@ -33,6 +33,7 @@ TRACK_WEEKEND_JOB = "track_weekend_expire"
 TRACK_ARCHIVE_JOB = "track_archive_expired"
 SCHEDULE_SYNC_JOB = "scheduled_scan_sync"
 NASDAQ_LIQUID_JOB = "nasdaq_liquid_refresh"
+VIOP_CONTRACTS_JOB = "viop_contracts_refresh"
 
 
 def _refresh_nasdaq_liquid_job() -> None:
@@ -43,6 +44,16 @@ def _refresh_nasdaq_liquid_job() -> None:
         logger.info("NASDAQ liquid refresh: %s", result)
     except Exception:
         logger.exception("NASDAQ liquid daily refresh failed")
+
+
+def _refresh_viop_contracts_job() -> None:
+    try:
+        from app.services.viop_contracts import refresh_viop_contracts
+
+        result = refresh_viop_contracts(force=True)
+        logger.info("VIOP contracts refresh: %s", result)
+    except Exception:
+        logger.exception("VIOP contracts daily refresh failed")
 
 def _build_trigger(sched: ScheduledScan) -> CronTrigger:
     tz_name = (sched.timezone or "Europe/Istanbul").strip() or "Europe/Istanbul"
@@ -322,6 +333,11 @@ def start_scheduler() -> None:
         daemon=True,
         name="nasdaq-liquid-warmup",
     ).start()
+    threading.Thread(
+        target=_refresh_viop_contracts_job,
+        daemon=True,
+        name="viop-contracts-warmup",
+    ).start()
     logger.info("Scan scheduler started")
 
 def stop_scheduler() -> None:
@@ -428,6 +444,18 @@ def register_track_jobs() -> None:
         _refresh_nasdaq_liquid_job,
         trigger=CronTrigger(hour=8, minute=0, timezone=tz),
         id=NASDAQ_LIQUID_JOB,
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=3600,
+    )
+    # VIOP kapanış sonrası: hesaplayıcı fiyat + teminat oranı + kaldıraç (İstanbul 18:45).
+    _scheduler.add_job(
+        _refresh_viop_contracts_job,
+        trigger=CronTrigger(
+            hour=18, minute=45, day_of_week="mon-fri", timezone=tz
+        ),
+        id=VIOP_CONTRACTS_JOB,
         replace_existing=True,
         max_instances=1,
         coalesce=True,

@@ -4,13 +4,14 @@ import * as React from "react";
 import {
   MARKET_LABELS,
   MARKET_ORDER,
+  getSpotStocks,
   searchSpotStocks,
-  SPOT_STOCKS,
   type SpotMarket,
   type SpotStock,
 } from "@/lib/spot-stocks";
 import { formatPrice } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { useViopContracts } from "@/components/use-viop-contracts";
 
 type SpotComboboxProps = {
   value?: SpotStock;
@@ -23,15 +24,17 @@ export function SpotCombobox({
   onChange,
   market = "all",
 }: SpotComboboxProps) {
+  useViopContracts();
   const [query, setQuery] = React.useState("");
+  const allStocks = getSpotStocks();
   const results = searchSpotStocks(query, market);
   const selectPool =
     !market || market === "all"
-      ? SPOT_STOCKS
-      : SPOT_STOCKS.filter((stock) => stock.markets.includes(market));
+      ? allStocks
+      : allStocks.filter((stock) => stock.markets.includes(market));
 
   function selectTicker(ticker: string) {
-    const next = SPOT_STOCKS.find((stock) => stock.ticker === ticker);
+    const next = allStocks.find((stock) => stock.ticker === ticker);
     if (next) {
       onChange(next);
       setQuery("");

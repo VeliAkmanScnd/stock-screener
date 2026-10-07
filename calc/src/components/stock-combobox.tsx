@@ -2,7 +2,6 @@
 
 import * as React from "react";
 import {
-  CONTRACTS,
   GROUP_LABELS,
   GROUP_ORDER,
   searchContracts,
@@ -11,6 +10,7 @@ import {
 } from "@/lib/contracts";
 import { formatLeverage, formatPrice } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { useViopContracts } from "@/components/use-viop-contracts";
 
 type StockComboboxProps = {
   value?: Contract;
@@ -23,11 +23,12 @@ export function StockCombobox({
   onChange,
   group = "all",
 }: StockComboboxProps) {
+  const { contracts } = useViopContracts();
   const [query, setQuery] = React.useState("");
   const results = searchContracts(query, group);
 
   function selectTicker(ticker: string) {
-    const next = CONTRACTS.find((contract) => contract.ticker === ticker);
+    const next = contracts.find((contract) => contract.ticker === ticker);
     if (next) {
       onChange(next);
       setQuery("");
@@ -45,13 +46,13 @@ export function StockCombobox({
         <option value="">Dayanak varlık seçin</option>
         {GROUP_ORDER.map((item) => (
           <optgroup key={item} label={GROUP_LABELS[item]}>
-            {CONTRACTS.filter((contract) => contract.group === item).map(
-              (contract) => (
+            {contracts
+              .filter((contract) => contract.group === item)
+              .map((contract) => (
                 <option key={contract.ticker} value={contract.ticker}>
                   {contract.ticker} — {contract.name}
                 </option>
-              ),
-            )}
+              ))}
           </optgroup>
         ))}
       </select>

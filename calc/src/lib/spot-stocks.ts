@@ -1,4 +1,4 @@
-import { CONTRACTS } from "./contracts";
+import { getContracts } from "./contracts";
 
 export const BIST100_TICKERS = [
   "AEFES", "AKBNK", "AKSA", "AKSEN", "ALARK", "ANSGR", "ARCLK", "ASELS", "ASTOR", "BIMAS",
@@ -364,15 +364,20 @@ const EXTRA_NAMES: Record<string, string> = {
   HZNDR: "Huzur Deterjan",
 };
 
-const viopPay = new Map(
-  CONTRACTS.filter((c) => c.group === "pay").map((c) => [c.ticker, c]),
-);
-
-function nameOf(ticker: string): string {
-  return EXTRA_NAMES[ticker] ?? viopPay.get(ticker)?.name ?? ticker;
+function viopPayMap() {
+  return new Map(
+    getContracts()
+      .filter((c) => c.group === "pay")
+      .map((c) => [c.ticker, c]),
+  );
 }
 
-export const SPOT_STOCKS: SpotStock[] = (() => {
+function nameOf(ticker: string): string {
+  return EXTRA_NAMES[ticker] ?? viopPayMap().get(ticker)?.name ?? ticker;
+}
+
+function buildSpotStocks(): SpotStock[] {
+  const pay = viopPayMap();
   const markets = new Map<string, Set<SpotMarket>>();
   const add = (tickers: readonly string[], market: SpotMarket) => {
     for (const ticker of tickers) {
@@ -390,19 +395,27 @@ export const SPOT_STOCKS: SpotStock[] = (() => {
       ticker,
       name: nameOf(ticker),
       markets: MARKET_ORDER.filter((m) => set.has(m)),
-      referencePrice: viopPay.get(ticker)?.price,
+      referencePrice: pay.get(ticker)?.price,
     }))
     .sort((a, b) => a.ticker.localeCompare(b.ticker, "tr"));
-})();
+}
+
+/** Static snapshot at module load; live VIOP prices via getSpotStocks(). */
+export const SPOT_STOCKS: SpotStock[] = buildSpotStocks();
+
+export function getSpotStocks(): SpotStock[] {
+  return buildSpotStocks();
+}
 
 export function searchSpotStocks(
   query: string,
   market?: SpotMarket | "all",
 ): SpotStock[] {
+  const all = getSpotStocks();
   const pool =
     !market || market === "all"
-      ? SPOT_STOCKS
-      : SPOT_STOCKS.filter((s) => s.markets.includes(market));
+      ? all
+      : all.filter((s) => s.markets.includes(market));
   const q = query.trim().toLocaleLowerCase("tr-TR");
   if (!q) return pool;
   return pool.filter((s) => {

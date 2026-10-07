@@ -77,6 +77,7 @@ import { RankingSortChips } from "@/components/ranking-sort-chips";
 import { ScreenerPanel } from "@/components/screener-panel";
 import { ViopStatsTable } from "@/components/viop-stats-table";
 import { useScreener } from "@/components/use-screener";
+import { useViopContracts } from "@/components/use-viop-contracts";
 import {
   HYPE_EXTRA_COLUMNS,
   HypeScoreCell,
@@ -136,6 +137,20 @@ export function Calculator() {
   );
   const [sortKey, setSortKey] = React.useState<ScreenerSort>("score");
   const screener = useScreener();
+  const liveContracts = useViopContracts();
+
+  React.useEffect(() => {
+    if (!contract) return;
+    const fresh = findContract(contract.ticker);
+    if (
+      fresh &&
+      (fresh.price !== contract.price ||
+        fresh.margin !== contract.margin ||
+        fresh.leverage !== contract.leverage)
+    ) {
+      setContract(fresh);
+    }
+  }, [liveContracts.contracts, contract]);
 
   const amount = parseTrNumber(amountInput);
   const percentMagnitude = Math.abs(parseTrNumber(percentInput) ?? 0);
@@ -236,6 +251,11 @@ export function Calculator() {
               TL teminat girin; pay, endeks, döviz ve emtia sözleşmelerinde lot
               ve kar/zarar hesaplanır. USD teminatlı kontratlar USDTRY ile TL’ye
               çevrilir.
+              {liveContracts.updatedAt
+                ? ` Fiyat/teminat: ${new Date(liveContracts.updatedAt).toLocaleString("tr-TR", { timeZone: "Europe/Istanbul" })}.`
+                : liveContracts.status === "loading"
+                  ? " Fiyat/teminat güncelleniyor…"
+                  : ""}
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-5">

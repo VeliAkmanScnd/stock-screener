@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse, Response
 
 from app.services.calc_screener import get_snapshot, start_calc_screener
 from app.services.calc_sidecar import calc_api_base
+from app.services.viop_contracts import get_viop_contracts_payload, refresh_viop_contracts
 
 router = APIRouter()
 
@@ -41,3 +42,28 @@ async def screener_proxy(request: Request):
         pass
     snapshot = _python_snapshot()
     return JSONResponse(snapshot, headers={"Cache-Control": "no-store"})
+
+
+@router.get("/api/viop-contracts")
+def viop_contracts_snapshot():
+    return JSONResponse(
+        get_viop_contracts_payload(),
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@router.post("/api/viop-contracts/refresh")
+def viop_contracts_refresh():
+    try:
+        result = refresh_viop_contracts(force=True)
+    except Exception as exc:
+        return JSONResponse(
+            {"ok": False, "detail": str(exc)},
+            status_code=500,
+            headers={"Cache-Control": "no-store"},
+        )
+    payload = get_viop_contracts_payload()
+    return JSONResponse(
+        {**result, "contracts": payload.get("contracts") or []},
+        headers={"Cache-Control": "no-store"},
+    )
