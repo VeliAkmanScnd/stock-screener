@@ -430,14 +430,22 @@ def _execute_scheduled_scan(
                 subject = (
                     f"TradeLABtr tarama: {sched.name} — {match_count} eşleşme"
                 )
+                from app.services.notify_format import format_match_lines_for_email
+
+                match_lines = format_match_lines_for_email(
+                    list(payload.get("results") or []),
+                    timeframe=str(payload.get("timeframe") or ""),
+                )
                 body = (
                     f"Zamanlanmış tarama tamamlandı.\n\n"
                     f"Ad: {sched.name}\n"
                     f"Evren: {payload.get('universe')}\n"
                     f"Zaman dilimi: {payload.get('timeframe')}\n"
-                    f"Eşleşme: {match_count}\n\n"
-                    f"TradingView sembol listesi ekte (.txt).\n"
+                    f"Eşleşme: {match_count}\n"
                 )
+                if match_lines:
+                    body += "\nSinyaller:\n" + match_lines + "\n"
+                body += "\nTradingView sembol listesi ekte (.txt).\n"
                 if not tv_text.strip():
                     body += "\n(Bu turda eşleşme yok — ek boş liste.)\n"
                 send_tv_list_email(

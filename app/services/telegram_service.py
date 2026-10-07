@@ -230,6 +230,19 @@ def _timeframe_label(timeframe: str | None) -> str:
     return (timeframe or "").strip() or "—"
 
 
+def _bar_label_from_signals(signals: dict | None, timeframe: str | None = None) -> str | None:
+    sig = signals if isinstance(signals, dict) else {}
+    label = str(sig.get("bar_label") or "").strip()
+    if label:
+        return label
+    raw = sig.get("bar_time")
+    if not raw:
+        return None
+    from app.services.bar_close import format_bar_label
+
+    return format_bar_label(raw, timeframe)
+
+
 def format_signal_telegram_card(
     symbol: str,
     price: float,
@@ -238,6 +251,7 @@ def format_signal_telegram_card(
     market: str = "viop",
     exchange: str | None = None,
     timeframe: str | None = None,
+    bar_label: str | None = None,
 ) -> str:
     yon = "SAT" if str(direction).strip().upper() == "SAT" else "AL"
     if yon == "AL":
@@ -261,6 +275,8 @@ def format_signal_telegram_card(
         lines.append(f"Borsa\t: {exchange}")
     if timeframe:
         lines.append(f"Zaman dilimi\t: {_timeframe_label(timeframe)}")
+    if bar_label:
+        lines.append(f"Bar\t\t: {bar_label}")
     lines.extend(
         [
             f"Kontrat\t: {contract}",
@@ -295,14 +311,16 @@ def _signal_cards(
         symbol = str(row.get("symbol") or "").strip()
         if not symbol:
             continue
+        signals = row.get("signals") if isinstance(row.get("signals"), dict) else {}
         cards.append(
             format_signal_telegram_card(
                 symbol,
                 price,
-                _signal_direction(row.get("signals")),
+                _signal_direction(signals),
                 market=market,
                 exchange=exchange,
                 timeframe=timeframe,
+                bar_label=_bar_label_from_signals(signals, timeframe),
             )
         )
     return cards

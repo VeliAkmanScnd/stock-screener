@@ -252,6 +252,8 @@ def scan_dataframe(
     market = scan_market_universe(req)
     df = drop_unclosed_bar(df, req.timeframe, universe=market)
     df = build_indicator_frame(df)
+    from app.services.bar_close import signal_bar_fields
+
     has_filters = any(f.enabled for f in req.filters)
     matched, signals = (
         apply_builtin_filters(
@@ -264,6 +266,7 @@ def scan_dataframe(
         if has_filters
         else (True, {})
     )
+    signals.update(signal_bar_fields(df, req.timeframe, universe=market))
 
     if market_cap is not None and "market_cap" not in signals:
         signals["market_cap"] = market_cap

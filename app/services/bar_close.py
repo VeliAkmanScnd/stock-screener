@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+from typing import Any
+from zoneinfo import ZoneInfo
+
 import pandas as pd
 
 from app.services.ticker_format import is_bist_universe, is_viop_universe
@@ -32,6 +36,77 @@ def market_timezone(universe: str | None) -> str:
 
 def timeframe_seconds(timeframe: str) -> int:
     return TIMEFRAME_SECONDS.get((timeframe or "1d").strip().lower(), 86400)
+
+
+def _to_market_ts(
+    value: Any,
+    *,
+    universe: str | None = None,
+) -> pd.Timestamp | None:
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return None
+    try:
+        ts = pd.Timestamp(value)
+    except (TypeError, ValueError):
+        return None
+    if ts is pd.NaT:
+        return None
+    tz_name = market_timezone(universe)
+    try:
+        tz = ZoneInfo(tz_name)
+    except Exception:
+        tz = ZoneInfo("UTC")
+    if ts.tzinfo is None:
+        try:
+            ts = ts.tz_localize(tz)
+        except Exception:
+            ts = ts.tz_localize("UTC").tz_convert(tz)
+    else:
+        ts = ts.tz_convert(tz)
+    return ts
+
+
+def format_bar_label(
+    value: Any,
+    timeframe: str | None = None,
+    *,
+    universe: str | None = None,
+) -> str | None:
+    """Human label for the signal bar, e.g. '15:00 barı' or '07.10.2026 barı'."""
+    ts = _to_market_ts(value, universe=universe)
+    if ts is None:
+        return None
+    tf = (timeframe or "1d").strip().lower()
+    secs = timeframe_seconds(tf)
+    local = ts.to_pydatetime()
+    if secs < 86400:
+        now = datetime.now(tz=local.tzinfo)
+        clock = local.strftime("%H:%M")
+        if local.date() == now.date():
+            return f"{clock} barı"
+        return f"{local.strftime('%d.%m.%Y')} {clock} barı"
+    if tf in ("1wk", "1w", "week", "weekly"):
+        return f"{local.strftime('%d.%m.%Y')} (haftalık) barı"
+    return f"{local.strftime('%d.%m.%Y')} barı"
+
+
+def signal_bar_fields(
+    df: pd.DataFrame | None,
+    timeframe: str | None = None,
+    *,
+    universe: str | None = None,
+) -> dict[str, str]:
+    """ISO + display fields for the last confirmed bar on ``df``."""
+    if df is None or len(df) < 1:
+        return {}
+    ts = _to_market_ts(df.index[-1], universe=universe)
+    if ts is None:
+        return {}
+    label = format_bar_label(ts, timeframe, universe=universe)
+    out = {"bar_time": ts.isoformat()}
+    if label:
+        out["bar_label"] = label
+    return out
 
 
 def drop_unclosed_bar(

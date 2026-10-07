@@ -283,6 +283,8 @@ const SIGNAL_LABELS = {
   guven_side: "Güven yön",
   guven_buy_score: "Güven AL %",
   guven_sell_score: "Güven SAT %",
+  bar_label: "Sinyal barı",
+  bar_time: "Bar zamanı",
   bias_bull: "Bias yeşil",
   ts_green: "TS yeşil",
   bias_dist_pct: "Bias uzaklık %",
