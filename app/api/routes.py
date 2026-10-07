@@ -115,7 +115,7 @@ def api_universe_info(universe: str = "sp500", refresh: bool = False):
     if universe == "binance":
         min_count = 50
     elif universe == "viop":
-        min_count = 5
+        min_count = 40
     else:
         min_count = 100
     if universe == "custom":

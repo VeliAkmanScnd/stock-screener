@@ -65,7 +65,15 @@ class UniverseMeta:
 
 def _clean_symbol(sym: str) -> str:
     s = str(sym).strip().upper().replace(".", "-")
-    if not s or s == "NAN" or len(s) > 10:
+    if not s or s == "NAN":
+        return ""
+    # VIOP front codes: F_AEFES1026 (11+ chars) — must not use equity 10-char cap.
+    if s.startswith("F_"):
+        from app.services.ticker_format import clean_viop_symbol
+
+        out = clean_viop_symbol(s)
+        return out if out.startswith("F_") and len(out) <= 24 else ""
+    if len(s) > 10:
         return ""
     return s
 
@@ -129,22 +137,45 @@ def _save_disk_cache(name: str, symbols: tuple[str, ...], source: str) -> None:
     )
 
 
+def _cache_min_count(name: str) -> int:
+    """Reject truncated caches (e.g. old VIOP bug kept only 6 short tickers)."""
+    if name == "viop":
+        return 40
+    if name == "binance":
+        return 50
+    if name in (NASDAQ_LIQUID_CACHE, NASDAQ_ALL_CACHE, "sp500", "nyse", "bist", "all_us"):
+        return 100
+    return 1
+
+
 def _resolve_cached(name: str, fetcher, source_label: str) -> tuple[tuple[str, ...], UniverseMeta]:
+    min_count = _cache_min_count(name)
     if _cache_fresh(name):
         cached = _load_disk_cache(name)
-        if cached:
+        if cached and len(cached) >= min_count:
             return cached, UniverseMeta(ok=True, source=source_label, cached=True)
+        if cached and len(cached) < min_count:
+            logger.warning(
+                "%s cache too small (%s < %s) — refetching",
+                name,
+                len(cached),
+                min_count,
+            )
 
     try:
         symbols = fetcher()
         if not symbols:
             raise ValueError("empty symbol list")
+        if len(symbols) < min_count:
+            raise ValueError(
+                f"{source_label} listesi eksik görünüyor ({len(symbols)} < {min_count})"
+            )
         _save_disk_cache(name, symbols, source_label)
         return symbols, UniverseMeta(ok=True, source=source_label, cached=False)
     except Exception as exc:
         logger.exception("Failed to fetch %s: %s", name, exc)
         stale = _load_disk_cache(name)
-        if stale:
+        if stale and len(stale) >= min_count:
             return stale, UniverseMeta(
                 ok=True,
                 source=f"{source_label} (önbellek)",
@@ -400,6 +431,29 @@ def refresh_nasdaq_liquid_universe(*, force: bool = False) -> dict[str, object]:
         "count": len(symbols),
         "message": f"NASDAQ likit liste yenilendi ({len(symbols)})",
         "export": str(EXPORT_PATH),
+    }
+
+
+def refresh_viop_scan_universe(*, force: bool = True) -> dict[str, object]:
+    """Rebuild VIOP scan universe (47 pay + endeks + board FX/emtia)."""
+    del force
+    get_viop_symbols.cache_clear()
+    path = _cache_path("viop")
+    if path.exists():
+        try:
+            path.unlink()
+        except OSError:
+            pass
+    symbols = get_viop_symbols()
+    from app.services.ticker_format import viop_underlying
+
+    underlyings = sorted({viop_underlying(s) for s in symbols})
+    return {
+        "ok": True,
+        "count": len(symbols),
+        "underlyings": len(underlyings),
+        "sample": list(symbols[:8]),
+        "message": f"VIOP tarama evreni yenilendi ({len(symbols)} kontrat)",
     }
 
 

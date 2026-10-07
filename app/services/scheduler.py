@@ -48,8 +48,11 @@ def _refresh_nasdaq_liquid_job() -> None:
 
 def _refresh_viop_contracts_job() -> None:
     try:
+        from app.services.data_fetcher import refresh_viop_scan_universe
         from app.services.viop_contracts import refresh_viop_contracts
 
+        universe = refresh_viop_scan_universe(force=True)
+        logger.info("VIOP scan universe refresh: %s", universe)
         result = refresh_viop_contracts(force=True)
         logger.info("VIOP contracts refresh: %s", result)
     except Exception:

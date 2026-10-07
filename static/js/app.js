@@ -898,7 +898,7 @@ async function loadUniverseInfo() {
     const pineHelpViop = $("#pineHelpViop");
     if (pineHelpBist) pineHelpBist.hidden = universe !== "bist";
     if (pineHelpViop) pineHelpViop.hidden = universe !== "viop";
-    if (data.fetch_ok === false && data.count < (universe === "viop" ? 5 : 100)) {
+    if (data.fetch_ok === false && data.count < (universe === "viop" ? 40 : 100)) {
       setStatus(
         data.message ||
           "Hisse listesi indirilemedi. «Listeyi yenile» ile tekrar deneyin veya özel liste kullanın.",

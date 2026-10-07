@@ -55,6 +55,9 @@ def viop_contracts_snapshot():
 @router.post("/api/viop-contracts/refresh")
 def viop_contracts_refresh():
     try:
+        from app.services.data_fetcher import refresh_viop_scan_universe
+
+        universe = refresh_viop_scan_universe(force=True)
         result = refresh_viop_contracts(force=True)
     except Exception as exc:
         return JSONResponse(
@@ -64,6 +67,10 @@ def viop_contracts_refresh():
         )
     payload = get_viop_contracts_payload()
     return JSONResponse(
-        {**result, "contracts": payload.get("contracts") or []},
+        {
+            **result,
+            "scan_universe": universe,
+            "contracts": payload.get("contracts") or [],
+        },
         headers={"Cache-Control": "no-store"},
     )

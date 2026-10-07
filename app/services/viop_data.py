@@ -5,11 +5,13 @@ Never uses dayanak / cash equity (TOASO.IS). Missing continuous → symbol skipp
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Callable
 
 import pandas as pd
 
+from app.config import BASE_DIR
 from app.services.ticker_format import (
     clean_viop_symbol,
     to_viop_continuous_symbol,
@@ -19,6 +21,14 @@ from app.services.ticker_format import (
 logger = logging.getLogger(__name__)
 
 OHLCV_COLS = ["Open", "High", "Low", "Close", "Volume"]
+MIN_VIOP_SCAN_SYMBOLS = 40
+SEED_PATH = BASE_DIR / "app" / "data" / "viop_contracts_seed.json"
+
+# Calculator tickers → board underlyings used in F_* codes.
+_SEED_TO_BOARD = {
+    "BIST30": "XU030",
+    "XAUTRY": "XAUTRYM",
+}
 
 
 def _normalize_frame(df: pd.DataFrame) -> pd.DataFrame | None:
@@ -34,8 +44,27 @@ def _normalize_frame(df: pd.DataFrame) -> pd.DataFrame | None:
     return out if len(out) >= 10 else None
 
 
+def expected_scan_underlyings() -> tuple[str, ...]:
+    """Pay (47) + endeks (+ seed FX/emtia) mapped to board underlyings."""
+    try:
+        payload = json.loads(SEED_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return tuple()
+    out: list[str] = []
+    for row in payload.get("contracts") or []:
+        group = str(row.get("group") or "")
+        ticker = str(row.get("ticker") or "").strip().upper()
+        if not ticker:
+            continue
+        # Scan focus: pay + endeks; keep FX/emtia from seed when board has them.
+        if group not in ("pay", "endeks", "doviz", "emtia"):
+            continue
+        out.append(_SEED_TO_BOARD.get(ticker, ticker))
+    return tuple(sorted(set(out)))
+
+
 def fetch_viop_symbols_live() -> tuple[str, ...]:
-    """Nearest/most-liquid F_ contract per underlying (borsapy VIOP board)."""
+    """Front-month F_ per underlying: seed pay/endeks + liquid board extras."""
     import borsapy as bp
 
     board = bp.VIOP()
@@ -69,10 +98,35 @@ def fetch_viop_symbols_live() -> tuple[str, ...]:
         if prev is None or vol > prev[1]:
             best[und] = (code, vol)
 
-    out = tuple(sorted({code for code, _ in best.values()}))
-    if len(out) < 5:
-        raise ValueError(f"VIOP listesi eksik ({len(out)})")
-    logger.info("VIOP front contracts: %d", len(out))
+    expected = expected_scan_underlyings()
+    chosen: dict[str, str] = {}
+    missing: list[str] = []
+    # Prefer seed universe (47 pay + endeks + …) when present on the board.
+    for und in expected:
+        hit = best.get(und)
+        if hit:
+            chosen[und] = hit[0]
+        else:
+            missing.append(und)
+    # Keep other liquid board underlyings (extra pay/FX) not in seed.
+    for und, (code, _) in best.items():
+        chosen.setdefault(und, code)
+
+    out = tuple(sorted(chosen.values()))
+    if len(out) < MIN_VIOP_SCAN_SYMBOLS:
+        raise ValueError(f"VIOP listesi eksik ({len(out)} < {MIN_VIOP_SCAN_SYMBOLS})")
+    if missing:
+        logger.warning(
+            "VIOP seed underlyings missing on board (%d): %s",
+            len(missing),
+            ",".join(missing[:12]),
+        )
+    logger.info(
+        "VIOP front contracts: %d (seed expected=%d, missing=%d)",
+        len(out),
+        len(expected),
+        len(missing),
+    )
     return out
 
 
