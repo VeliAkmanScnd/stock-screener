@@ -600,8 +600,17 @@
         </div>
       </section>
       <section class="card" id="perfHistory">
-        <h2>Rapor satırları</h2>
-        <p class="hint">Aynı filtrelere göre tekil kayıtlar. Max %, TP/SL süreleri ve arşiv durumu burada tutulur. Canlı tablo yukarıda Aktif / Geçmiş altındadır.</p>
+        <div class="track-list-head">
+          <div>
+            <h2>Rapor satırları</h2>
+            <p class="hint">Aynı filtrelere göre tekil kayıtlar. Max %, TP/SL süreleri ve arşiv durumu burada tutulur. Canlı tablo yukarıda Aktif / Geçmiş altındadır.</p>
+          </div>
+          <div class="track-list-actions">
+            <button type="button" class="btn danger btn-sm" id="btnPerfHistoryReset" title="Rapor satırlarının kaynağı olan tüm pozisyon kayıtlarını sil">
+              Rapor satırlarını sıfırla
+            </button>
+          </div>
+        </div>
         <div class="table-wrap">
           <table class="scheduled-scans-table track-table">
             <thead>
@@ -825,8 +834,8 @@
   <script src="/static/js/auth.js?v=8"></script>
   <script src="/static/js/dash.js?v=14"></script>
   <script src="/static/js/app.js?v=54"></script>
-  <script src="/static/js/track.js?v=12"></script>
-  <script src="/static/js/perf.js?v=3"></script>
+  <script src="/static/js/track.js?v=13"></script>
+  <script src="/static/js/perf.js?v=4"></script>
   <script src="/static/js/help.js?v=2"></script>
 </body>
 </html>

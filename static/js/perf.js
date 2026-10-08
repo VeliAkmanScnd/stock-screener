@@ -149,11 +149,41 @@ function onPerfTabShown() {
   loadPerfReport();
 }
 
+async function resetPerfHistory() {
+  if (
+    !confirm(
+      "Rapor satırları sıfırlansın mı? Aktif ve geçmiş tüm pozisyon kayıtları silinir; R raporu da boşalır."
+    )
+  ) {
+    return;
+  }
+  const status = document.querySelector("#perfReportStatus");
+  if (status) status.textContent = "Rapor satırları siliniyor…";
+  try {
+    const res = await apiFetch("/api/track/positions/reset", { method: "POST" });
+    const data = await res.json();
+    if (!res.ok) {
+      if (status) status.textContent = data.detail || "Sıfırlanamadı";
+      return;
+    }
+    if (typeof window.reloadTrackPositions === "function") {
+      window.reloadTrackPositions();
+    }
+    await loadPerfReport();
+    if (status) {
+      status.textContent = `Rapor satırları sıfırlandı (${data.deleted ?? 0} kayıt silindi).`;
+    }
+  } catch (err) {
+    if (status) status.textContent = err.message;
+  }
+}
+
 function initPerfPanel() {
   document.querySelector("#perfReportForm")?.addEventListener("submit", (e) => {
     e.preventDefault();
     loadPerfReport();
   });
+  document.querySelector("#btnPerfHistoryReset")?.addEventListener("click", resetPerfHistory);
 }
 
 document.addEventListener("DOMContentLoaded", initPerfPanel);

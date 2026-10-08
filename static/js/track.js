@@ -1095,6 +1095,8 @@ async function ingestLastScanToTrack() {
   }
 }
 
+window.reloadTrackPositions = loadTrackPositions;
+
 function initTrackPanel() {
   initTrackTableHeaders();
   track$("#trackSettingsForm")?.addEventListener("submit", saveTrackSettings);
