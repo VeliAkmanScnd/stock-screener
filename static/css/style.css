@@ -205,8 +205,40 @@ body {
   width: 100%;
 }
 
-.schedule-modal-card {
-  max-width: 56rem;
+.modal-card.schedule-modal-card {
+  width: min(78rem, calc(100vw - 2rem));
+  max-width: min(78rem, calc(100vw - 2rem));
+  max-height: calc(100vh - 2rem);
+  overflow: auto;
+}
+
+.schedule-modal-card .schedule-form-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr);
+  align-items: end;
+}
+
+.schedule-modal-card #scheduleWindowWrap {
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  min-width: 0;
+}
+
+.schedule-modal-card .field span,
+.schedule-modal-card .hint,
+.schedule-modal-card .schedule-preview {
+  overflow-wrap: anywhere;
+}
+
+.schedule-modal-card .field input,
+.schedule-modal-card .field select {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.schedule-modal-card .custom-list-save-row input[type="text"] {
+  min-width: 0;
 }
 
 .schedule-form-grid {
