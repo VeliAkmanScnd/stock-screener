@@ -963,6 +963,26 @@ async function refreshTrackPrices() {
   }
 }
 
+async function resetTrackTable() {
+  if (
+    !confirm(
+      "Performans tablosu tamamen sıfırlansın mı? Aktif ve geçmiş tüm pozisyonlar silinir."
+    )
+  ) {
+    return;
+  }
+  const status = track$("#trackListStatus");
+  try {
+    const res = await apiFetch("/api/track/positions/reset", { method: "POST" });
+    const data = await res.json();
+    if (status) status.textContent = `Tablo sıfırlandı (${data.deleted ?? 0} kayıt silindi).`;
+    clearTrackSelection();
+    loadTrackPositions();
+  } catch (e) {
+    if (status) status.textContent = e.message;
+  }
+}
+
 async function clearActiveTrack() {
   if (trackView !== "active") return;
   const ids = getBulkActionIds();
@@ -1080,6 +1100,7 @@ function initTrackPanel() {
   track$("#trackSettingsForm")?.addEventListener("submit", saveTrackSettings);
   track$("#btnTrackRefresh")?.addEventListener("click", refreshTrackPrices);
   track$("#btnTrackClearActive")?.addEventListener("click", clearActiveTrack);
+  track$("#btnTrackReset")?.addEventListener("click", resetTrackTable);
   track$("#btnTrackReopenSelected")?.addEventListener("click", reopenSelectedTrack);
   track$("#btnTrackDeleteSelected")?.addEventListener("click", deleteSelectedFromList);
   track$("#btnTrackResults")?.addEventListener("click", ingestLastScanToTrack);

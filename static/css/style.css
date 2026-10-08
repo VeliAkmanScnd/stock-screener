@@ -205,6 +205,34 @@ body {
   width: 100%;
 }
 
+.schedule-modal-card {
+  max-width: 56rem;
+}
+
+.schedule-form-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0.35rem 1.25rem;
+  align-items: start;
+}
+
+.schedule-form-col {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.schedule-form-span {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 760px) {
+  .schedule-form-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .schedule-preview {
   background: var(--silver-bg);
   border-radius: 6px;

@@ -517,6 +517,7 @@
           <div class="track-list-actions">
             <button type="button" class="btn secondary btn-sm" id="btnTrackRefresh">Fiyatları güncelle</button>
             <button type="button" class="btn secondary btn-sm" id="btnTrackClearActive">Listeyi kapat</button>
+            <button type="button" class="btn danger btn-sm" id="btnTrackReset" title="Aktif ve geçmiş tüm pozisyonları sil">Tabloyu sıfırla</button>
             <button type="button" class="btn secondary btn-sm" id="btnTrackReopenSelected" hidden>Seçilenleri aktife al</button>
             <button type="button" class="btn secondary btn-sm" id="btnTrackDeleteSelected" hidden>Seçilenleri listeden kaldır</button>
           </div>
@@ -664,10 +665,11 @@
   </div>
 
   <div class="modal-overlay" id="scheduleScanModal" hidden>
-    <div class="modal-card modal-card-wide">
+    <div class="modal-card modal-card-wide schedule-modal-card">
       <h2 id="scheduleModalTitle">Zamanlanmış tarama oluştur</h2>
       <p class="hint" id="scheduleModalHint">Mevcut evren, filtreler, Pine ayarları ve zaman dilimi kaydedilir. Sonuçlar seçtiğiniz kanala (e-posta ve/veya Telegram) tarama <strong>çalıştığında</strong> gider.</p>
-      <form id="scheduleScanForm">
+      <form id="scheduleScanForm" class="schedule-form-grid">
+        <div class="schedule-form-col">
         <label class="field">
           <span>Preset adı</span>
           <input type="text" id="scheduleName" required placeholder="Örn: Merged 4h Binance" />
@@ -729,6 +731,8 @@
           <span>Saat dilimi</span>
           <input type="text" id="scheduleTimezone" value="Europe/Istanbul" />
         </label>
+        </div>
+        <div class="schedule-form-col">
         <div class="schedule-notify-group">
           <p class="hint">Sonuçları nereye göndermek istediğinizi seçin. En az bir kanal gerekir.</p>
           <label class="check" for="scheduleNotifyEmail">
@@ -759,11 +763,14 @@
           </div>
           <span class="hint">Token ve chat id doluysa o bot/grup kullanılır. Chat id için: https://api.telegram.org/botTOKEN/getUpdates</span>
         </label>
+        </div>
+        <div class="schedule-form-span">
         <div class="schedule-preview" id="schedulePreview"></div>
         <p class="auth-status" id="scheduleFormStatus"></p>
         <div class="modal-actions">
           <button type="button" class="btn secondary" id="btnScheduleCancel">İptal</button>
           <button type="submit" class="btn primary" id="scheduleSubmitBtn">Oluştur</button>
+        </div>
         </div>
       </form>
     </div>

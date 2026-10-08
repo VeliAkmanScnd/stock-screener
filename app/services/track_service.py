@@ -964,6 +964,28 @@ def reopen_positions_by_ids(db: Session, user_id: int, position_ids: list[int]) 
     return len(rows)
 
 
+def reset_all_positions(db: Session, user_id: int) -> int:
+    """Delete every tracked position (active and closed) and its price logs."""
+    ids = [
+        row[0]
+        for row in db.query(TrackPosition.id)
+        .filter(TrackPosition.user_id == user_id)
+        .all()
+    ]
+    if not ids:
+        return 0
+    db.query(TrackPriceLog).filter(TrackPriceLog.position_id.in_(ids)).delete(
+        synchronize_session=False
+    )
+    deleted = (
+        db.query(TrackPosition)
+        .filter(TrackPosition.user_id == user_id)
+        .delete(synchronize_session=False)
+    )
+    db.commit()
+    return int(deleted or 0)
+
+
 def delete_closed_positions_by_ids(db: Session, user_id: int, position_ids: list[int]) -> int:
     if not position_ids:
         return 0

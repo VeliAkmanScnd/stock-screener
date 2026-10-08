@@ -16,6 +16,7 @@ from app.services.track_service import (
     WATCH_STATUSES,
     calc_levels,
     clear_active,
+    reset_all_positions,
     close_positions_by_ids,
     enrich_positions_benchmarks,
     get_benchmark_summaries,
@@ -278,6 +279,15 @@ def clear_active_positions(
 ):
     count = clear_active(db, user.id)
     return {"ok": True, "closed": count}
+
+
+@router.post("/positions/reset")
+def reset_positions(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    count = reset_all_positions(db, user.id)
+    return {"ok": True, "deleted": count}
 
 
 @router.post("/refresh-prices")
