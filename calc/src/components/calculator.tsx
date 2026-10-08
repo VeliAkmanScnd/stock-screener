@@ -75,7 +75,12 @@ import {
 } from "@/lib/screener";
 import { RankingSortChips } from "@/components/ranking-sort-chips";
 import { ScreenerPanel } from "@/components/screener-panel";
-import { ViopStatsTable } from "@/components/viop-stats-table";
+import {
+  ColumnFilterHead,
+  matchesColumnFilter,
+  type ColumnFilter,
+  type ColumnSort,
+} from "@/components/column-filter-head";
 import { useScreener } from "@/components/use-screener";
 import { useViopContracts } from "@/components/use-viop-contracts";
 import {
@@ -136,6 +141,10 @@ export function Calculator() {
     "all",
   );
   const [sortKey, setSortKey] = React.useState<ScreenerSort>("score");
+  const [colSort, setColSort] = React.useState<ColumnSort | null>(null);
+  const [colFilters, setColFilters] = React.useState<
+    Record<string, ColumnFilter>
+  >({});
   const screener = useScreener();
   const liveContracts = useViopContracts();
 
@@ -202,11 +211,95 @@ export function Calculator() {
     searchContracts("", "pay").map((row) => row.ticker),
     screener.stats,
   );
-  const filteredContracts = sortByScreener(
-    searchContracts(tableQuery, groupFilter),
-    ranked,
-    sortKey,
-  );
+
+  function contractCell(row: Contract, key: string): number | string | null {
+    const stats = ranked.get(row.ticker);
+    switch (key) {
+      case "ticker":
+        return row.ticker;
+      case "name":
+        return row.name;
+      case "group":
+        return GROUP_LABELS[row.group];
+      case "score":
+        return stats?.score ?? null;
+      case "scoreValue":
+        return stats?.scoreValue ?? null;
+      case "hype":
+        return stats?.hype ?? null;
+      case "margin":
+        return marginTl(row);
+      case "price":
+        return row.price;
+      case "leverage":
+        return row.leverage;
+      case "volume":
+        return stats?.avgVolumeTl ?? null;
+      case "relativeVolume":
+        return stats?.relativeVolume ?? null;
+      case "volatility":
+        return stats?.volatility ?? null;
+      case "marketCap":
+        return stats?.marketCap && stats.marketCap > 0 ? stats.marketCap : null;
+      case "news":
+        if (!stats || (stats.newsCount == null && stats.kapCount == null)) {
+          return null;
+        }
+        return (stats.newsCount ?? 0) + (stats.kapCount ?? 0);
+      case "maxLots":
+        if (amount == null || amount <= 0) return null;
+        return Math.floor(amount / marginTl(row));
+      default:
+        return null;
+    }
+  }
+
+  function setColumnFilter(key: string, filter: ColumnFilter | null) {
+    setColFilters((prev) => {
+      const next = { ...prev };
+      if (!filter) delete next[key];
+      else next[key] = filter;
+      return next;
+    });
+  }
+
+  const searchedContracts = searchContracts(tableQuery, groupFilter);
+  const textOptions = (key: "ticker" | "name" | "group") =>
+    [...new Set(searchedContracts.map((row) => String(contractCell(row, key))))].sort(
+      (a, b) => a.localeCompare(b, "tr"),
+    );
+  const headerSort: ColumnSort | null =
+    colSort ??
+    (sortKey === "default"
+      ? null
+      : {
+          key: sortKey === "scoreHype" ? "hype" : sortKey,
+          dir: "desc",
+        });
+  const filteredContracts = (() => {
+    const matched = searchedContracts.filter((row) =>
+      Object.entries(colFilters).every(([key, filter]) =>
+        matchesColumnFilter(filter, contractCell(row, key)),
+      ),
+    );
+    if (colSort) {
+      return [...matched].sort((left, right) => {
+        const a = contractCell(left, colSort.key);
+        const b = contractCell(right, colSort.key);
+        const aMissing = a == null || a === "";
+        const bMissing = b == null || b === "";
+        if (aMissing && bMissing) return 0;
+        if (aMissing) return 1;
+        if (bMissing) return -1;
+        const cmp =
+          typeof a === "number" && typeof b === "number"
+            ? a - b
+            : String(a).localeCompare(String(b), "tr");
+        return colSort.dir === "asc" ? cmp : -cmp;
+      });
+    }
+    return sortByScreener(matched, ranked, sortKey);
+  })();
   const amountError =
     amountInput.trim() !== "" && (amount == null || amount <= 0);
   const percentError =
@@ -229,6 +322,7 @@ export function Calculator() {
         sortKey={sortKey}
         onSortKey={(key) => {
           setSortKey(key);
+          setColSort(null);
           setGroupFilter("pay");
         }}
         leaders={rankedLeaders}
@@ -531,77 +625,184 @@ export function Calculator() {
               />
             </InputGroup>
           </div>
-          <RankingSortChips sortKey={sortKey} onSortKey={setSortKey} />
+          <RankingSortChips
+            sortKey={sortKey}
+            onSortKey={(key) => {
+              setSortKey(key);
+              setColSort(null);
+            }}
+          />
         </CardHeader>
         <CardContent className="px-0">
           <Table className="min-w-[76rem]">
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <TableHead className="text-ticker">Kod</TableHead>
-                <TableHead className="text-muted-foreground">Dayanak varlık</TableHead>
-                <TableHead
-                  aria-sort={sortKey === "score" ? "descending" : "none"}
-                  className="text-right text-gain"
-                >
-                  Skor
-                </TableHead>
-                <TableHead
-                  aria-sort={sortKey === "scoreValue" ? "descending" : "none"}
-                  className="text-right text-gain"
-                >
-                  Skor+değer
-                </TableHead>
-                <TableHead
-                  aria-sort={
-                    sortKey === "hype" || sortKey === "scoreHype"
-                      ? "descending"
-                      : "none"
-                  }
-                  className="text-right text-gain"
-                >
-                  Hype
-                </TableHead>
-                <TableHead className="text-ticker">Grup</TableHead>
-                <TableHead className="text-right text-muted-foreground">Teminat</TableHead>
-                <TableHead className="text-right text-warn">Fiyat</TableHead>
-                <TableHead className="text-right text-gain">Kaldıraç</TableHead>
-                <TableHead
-                  aria-sort={
-                    sortKey === "volume" ? "descending" : "none"
-                  }
-                  className="text-right text-ticker"
-                >
-                  Hacim 20g
-                </TableHead>
-                <TableHead
-                  aria-sort={
-                    sortKey === "relativeVolume" ? "descending" : "none"
-                  }
-                  className="text-right text-ticker"
-                >
-                  Göreli hacim
-                </TableHead>
-                <TableHead
-                  aria-sort={
-                    sortKey === "volatility" ? "descending" : "none"
-                  }
-                  className="text-right text-warn"
-                >
-                  Volatilite
-                </TableHead>
-                <TableHead
-                  aria-sort={
-                    sortKey === "marketCap" ? "descending" : "none"
-                  }
-                  className="text-right text-ticker"
-                >
-                  Piyasa değeri
-                </TableHead>
-                <TableHead className="text-right text-muted-foreground">
-                  Haber/KAP
-                </TableHead>
+                <ColumnFilterHead
+                  columnKey="ticker"
+                  label="Kod"
+                  type="text"
+                  className="text-ticker"
+                  sort={headerSort}
+                  filter={colFilters.ticker}
+                  options={textOptions("ticker")}
+                  onSort={setColSort}
+                  onFilter={(filter) => setColumnFilter("ticker", filter)}
+                />
+                <ColumnFilterHead
+                  columnKey="name"
+                  label="Dayanak varlık"
+                  type="text"
+                  className="text-muted-foreground"
+                  sort={headerSort}
+                  filter={colFilters.name}
+                  options={textOptions("name")}
+                  onSort={setColSort}
+                  onFilter={(filter) => setColumnFilter("name", filter)}
+                />
+                <ColumnFilterHead
+                  columnKey="score"
+                  label="Skor"
+                  type="number"
+                  align="right"
+                  className="text-gain"
+                  sort={headerSort}
+                  filter={colFilters.score}
+                  onSort={setColSort}
+                  onFilter={(filter) => setColumnFilter("score", filter)}
+                />
+                <ColumnFilterHead
+                  columnKey="scoreValue"
+                  label="Skor+değer"
+                  type="number"
+                  align="right"
+                  className="text-gain"
+                  sort={headerSort}
+                  filter={colFilters.scoreValue}
+                  onSort={setColSort}
+                  onFilter={(filter) => setColumnFilter("scoreValue", filter)}
+                />
+                <ColumnFilterHead
+                  columnKey="hype"
+                  label="Hype"
+                  type="number"
+                  align="right"
+                  className="text-gain"
+                  sort={headerSort}
+                  filter={colFilters.hype}
+                  onSort={setColSort}
+                  onFilter={(filter) => setColumnFilter("hype", filter)}
+                />
+                <ColumnFilterHead
+                  columnKey="group"
+                  label="Grup"
+                  type="text"
+                  className="text-ticker"
+                  sort={headerSort}
+                  filter={colFilters.group}
+                  options={textOptions("group")}
+                  onSort={setColSort}
+                  onFilter={(filter) => setColumnFilter("group", filter)}
+                />
+                <ColumnFilterHead
+                  columnKey="margin"
+                  label="Teminat"
+                  type="number"
+                  align="right"
+                  className="text-muted-foreground"
+                  sort={headerSort}
+                  filter={colFilters.margin}
+                  onSort={setColSort}
+                  onFilter={(filter) => setColumnFilter("margin", filter)}
+                />
+                <ColumnFilterHead
+                  columnKey="price"
+                  label="Fiyat"
+                  type="number"
+                  align="right"
+                  className="text-warn"
+                  sort={headerSort}
+                  filter={colFilters.price}
+                  onSort={setColSort}
+                  onFilter={(filter) => setColumnFilter("price", filter)}
+                />
+                <ColumnFilterHead
+                  columnKey="leverage"
+                  label="Kaldıraç"
+                  type="number"
+                  align="right"
+                  className="text-gain"
+                  sort={headerSort}
+                  filter={colFilters.leverage}
+                  onSort={setColSort}
+                  onFilter={(filter) => setColumnFilter("leverage", filter)}
+                />
+                <ColumnFilterHead
+                  columnKey="volume"
+                  label="Hacim 20g"
+                  type="number"
+                  align="right"
+                  className="text-ticker"
+                  sort={headerSort}
+                  filter={colFilters.volume}
+                  onSort={setColSort}
+                  onFilter={(filter) => setColumnFilter("volume", filter)}
+                />
+                <ColumnFilterHead
+                  columnKey="relativeVolume"
+                  label="Göreli hacim"
+                  type="number"
+                  align="right"
+                  className="text-ticker"
+                  sort={headerSort}
+                  filter={colFilters.relativeVolume}
+                  onSort={setColSort}
+                  onFilter={(filter) => setColumnFilter("relativeVolume", filter)}
+                />
+                <ColumnFilterHead
+                  columnKey="volatility"
+                  label="Volatilite"
+                  type="number"
+                  align="right"
+                  className="text-warn"
+                  sort={headerSort}
+                  filter={colFilters.volatility}
+                  onSort={setColSort}
+                  onFilter={(filter) => setColumnFilter("volatility", filter)}
+                />
+                <ColumnFilterHead
+                  columnKey="marketCap"
+                  label="Piyasa değeri"
+                  type="number"
+                  align="right"
+                  className="text-ticker"
+                  sort={headerSort}
+                  filter={colFilters.marketCap}
+                  onSort={setColSort}
+                  onFilter={(filter) => setColumnFilter("marketCap", filter)}
+                />
+                <ColumnFilterHead
+                  columnKey="news"
+                  label="Haber/KAP"
+                  type="number"
+                  align="right"
+                  className="text-muted-foreground"
+                  sort={headerSort}
+                  filter={colFilters.news}
+                  onSort={setColSort}
+                  onFilter={(filter) => setColumnFilter("news", filter)}
+                />
                 {amount != null && amount > 0 ? (
-                  <TableHead className="text-right text-ticker">Max lot</TableHead>
+                  <ColumnFilterHead
+                    columnKey="maxLots"
+                    label="Max lot"
+                    type="number"
+                    align="right"
+                    className="text-ticker"
+                    sort={headerSort}
+                    filter={colFilters.maxLots}
+                    onSort={setColSort}
+                    onFilter={(filter) => setColumnFilter("maxLots", filter)}
+                  />
                 ) : null}
               </TableRow>
             </TableHeader>
@@ -724,16 +925,6 @@ export function Calculator() {
         </CardContent>
       </Card>
 
-      <ViopStatsTable
-        selectedTicker={contract?.ticker}
-        onSelect={(ticker) => {
-          const next = findContract(ticker);
-          if (next) {
-            handleContractChange(next);
-            setGroupFilter("pay");
-          }
-        }}
-      />
     </div>
   );
 }
