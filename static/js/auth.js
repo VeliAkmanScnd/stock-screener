@@ -116,9 +116,8 @@ async function submitChangePassword(e) {
 function loadCalcFrame(tab) {
   const frame = qs(tab === "hisse" ? "#hisseFrame" : "#viopFrame");
   if (!frame) return;
-  if (!frame.getAttribute("src")) {
-    frame.src = frame.dataset.src || `/calc/?tab=${tab}&embed=1`;
-  }
+  const next = frame.dataset.src || `/calc/?tab=${tab}&embed=1&ui=3`;
+  if (frame.getAttribute("src") !== next) frame.src = next;
 }
 
 function switchAppTab(tab) {

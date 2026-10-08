@@ -46,6 +46,16 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(title="TradeLABtr Stock Screener", version="1.0.0", lifespan=lifespan)
+
+
+@app.middleware("http")
+async def no_cache_ui(request: Request, call_next):
+    response = await call_next(request)
+    path = request.url.path
+    if path in {"/", "/login"} or path.startswith("/calc"):
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+    return response
 app.include_router(auth_router)
 app.include_router(admin_router)
 app.include_router(schedule_router)
