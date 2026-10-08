@@ -14,10 +14,16 @@ import {
   Table,
   TableBody,
   TableCell,
-  TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  ColumnFilterHead,
+  compareColumnValues,
+  matchesColumnFilter,
+  type ColumnFilter,
+  type ColumnSort,
+} from "@/components/column-filter-head";
 import { RankingFilters } from "@/components/ranking-filters";
 import { RankingSortChips } from "@/components/ranking-sort-chips";
 import {
@@ -63,6 +69,8 @@ export function MarketRankingTable({
   currency,
 }: MarketRankingTableProps) {
   const [sortKey, setSortKey] = React.useState<ScreenerSort>("score");
+  const [colSort, setColSort] = React.useState<ColumnSort | null>(null);
+  const [colFilters, setColFilters] = React.useState<Record<string, ColumnFilter>>({});
   const [query, setQuery] = React.useState("");
   const [filter, setFilter] = React.useState<RankingFilter>(DEFAULT_RANKING_FILTER);
 
@@ -78,13 +86,73 @@ export function MarketRankingTable({
       row.name.toLocaleLowerCase("tr-TR").includes(q)
     );
   });
-  const rows = rankAndFilter(
-    searched,
+
+  function cellValue(row: RankingName, key: string): number | string | null {
+    const item = ranked.get(row.ticker);
+    switch (key) {
+      case "ticker":
+        return row.ticker;
+      case "name":
+        return row.name;
+      case "score":
+        return item?.score ?? null;
+      case "scoreValue":
+        return item?.scoreValue ?? null;
+      case "hype":
+        return item?.hype ?? null;
+      case "price":
+        return item?.lastPrice ?? null;
+      case "volume":
+        return item?.avgVolumeTl ?? null;
+      case "relativeVolume":
+        return item?.relativeVolume ?? null;
+      case "volatility":
+        return item?.volatility ?? null;
+      case "marketCap":
+        return item?.marketCap && item.marketCap > 0 ? item.marketCap : null;
+      case "news":
+        if (!item || (item.newsCount == null && item.redditCount == null)) return null;
+        return (item.newsCount ?? 0) + (item.redditCount ?? 0);
+      default:
+        return null;
+    }
+  }
+
+  function setColumnFilter(key: string, next: ColumnFilter | null) {
+    setColFilters((prev) => {
+      const copy = { ...prev };
+      if (!next) delete copy[key];
+      else copy[key] = next;
+      return copy;
+    });
+  }
+
+  const textOptions = (key: "ticker" | "name") =>
+    [...new Set(searched.map((row) => String(cellValue(row, key))))].sort((a, b) =>
+      a.localeCompare(b, "tr"),
+    );
+  const headerSort: ColumnSort | null =
+    colSort ??
+    (sortKey === "default"
+      ? null
+      : { key: sortKey === "scoreHype" ? "hype" : sortKey, dir: "desc" });
+  const columnMatched = searched.filter((row) =>
+    Object.entries(colFilters).every(([key, columnFilter]) =>
+      matchesColumnFilter(columnFilter, cellValue(row, key)),
+    ),
+  );
+  const rankedRows = rankAndFilter(
+    columnMatched,
     ranked,
     filter,
     sortKey,
     query.trim().length > 0,
   );
+  const rows = colSort
+    ? [...rankedRows].sort((left, right) =>
+        compareColumnValues(cellValue(left, colSort.key), cellValue(right, colSort.key), colSort.dir),
+      )
+    : rankedRows;
 
   return (
     <Card className="ring-ticker/20">
@@ -107,7 +175,13 @@ export function MarketRankingTable({
             />
           </InputGroup>
         </div>
-        <RankingSortChips sortKey={sortKey} onSortKey={setSortKey} />
+        <RankingSortChips
+          sortKey={sortKey}
+          onSortKey={(key) => {
+            setSortKey(key);
+            setColSort(null);
+          }}
+        />
         <RankingFilters
           filter={filter}
           onChange={setFilter}
@@ -120,60 +194,17 @@ export function MarketRankingTable({
         <Table className="min-w-[64rem]">
           <TableHeader>
             <TableRow className="hover:bg-transparent">
-              <TableHead className="text-ticker">Kod</TableHead>
-              <TableHead className="text-muted-foreground">Şirket</TableHead>
-              <TableHead
-                aria-sort={sortKey === "score" ? "descending" : "none"}
-                className="text-right text-gain"
-              >
-                Skor
-              </TableHead>
-              <TableHead
-                aria-sort={sortKey === "scoreValue" ? "descending" : "none"}
-                className="text-right text-gain"
-              >
-                Skor+değer
-              </TableHead>
-              <TableHead
-                aria-sort={
-                  sortKey === "hype" || sortKey === "scoreHype"
-                    ? "descending"
-                    : "none"
-                }
-                className="text-right text-gain"
-              >
-                Hype
-              </TableHead>
-              <TableHead className="text-right text-warn">Fiyat</TableHead>
-              <TableHead
-                aria-sort={sortKey === "volume" ? "descending" : "none"}
-                className="text-right text-ticker"
-              >
-                Hacim 20g
-              </TableHead>
-              <TableHead
-                aria-sort={
-                  sortKey === "relativeVolume" ? "descending" : "none"
-                }
-                className="text-right text-ticker"
-              >
-                Göreli hacim
-              </TableHead>
-              <TableHead
-                aria-sort={sortKey === "volatility" ? "descending" : "none"}
-                className="text-right text-warn"
-              >
-                Volatilite
-              </TableHead>
-              <TableHead
-                aria-sort={sortKey === "marketCap" ? "descending" : "none"}
-                className="text-right text-ticker"
-              >
-                Piyasa değeri
-              </TableHead>
-              <TableHead className="text-right text-muted-foreground">
-                Haber / Reddit
-              </TableHead>
+              <ColumnFilterHead columnKey="ticker" label="Kod" type="text" className="text-ticker" sort={headerSort} filter={colFilters.ticker} options={textOptions("ticker")} onSort={setColSort} onFilter={(next) => setColumnFilter("ticker", next)} />
+              <ColumnFilterHead columnKey="name" label="Şirket" type="text" className="text-muted-foreground" sort={headerSort} filter={colFilters.name} options={textOptions("name")} onSort={setColSort} onFilter={(next) => setColumnFilter("name", next)} />
+              <ColumnFilterHead columnKey="score" label="Skor" type="number" align="right" className="text-gain" sort={headerSort} filter={colFilters.score} onSort={setColSort} onFilter={(next) => setColumnFilter("score", next)} />
+              <ColumnFilterHead columnKey="scoreValue" label="Skor+değer" type="number" align="right" className="text-gain" sort={headerSort} filter={colFilters.scoreValue} onSort={setColSort} onFilter={(next) => setColumnFilter("scoreValue", next)} />
+              <ColumnFilterHead columnKey="hype" label="Hype" type="number" align="right" className="text-gain" sort={headerSort} filter={colFilters.hype} onSort={setColSort} onFilter={(next) => setColumnFilter("hype", next)} />
+              <ColumnFilterHead columnKey="price" label="Fiyat" type="number" align="right" className="text-warn" sort={headerSort} filter={colFilters.price} onSort={setColSort} onFilter={(next) => setColumnFilter("price", next)} />
+              <ColumnFilterHead columnKey="volume" label="Hacim 20g" type="number" align="right" className="text-ticker" sort={headerSort} filter={colFilters.volume} onSort={setColSort} onFilter={(next) => setColumnFilter("volume", next)} />
+              <ColumnFilterHead columnKey="relativeVolume" label="Göreli hacim" type="number" align="right" className="text-ticker" sort={headerSort} filter={colFilters.relativeVolume} onSort={setColSort} onFilter={(next) => setColumnFilter("relativeVolume", next)} />
+              <ColumnFilterHead columnKey="volatility" label="Volatilite" type="number" align="right" className="text-warn" sort={headerSort} filter={colFilters.volatility} onSort={setColSort} onFilter={(next) => setColumnFilter("volatility", next)} />
+              <ColumnFilterHead columnKey="marketCap" label="Piyasa değeri" type="number" align="right" className="text-ticker" sort={headerSort} filter={colFilters.marketCap} onSort={setColSort} onFilter={(next) => setColumnFilter("marketCap", next)} />
+              <ColumnFilterHead columnKey="news" label="Haber / Reddit" type="number" align="right" className="text-muted-foreground" sort={headerSort} filter={colFilters.news} onSort={setColSort} onFilter={(next) => setColumnFilter("news", next)} />
             </TableRow>
           </TableHeader>
           <TableBody>

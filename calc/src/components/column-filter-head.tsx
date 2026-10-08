@@ -50,6 +50,7 @@ export function ColumnFilterHead({
   const [min, setMin] = React.useState("");
   const [max, setMax] = React.useState("");
   const [picked, setPicked] = React.useState<string[] | null>(null);
+  const [optionQuery, setOptionQuery] = React.useState("");
   const sorted = sort?.key === columnKey;
   const active = filterActive(filter);
 
@@ -64,6 +65,7 @@ export function ColumnFilterHead({
     }
     if (filter?.kind === "text") setPicked(filter.selected);
     else setPicked(null);
+    setOptionQuery("");
   }, [open, filter]);
 
   function applyNumber() {
@@ -182,7 +184,20 @@ export function ColumnFilterHead({
             </div>
           ) : (
             <div className="flex max-h-48 flex-col gap-1 overflow-auto border-t border-border pt-2">
-              {options.map((option) => {
+              {options.length > 12 ? (
+                <input
+                  value={optionQuery}
+                  onChange={(event) => setOptionQuery(event.target.value)}
+                  placeholder="Listede ara"
+                  className="mb-1 h-8 rounded-md border border-input bg-transparent px-2 text-xs"
+                />
+              ) : null}
+              {options
+                .filter((option) =>
+                  option.toLocaleLowerCase("tr-TR").includes(optionQuery.trim().toLocaleLowerCase("tr-TR")),
+                )
+                .slice(0, 80)
+                .map((option) => {
                 const checked = picked == null || picked.includes(option);
                 return (
                   <label key={option} className="flex items-center gap-2 text-xs">
@@ -224,6 +239,23 @@ export function ColumnFilterHead({
       </Popover>
     </th>
   );
+}
+
+export function compareColumnValues(
+  left: number | string | null,
+  right: number | string | null,
+  dir: "asc" | "desc",
+): number {
+  const leftMissing = left == null || left === "";
+  const rightMissing = right == null || right === "";
+  if (leftMissing && rightMissing) return 0;
+  if (leftMissing) return 1;
+  if (rightMissing) return -1;
+  const cmp =
+    typeof left === "number" && typeof right === "number"
+      ? left - right
+      : String(left).localeCompare(String(right), "tr");
+  return dir === "asc" ? cmp : -cmp;
 }
 
 export function matchesColumnFilter(
