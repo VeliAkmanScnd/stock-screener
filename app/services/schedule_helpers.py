@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
+
+from apscheduler.triggers.cron import CronTrigger
 from email_validator import EmailNotValidError, validate_email
 
 WEEKDAY_LABELS = ("Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "Paz")
@@ -121,3 +124,63 @@ def hour_window_cron(start: int, end: int, *, step: int = 1) -> str:
     if step <= 1:
         return f"{start}-{end}"
     return f"{start}-{end}/{step}"
+
+
+def window_minute_bounds(hour: int, minute: int, end_hour: int) -> tuple[int, int]:
+    """Inclusive local minute-of-day bounds. End uses the same minute as the start."""
+    start = int(hour) * 60 + (int(minute) % 60)
+    end = int(end_hour) * 60 + (int(minute) % 60)
+    if end < start:
+        raise ValueError("Bitiş saati başlangıçtan önce olamaz.")
+    return start, end
+
+
+def is_window_slot(local_dt: datetime, start_mod: int, end_mod: int, interval: int) -> bool:
+    """True when local_dt is an interval tick inside the inclusive clock window."""
+    if interval <= 0:
+        return False
+    mod = local_dt.hour * 60 + local_dt.minute
+    if mod < start_mod or mod > end_mod:
+        return False
+    return (mod - start_mod) % interval == 0
+
+
+class AlignedWindowTrigger(CronTrigger):
+    """Cron wake-ups trimmed to the inclusive start/end minute.
+
+    A plain hour range plus minute list also fires before the start minute
+    (15:00 when the window opens at 15:15) and after the end minute
+    (23:30 and 23:45 when the window closes at 23:15).
+    """
+
+    def __init__(
+        self,
+        *,
+        start_minute_of_day: int,
+        end_minute_of_day: int,
+        interval: int,
+        **kwargs,
+    ):
+        super().__init__(**kwargs)
+        self.start_minute_of_day = int(start_minute_of_day)
+        self.end_minute_of_day = int(end_minute_of_day)
+        self.interval = int(interval)
+
+    def get_next_fire_time(self, previous_fire_time, now):
+        prev = previous_fire_time
+        probe = now
+        for _ in range(5000):
+            nxt = super().get_next_fire_time(prev, probe)
+            if nxt is None:
+                return None
+            local = nxt.astimezone(self.timezone)
+            if is_window_slot(
+                local,
+                self.start_minute_of_day,
+                self.end_minute_of_day,
+                self.interval,
+            ):
+                return nxt
+            prev = nxt
+            probe = nxt + timedelta(microseconds=1)
+        return None

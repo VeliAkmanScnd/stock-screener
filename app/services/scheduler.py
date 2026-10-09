@@ -11,12 +11,14 @@ from app.config import TRACK_PRICE_CHECK_TIMEZONE
 from app.database import ScheduledScan, SessionLocal
 from app.services.schedule_helpers import (
     WINDOW_INTERVAL_MINUTES,
+    AlignedWindowTrigger,
     hour_window_cron,
     is_window_schedule_type,
     minute_step_cron,
     normalize_schedule_type,
     parse_weekdays_field,
     weekdays_to_cron,
+    window_minute_bounds,
 )
 from app.services.scheduler_lock import acquire_scheduler_lock, release_scheduler_lock
 from app.services.schedule_runner import run_scheduled_scan
@@ -75,6 +77,7 @@ def _build_trigger(sched: ScheduledScan) -> CronTrigger:
         if end_hour is None:
             end_hour = 18
         interval = WINDOW_INTERVAL_MINUTES[stype]
+        start_mod, end_mod = window_minute_bounds(hour, minute, end_hour)
         if interval < 60:
             minute_cron = minute_step_cron(interval, minute)
             cron_hour = hour_window_cron(hour, end_hour)
@@ -85,7 +88,12 @@ def _build_trigger(sched: ScheduledScan) -> CronTrigger:
             kwargs = {"hour": cron_hour, "minute": minute, "timezone": tz}
         if day_of_week:
             kwargs["day_of_week"] = day_of_week
-        return CronTrigger(**kwargs)
+        return AlignedWindowTrigger(
+            start_minute_of_day=start_mod,
+            end_minute_of_day=end_mod,
+            interval=interval,
+            **kwargs,
+        )
     if stype == "1wk" and not days:
         dow = int(sched.weekday if sched.weekday is not None else 0)
         return CronTrigger(day_of_week=dow, hour=hour, minute=minute, timezone=tz)
@@ -118,23 +126,12 @@ def schedule_window_snapshot(sched: ScheduledScan) -> dict:
     )
     weekday_ok = (not days) or (now_local.weekday() in days)
     if is_window_schedule_type(stype):
-        interval = WINDOW_INTERVAL_MINUTES.get(stype, 15)
-        if interval < 60:
-            phase = minute % interval
-            last_slot_min = max(range(phase, 60, interval), default=phase)
-            before_start = now_local.hour < hour or (
-                now_local.hour == hour and now_local.minute < phase
-            )
-        else:
-            last_slot_min = minute
-            before_start = now_local.hour < hour or (
-                now_local.hour == hour and now_local.minute < minute
-            )
-        past_end = now_local.hour > end_hour or (
-            now_local.hour == end_hour and now_local.minute > last_slot_min
-        )
+        start_mod, end_mod = window_minute_bounds(hour, minute, end_hour)
+        now_mod = now_local.hour * 60 + now_local.minute
+        before_start = now_mod < start_mod
+        past_end = now_mod > end_mod
         hour_ok = (not before_start) and (not past_end)
-        window_label = f"{hour:02d}:{minute:02d}–{end_hour:02d}:{last_slot_min:02d}"
+        window_label = f"{hour:02d}:{minute:02d}–{end_hour:02d}:{minute:02d}"
     else:
         hour_ok = True
         window_label = f"{hour:02d}:{minute:02d}"
