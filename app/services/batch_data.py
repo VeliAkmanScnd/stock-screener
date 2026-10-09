@@ -121,6 +121,53 @@ def _resample_ohlcv(df: pd.DataFrame, rule: str) -> pd.DataFrame | None:
     return agg if len(agg) >= 10 else None
 
 
+def _yf_download_period(
+    symbols: list[str],
+    *,
+    universe: str,
+    period: str,
+    interval: str,
+    resample_rule: str | None,
+    on_progress: Callable[[int, int, str], None] | None,
+    progress_offset: int,
+    progress_total: int,
+) -> dict[str, pd.DataFrame]:
+    all_frames: dict[str, pd.DataFrame] = {}
+    done = progress_offset
+    chunk_size = 50 if is_bist_universe(universe) else YF_CHUNK_SIZE
+    for i in range(0, len(symbols), chunk_size):
+        chunk = symbols[i : i + chunk_size]
+        yf_chunk = [to_yf_ticker(s, universe) for s in chunk]
+        yf_chunk = [t for t in yf_chunk if t]
+        if yf_chunk:
+            tickers = " ".join(yf_chunk)
+            try:
+                raw = yf.download(
+                    tickers=tickers,
+                    period=period,
+                    interval=interval,
+                    auto_adjust=True,
+                    group_by="ticker",
+                    threads=True,
+                    progress=False,
+                )
+                chunk_frames = _split_download(raw, yf_chunk, universe)
+                if resample_rule:
+                    for sym, frame in chunk_frames.items():
+                        resampled = _resample_ohlcv(frame, resample_rule)
+                        if resampled is not None:
+                            all_frames[sym] = resampled
+                else:
+                    all_frames.update(chunk_frames)
+            except Exception as exc:
+                logger.warning("Batch download chunk failed: %s", exc)
+        done += len(chunk)
+        if on_progress:
+            label = chunk[-1] if chunk else ""
+            on_progress(min(done, progress_total), progress_total, label)
+    return all_frames
+
+
 def fetch_yfinance_ohlcv_batch(
     symbols: list[str],
     timeframe: str,
@@ -132,6 +179,8 @@ def fetch_yfinance_ohlcv_batch(
     """Yahoo Finance batch download (US, BIST .IS, etc.)."""
     if not symbols:
         return {}
+
+    from app.services.ohlcv_store import cached_ohlcv_batch
 
     resample_rule = RESAMPLED_TIMEFRAMES.get(timeframe)
 
@@ -145,45 +194,34 @@ def fetch_yfinance_ohlcv_batch(
     else:
         period, interval, min_bars = INTRADAY_PERIOD, timeframe, 30
 
-    all_frames: dict[str, pd.DataFrame] = {}
-    total = progress_total if progress_total is not None else len(symbols)
-    done = progress_offset
-    chunk_size = 50 if is_bist_universe(universe) else YF_CHUNK_SIZE
+    def fetch_period(
+        batch: list[str],
+        use_period: str,
+        offset: int,
+        total: int,
+    ) -> dict[str, pd.DataFrame]:
+        return _yf_download_period(
+            batch,
+            universe=universe,
+            period=use_period,
+            interval=interval,
+            resample_rule=resample_rule,
+            on_progress=on_progress,
+            progress_offset=offset,
+            progress_total=total,
+        )
 
-    for i in range(0, len(symbols), chunk_size):
-        chunk = symbols[i : i + chunk_size]
-        yf_chunk = [to_yf_ticker(s, universe) for s in chunk]
-        yf_chunk = [t for t in yf_chunk if t]
-        if not yf_chunk:
-            continue
-        tickers = " ".join(yf_chunk)
-        try:
-            raw = yf.download(
-                tickers=tickers,
-                period=period,
-                interval=interval,
-                auto_adjust=True,
-                group_by="ticker",
-                threads=True,
-                progress=False,
-            )
-            chunk_frames = _split_download(raw, yf_chunk, universe)
-            if resample_rule:
-                for sym, frame in chunk_frames.items():
-                    resampled = _resample_ohlcv(frame, resample_rule)
-                    if resampled is not None:
-                        all_frames[sym] = resampled
-            else:
-                all_frames.update(chunk_frames)
-        except Exception as exc:
-            logger.warning("Batch download chunk failed: %s", exc)
-
-        done += len(chunk)
-        if on_progress:
-            label = chunk[-1] if chunk else ""
-            on_progress(min(done, total), total, label)
-
-    return {s: f for s, f in all_frames.items() if len(f) >= min_bars}
+    return cached_ohlcv_batch(
+        namespace=f"yf_{universe}",
+        timeframe=timeframe,
+        symbols=symbols,
+        min_bars=min_bars,
+        full_period=period,
+        fetch_period=fetch_period,
+        on_progress=on_progress,
+        progress_offset=progress_offset,
+        progress_total=progress_total,
+    )
 
 
 def fetch_ohlcv_batch(

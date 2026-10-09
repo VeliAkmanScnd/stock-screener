@@ -213,7 +213,9 @@ def fetch_ohlcv_batch_bist(
     if on_progress and done:
         on_progress(done, total, "önbellek")
 
-    to_fetch = missing if missing else clean_syms
+    if not missing:
+        return frames
+    to_fetch = missing
 
     if provider == "twelvedata":
         fetched = _fetch_twelvedata(to_fetch, timeframe, on_progress)

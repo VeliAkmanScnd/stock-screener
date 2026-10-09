@@ -155,35 +155,57 @@ def fetch_ohlcv_batch_borsapy(
         return {}
 
     period, interval, resample_rule = _period_interval(timeframe)
-    all_frames: dict[str, pd.DataFrame] = {}
-    total = progress_total if progress_total is not None else len(clean_syms)
-    done = progress_offset
-
-    for i in range(0, len(clean_syms), BORSA_PY_CHUNK_SIZE):
-        chunk = clean_syms[i : i + BORSA_PY_CHUNK_SIZE]
-        try:
-            raw = bp.download(
-                chunk,
-                period=period,
-                interval=interval,
-                group_by="ticker",
-                progress=False,
-            )
-            chunk_frames = _split_download(raw, chunk)
-            if resample_rule:
-                for sym, frame in chunk_frames.items():
-                    resampled = _resample_ohlcv(frame, resample_rule)
-                    if resampled is not None:
-                        all_frames[sym] = resampled
-            else:
-                all_frames.update(chunk_frames)
-        except Exception as exc:
-            logger.warning("borsapy chunk failed (%s): %s", chunk[:3], exc)
-
-        done += len(chunk)
-        if on_progress:
-            label = chunk[-1] if chunk else ""
-            on_progress(min(done, total), total, label)
-
     min_bars = INTRADAY_MIN_BARS if timeframe in INTRADAY_TIMEFRAMES or resample_rule else 30
-    return {s: f for s, f in all_frames.items() if len(f) >= min_bars}
+    namespace = (
+        "bp_viop"
+        if clean_syms and all(s.endswith("1!") for s in clean_syms)
+        else "bp_bist"
+    )
+
+    def fetch_period(
+        batch: list[str],
+        use_period: str,
+        offset: int,
+        total: int,
+    ) -> dict[str, pd.DataFrame]:
+        frames: dict[str, pd.DataFrame] = {}
+        done = offset
+        for i in range(0, len(batch), BORSA_PY_CHUNK_SIZE):
+            chunk = batch[i : i + BORSA_PY_CHUNK_SIZE]
+            try:
+                raw = bp.download(
+                    chunk,
+                    period=use_period,
+                    interval=interval,
+                    group_by="ticker",
+                    progress=False,
+                )
+                chunk_frames = _split_download(raw, chunk)
+                if resample_rule:
+                    for sym, frame in chunk_frames.items():
+                        resampled = _resample_ohlcv(frame, resample_rule)
+                        if resampled is not None:
+                            frames[sym] = resampled
+                else:
+                    frames.update(chunk_frames)
+            except Exception as exc:
+                logger.warning("borsapy chunk failed (%s): %s", chunk[:3], exc)
+            done += len(chunk)
+            if on_progress:
+                label = chunk[-1] if chunk else ""
+                on_progress(min(done, total), total, label)
+        return frames
+
+    from app.services.ohlcv_store import cached_ohlcv_batch
+
+    return cached_ohlcv_batch(
+        namespace=namespace,
+        timeframe=timeframe,
+        symbols=clean_syms,
+        min_bars=min_bars,
+        full_period=period,
+        fetch_period=fetch_period,
+        on_progress=on_progress,
+        progress_offset=progress_offset,
+        progress_total=progress_total,
+    )
