@@ -7,6 +7,7 @@ import itertools
 import json
 import logging
 import threading
+import time
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import text
@@ -21,17 +22,21 @@ from app.services.schedule_helpers import min_run_interval_seconds
 logger = logging.getLogger(__name__)
 
 # Single-flight: at most one scan executes; others wait in a priority heap.
-# Lower number = higher priority (VIOP before BIST before US markets).
+# Lower number = higher priority: VIOP, then BIST, then Nasdaq.
 _UNIVERSE_PRIORITY = {
     "viop": 0,
     "bist": 1,
     "nasdaq": 2,
+    "nasdaq_all": 2,
     "nyse": 3,
     "sp500": 4,
     "all_us": 5,
     "binance": 6,
     "custom": 7,
 }
+# Cron threads for the same minute start a few hundred ms apart. Wait so the
+# whole group is on the heap before the first scan is chosen.
+_COALESCE_SEC = 2.0
 
 _scan_lock = threading.Lock()
 _worker_running = False
@@ -63,8 +68,19 @@ def _utc_now_naive() -> datetime:
     return _utc_now().replace(tzinfo=None)
 
 
+def _priority_base(universe: str, name: str) -> int:
+    """1 VIOP, 2 BIST, 3 Nasdaq. Lower return value runs first."""
+    if universe == "viop" or "viop" in name:
+        return 0
+    if universe == "bist" or name.startswith("bist") or " bist" in f" {name}":
+        return 1
+    if universe.startswith("nasdaq") or "nasdaq" in name or name.startswith("nas"):
+        return 2
+    return _UNIVERSE_PRIORITY.get(universe, 40)
+
+
 def _schedule_priority(sched: ScheduledScan | None, scheduled_id: int = 0) -> int:
-    """VIOP first, then BIST, then others — stable by id for ties."""
+    """VIOP, then BIST, then Nasdaq. Same market stays in id order."""
     if sched is None:
         return 50 + max(0, scheduled_id)
     try:
@@ -73,13 +89,7 @@ def _schedule_priority(sched: ScheduledScan | None, scheduled_id: int = 0) -> in
         cfg = {}
     universe = str(cfg.get("custom_source_universe") or cfg.get("universe") or "").strip().lower()
     name = (sched.name or "").strip().lower()
-    if universe == "viop" or "viop" in name:
-        base = 0
-    elif universe == "bist" or name.startswith("bist") or " bist" in f" {name}":
-        base = 1
-    else:
-        base = _UNIVERSE_PRIORITY.get(universe, 40)
-    return base * 1000 + int(sched.id)
+    return _priority_base(universe, name) * 1000 + int(sched.id)
 
 
 def cleanup_stale_running_scans(
@@ -282,23 +292,29 @@ def _worker_loop() -> None:
     global _worker_running
     try:
         while True:
-            item = _dequeue_next()
-            if item is None:
-                break
-            scheduled_id, force, bypass_min_gap = item
-            # Hold the scan lock for the duration of one job so callers know work is in flight.
-            with _scan_lock:
-                _execute_scheduled_scan(
-                    scheduled_id,
-                    force=force,
-                    bypass_min_gap=bypass_min_gap,
-                )
-    finally:
+            # Collect every scan that fired on this minute, then run the heap
+            # in priority order so VIOP is not beaten by whichever thread woke first.
+            time.sleep(_COALESCE_SEC)
+            while True:
+                item = _dequeue_next()
+                if item is None:
+                    break
+                scheduled_id, force, bypass_min_gap = item
+                with _scan_lock:
+                    _execute_scheduled_scan(
+                        scheduled_id,
+                        force=force,
+                        bypass_min_gap=bypass_min_gap,
+                    )
+            with _queue_lock:
+                if _pending_heap:
+                    continue
+                _worker_running = False
+                return
+    except Exception:
+        logger.exception("Scheduled scan worker failed")
         with _queue_lock:
             _worker_running = False
-            has_more = bool(_pending_heap)
-        if has_more:
-            _kick_worker()
 
 
 def run_scheduled_scan(
@@ -307,7 +323,7 @@ def run_scheduled_scan(
     force: bool = False,
     bypass_min_gap: bool = False,
 ) -> None:
-    """Queue a scheduled scan; VIOP runs before BIST when both are due."""
+    """Queue a scheduled scan. Same-minute jobs run one at a time: VIOP, BIST, Nasdaq."""
     _enqueue_scheduled_scan(
         scheduled_id,
         force=force,
