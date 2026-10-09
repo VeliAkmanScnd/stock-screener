@@ -1729,18 +1729,21 @@ function escapeHtml(text) {
     .replace(/>/g, "&gt;");
 }
 
-async function pollScheduledScanRun(scanId, attempt = 0) {
+async function pollScheduledScanRun(scanId, attempt = 0, afterRunId = 0) {
   const maxAttempts = 180;
   try {
     const res = await apiFetch(`/api/scheduled-scans/${scanId}/runs`);
     const runs = await res.json();
-    const latest = runs[0];
+    const latest = (runs || []).find((r) => Number(r.id) > Number(afterRunId || 0)) || null;
     if (!latest || latest.status === "running") {
       if (attempt === 0) {
-        setStatus("Zamanlanmış tarama çalışıyor…", "");
+        setStatus(latest ? "Zamanlanmış tarama çalışıyor…" : "Zamanlanmış tarama kuyruğa alındı…", "");
       }
       if (attempt < maxAttempts) {
-        setTimeout(() => pollScheduledScanRun(scanId, attempt + 1), 5000);
+        setTimeout(
+          () => pollScheduledScanRun(scanId, attempt + 1, afterRunId),
+          latest ? 5000 : 2000,
+        );
         return;
       }
       setStatus("Tarama uzun sürüyor veya zaman aşımı. Sonuçlar tabloda görünecek.", "error");
@@ -1939,8 +1942,17 @@ async function loadScheduledScans() {
         const id = btn.dataset.runNow;
         btn.disabled = true;
         try {
+          let afterRunId = 0;
+          try {
+            const before = await apiFetch(`/api/scheduled-scans/${id}/runs`);
+            const beforeRuns = await before.json();
+            afterRunId = beforeRuns?.[0]?.id || 0;
+          } catch {
+            afterRunId = 0;
+          }
           await apiFetch(`/api/scheduled-scans/${id}/run-now`, { method: "POST" });
-          pollScheduledScanRun(id);
+          setStatus("Zamanlanmış tarama kuyruğa alındı…", "");
+          pollScheduledScanRun(id, 0, afterRunId);
         } catch (e) {
           setStatus("Tarama başlatılamadı: " + e.message, "error");
         } finally {

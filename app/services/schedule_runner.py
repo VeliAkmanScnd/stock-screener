@@ -124,10 +124,11 @@ def cleanup_stale_running_scans(
             if sid is not None and sid in protected:
                 continue
             started = _as_utc(row.started_at) if row.started_at else None
-            if started is not None:
+            if started is not None and age_limit > timedelta(0):
                 age = now - started
-                # Keep only truly recent, non-future rows within grace.
-                if age_limit > timedelta(0) and timedelta(0) <= age < age_limit:
+                # Keep a fresh run. A couple of minutes in the future is clock
+                # jitter; only a clearly future timestamp is a stuck leftover.
+                if -timedelta(minutes=2) <= age < age_limit:
                     continue
             row.status = "error"
             row.finished_at = now_naive
@@ -280,7 +281,7 @@ def _dequeue_next() -> tuple[int, bool, bool] | None:
         return None
 
 
-def _kick_worker() -> None:
+def _kick_worker(*, immediate: bool = False) -> None:
     global _worker_running
     with _queue_lock:
         if _worker_running:
@@ -288,16 +289,26 @@ def _kick_worker() -> None:
         if not _pending_heap:
             return
         _worker_running = True
-    threading.Thread(target=_worker_loop, daemon=True, name="scheduled-scan-worker").start()
+    threading.Thread(
+        target=_worker_loop,
+        kwargs={"immediate": immediate},
+        daemon=True,
+        name="scheduled-scan-worker",
+    ).start()
 
 
-def _worker_loop() -> None:
+def _worker_loop(*, immediate: bool = False) -> None:
     global _worker_running
     try:
+        first = immediate
         while True:
             # Collect every scan that fired on this minute, then start them in
             # priority order without waiting for one to finish.
-            time.sleep(_COALESCE_SEC)
+            # A manual run skips the first wait so its row exists before the UI polls.
+            if first:
+                first = False
+            else:
+                time.sleep(_COALESCE_SEC)
             batch: list[tuple[int, bool, bool]] = []
             while True:
                 item = _dequeue_next()
@@ -340,7 +351,7 @@ def run_scheduled_scan(
         force=force,
         bypass_min_gap=bypass_min_gap,
     )
-    _kick_worker()
+    _kick_worker(immediate=force)
 
 
 def _execute_scheduled_scan(
