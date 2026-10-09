@@ -1737,7 +1737,7 @@ async function pollScheduledScanRun(scanId, attempt = 0, afterRunId = 0) {
     const latest = (runs || []).find((r) => Number(r.id) > Number(afterRunId || 0)) || null;
     if (!latest || latest.status === "running") {
       if (attempt === 0) {
-        setStatus(latest ? "Zamanlanmış tarama çalışıyor…" : "Zamanlanmış tarama kuyruğa alındı…", "");
+        setStatus(latest ? "Zamanlanmış tarama çalışıyor…" : "Zamanlanmış tarama başlatılıyor…", "");
       }
       if (attempt < maxAttempts) {
         setTimeout(
@@ -1951,7 +1951,7 @@ async function loadScheduledScans() {
             afterRunId = 0;
           }
           await apiFetch(`/api/scheduled-scans/${id}/run-now`, { method: "POST" });
-          setStatus("Zamanlanmış tarama kuyruğa alındı…", "");
+          setStatus("Zamanlanmış tarama başlatıldı…", "");
           pollScheduledScanRun(id, 0, afterRunId);
         } catch (e) {
           setStatus("Tarama başlatılamadı: " + e.message, "error");

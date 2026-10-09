@@ -255,7 +255,7 @@ def _enqueue_scheduled_scan(
     try:
         from app.services.scan_jobs import begin_schedule_progress
 
-        begin_schedule_progress(scheduled_id, name=name, queued=True)
+        begin_schedule_progress(scheduled_id, name=name, queued=False)
     except Exception:
         pass
     logger.info(
@@ -339,19 +339,56 @@ def _worker_loop(*, immediate: bool = False) -> None:
             _worker_running = False
 
 
+def _drop_pending(scheduled_id: int) -> None:
+    """Forget a heap entry so a manual run is not started a second time."""
+    with _queue_lock:
+        _pending_meta.pop(scheduled_id, None)
+
+
+def _start_now(scheduled_id: int, *, bypass_min_gap: bool = False) -> None:
+    """Manual run: start immediately, without the same-minute start queue."""
+    db = SessionLocal()
+    try:
+        sched = db.query(ScheduledScan).filter(ScheduledScan.id == scheduled_id).first()
+        name = (sched.name if sched else "") or f"#{scheduled_id}"
+    finally:
+        db.close()
+    _drop_pending(scheduled_id)
+    try:
+        from app.services.scan_jobs import begin_schedule_progress
+
+        begin_schedule_progress(scheduled_id, name=name, queued=False)
+    except Exception:
+        pass
+    threading.Thread(
+        target=_execute_scheduled_scan,
+        args=(scheduled_id,),
+        kwargs={"force": True, "bypass_min_gap": bypass_min_gap},
+        daemon=True,
+        name=f"scheduled-scan-now-{scheduled_id}",
+    ).start()
+
+
 def run_scheduled_scan(
     scheduled_id: int,
     *,
     force: bool = False,
     bypass_min_gap: bool = False,
 ) -> None:
-    """Queue a scheduled scan. Same-minute jobs start together: VIOP, then BIST, then Nasdaq."""
+    """Start a scan. Manual runs begin at once.
+
+    Same-minute cron jobs still start together, VIOP then BIST then Nasdaq,
+    without waiting for each other to finish.
+    """
+    if force:
+        _start_now(scheduled_id, bypass_min_gap=bypass_min_gap)
+        return
     _enqueue_scheduled_scan(
         scheduled_id,
-        force=force,
+        force=False,
         bypass_min_gap=bypass_min_gap,
     )
-    _kick_worker(immediate=force)
+    _kick_worker()
 
 
 def _execute_scheduled_scan(
