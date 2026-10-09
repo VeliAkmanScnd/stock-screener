@@ -21,8 +21,10 @@ from app.services.schedule_helpers import min_run_interval_seconds
 
 logger = logging.getLogger(__name__)
 
-# Single-flight: at most one scan executes; others wait in a priority heap.
-# Lower number = higher priority: VIOP, then BIST, then Nasdaq.
+# Same-minute scans run together. Start order is VIOP, then BIST, then Nasdaq,
+# but a still-running scan does not hold the next one (a long BIST/Nasdaq must
+# not push the following VIOP past its slot). Same schedule still will not
+# overlap itself.
 _UNIVERSE_PRIORITY = {
     "viop": 0,
     "bist": 1,
@@ -37,8 +39,9 @@ _UNIVERSE_PRIORITY = {
 # Cron threads for the same minute start a few hundred ms apart. Wait so the
 # whole group is on the heap before the first scan is chosen.
 _COALESCE_SEC = 2.0
+# Brief gap so VIOP's first requests leave before BIST and Nasdaq start.
+_START_GAP_SEC = 0.4
 
-_scan_lock = threading.Lock()
 _worker_running = False
 _queue_lock = threading.Lock()
 _pending_heap: list[tuple[int, int, int]] = []  # (priority, seq, scheduled_id)
@@ -292,20 +295,28 @@ def _worker_loop() -> None:
     global _worker_running
     try:
         while True:
-            # Collect every scan that fired on this minute, then run the heap
-            # in priority order so VIOP is not beaten by whichever thread woke first.
+            # Collect every scan that fired on this minute, then start them in
+            # priority order without waiting for one to finish.
             time.sleep(_COALESCE_SEC)
+            batch: list[tuple[int, bool, bool]] = []
             while True:
                 item = _dequeue_next()
                 if item is None:
                     break
-                scheduled_id, force, bypass_min_gap = item
-                with _scan_lock:
-                    _execute_scheduled_scan(
-                        scheduled_id,
-                        force=force,
-                        bypass_min_gap=bypass_min_gap,
-                    )
+                batch.append(item)
+            for index, (scheduled_id, force, bypass_min_gap) in enumerate(batch):
+                if index:
+                    time.sleep(_START_GAP_SEC)
+                threading.Thread(
+                    target=_execute_scheduled_scan,
+                    args=(scheduled_id,),
+                    kwargs={
+                        "force": force,
+                        "bypass_min_gap": bypass_min_gap,
+                    },
+                    daemon=True,
+                    name=f"scheduled-scan-run-{scheduled_id}",
+                ).start()
             with _queue_lock:
                 if _pending_heap:
                     continue
@@ -323,7 +334,7 @@ def run_scheduled_scan(
     force: bool = False,
     bypass_min_gap: bool = False,
 ) -> None:
-    """Queue a scheduled scan. Same-minute jobs run one at a time: VIOP, BIST, Nasdaq."""
+    """Queue a scheduled scan. Same-minute jobs start together: VIOP, then BIST, then Nasdaq."""
     _enqueue_scheduled_scan(
         scheduled_id,
         force=force,
@@ -338,7 +349,7 @@ def _execute_scheduled_scan(
     force: bool = False,
     bypass_min_gap: bool = False,
 ) -> None:
-    """Run one scheduled scan (caller holds _scan_lock)."""
+    """Run one scheduled scan. Other schedules may run at the same time."""
     db = SessionLocal()
     run_row: ScanRun | None = None
     try:
