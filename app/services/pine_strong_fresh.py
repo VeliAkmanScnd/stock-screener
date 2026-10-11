@@ -107,6 +107,12 @@ def _level_moved(prev: float | None, cur: float | None) -> bool:
     return abs(cur - prev) > max(1e-6, abs(cur) * 1e-8)
 
 
+def _price_through(price: float, level: float | None, above: bool) -> bool:
+    if level is None:
+        return False
+    return price > level if above else price < level
+
+
 def _extreme(
     high: np.ndarray,
     low: np.ndarray,
@@ -195,7 +201,18 @@ def strong_fresh_snapshot(df: pd.DataFrame, **params) -> dict:
             bullish_leg = bias == 1 or strong_high is None or ph_px > strong_high
             if last_sh is not None and ph_px > last_sh and bullish_leg:
                 s_low, s_low_bar = _extreme(high, low, i, last_sh_bar, ph_bar, True, max_geri)
-                if s_low is not None:
+                probe = close[i] if close_break else low[i]
+                # A higher pivot that lifts strong low above the current price
+                # would be "broken" by this same bar without the active strong
+                # low having been closed through.
+                instant = (
+                    s_low is not None
+                    and strong_low is not None
+                    and s_low > strong_low
+                    and not _price_through(probe, strong_low, False)
+                    and _price_through(probe, s_low, False)
+                )
+                if s_low is not None and not instant:
                     strong_low = s_low
                     strong_low_bar = s_low_bar
                     if weak_high is None or ph_px >= weak_high:
@@ -216,7 +233,18 @@ def strong_fresh_snapshot(df: pd.DataFrame, **params) -> dict:
             bearish_leg = bias == -1 or strong_low is None or pl_px < strong_low
             if last_sl is not None and pl_px < last_sl and bearish_leg:
                 s_high, s_high_bar = _extreme(high, low, i, last_sl_bar, pl_bar, False, max_geri)
-                if s_high is not None:
+                probe = close[i] if close_break else high[i]
+                # A lower pivot that drops strong high under the current price
+                # would be "broken" by this same bar. A wick through the active
+                # strong high does not count while close stays back below it.
+                instant = (
+                    s_high is not None
+                    and strong_high is not None
+                    and s_high < strong_high
+                    and not _price_through(probe, strong_high, True)
+                    and _price_through(probe, s_high, True)
+                )
+                if s_high is not None and not instant:
                     strong_high = s_high
                     strong_high_bar = s_high_bar
                     if weak_low is None or pl_px <= weak_low:
