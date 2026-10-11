@@ -113,6 +113,18 @@ def _price_through(price: float, level: float | None, above: bool) -> bool:
     return price > level if above else price < level
 
 
+def _swing_known(pivots: np.ndarray, bar: int | None, pivot_len: int, i: int) -> bool | None:
+    """Whether `bar` is a confirmed pivot. None when the right side is still open."""
+    if bar is None:
+        return None
+    confirm = bar + pivot_len
+    if confirm > i or confirm >= len(pivots):
+        return None
+    if confirm < 0:
+        return False
+    return bool(math.isfinite(pivots[confirm]))
+
+
 def _extreme(
     high: np.ndarray,
     low: np.ndarray,
@@ -213,8 +225,19 @@ def strong_fresh_snapshot(df: pd.DataFrame, **params) -> dict:
                     and _price_through(probe, s_low, False)
                 )
                 if s_low is not None and not instant:
-                    strong_low = s_low
-                    strong_low_bar = s_low_bar
+                    swing = _swing_known(pl, s_low_bar, pivot_len, i)
+                    # Don't lift an active strong low onto a candle low that
+                    # never became a swing. Price still has to close through
+                    # the one that is drawn.
+                    keep = (
+                        strong_low is not None
+                        and s_low > strong_low
+                        and swing is False
+                        and not _price_through(probe, strong_low, False)
+                    )
+                    if not keep:
+                        strong_low = s_low
+                        strong_low_bar = s_low_bar
                     if weak_high is None or ph_px >= weak_high:
                         weak_high = ph_px
                         weak_high_bar = ph_bar
@@ -245,8 +268,19 @@ def strong_fresh_snapshot(df: pd.DataFrame, **params) -> dict:
                     and _price_through(probe, s_high, True)
                 )
                 if s_high is not None and not instant:
-                    strong_high = s_high
-                    strong_high_bar = s_high_bar
+                    swing = _swing_known(ph, s_high_bar, pivot_len, i)
+                    # Don't drop an active strong high onto a candle high that
+                    # never became a swing (LCID 3.93 -> 3.79). The next close
+                    # would otherwise "break" that internal high.
+                    keep = (
+                        strong_high is not None
+                        and s_high < strong_high
+                        and swing is False
+                        and not _price_through(probe, strong_high, True)
+                    )
+                    if not keep:
+                        strong_high = s_high
+                        strong_high_bar = s_high_bar
                     if weak_low is None or pl_px <= weak_low:
                         weak_low = pl_px
                         weak_low_bar = pl_bar
