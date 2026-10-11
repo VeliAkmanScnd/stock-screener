@@ -187,17 +187,20 @@ def _signal_direction(signals: dict | None) -> str:
     buy = bool(
         sig.get("bias_ts_buy")
         or sig.get("guven_buy")
+        or sig.get("strong_buy")
         or sig.get("buy")
     )
     sell = bool(
         sig.get("bias_ts_sell")
         or sig.get("guven_sell")
+        or sig.get("strong_sell")
         or sig.get("sell")
     )
     if buy and sell:
         side = str(
             sig.get("bias_ts_side")
             or sig.get("guven_side")
+            or sig.get("strong_side")
             or sig.get("side")
             or "buy"
         ).strip().lower()

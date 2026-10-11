@@ -213,7 +213,7 @@ def list_pine_scripts(db: Session = Depends(get_db)):
             content = None
             if not al_condition:
                 content = load_pine_content(r)
-            elif al_source not in ("bias_ts", "guven_skoru"):
+            elif al_source not in ("bias_ts", "guven_skoru", "strong_fresh"):
                 # Upgrade scripts that were saved as generic AL before dual engines.
                 from app.services.pine_bias_ts import is_bias_ts_script
                 from app.services.pine_guven_skoru import is_guven_skoru_script
@@ -231,6 +231,7 @@ def list_pine_scripts(db: Session = Depends(get_db)):
                         "choch_bullish",
                         "bias_ts",
                         "guven_skoru",
+                        "strong_fresh",
                     ):
                         al_condition = al.display_condition
                     else:
@@ -352,6 +353,7 @@ async def upload_pine(
             "choch_bullish",
             "bias_ts",
             "guven_skoru",
+            "strong_fresh",
         ):
             stored_condition = al.display_condition
         else:
@@ -372,6 +374,12 @@ async def upload_pine(
         msg = (
             "Bias × Trend Strength motoru aktif. "
             "Son barda BUY (veya seçilen yön) taranır. VIOP için evreni VIOP seçin."
+        )
+    elif al and al.source == "strong_fresh":
+        msg = (
+            "Strong Fresh motoru aktif. "
+            "Olay: kirilim (strong high/low kırıldı) veya tasima (yeni swing ile strong taşındı). "
+            "VIOP taramasında evreni VIOP seçin."
         )
     elif al and al.source == "guven_skoru":
         msg = (

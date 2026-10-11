@@ -296,6 +296,17 @@ def scan_dataframe(
                 )
                 signals.update(snap)
                 pine_ok = bool(snap.get("pine_al"))
+            elif pine_source == "strong_fresh" and pine_code:
+                from app.services.pine_strong_fresh import (
+                    strong_fresh_params_from_script,
+                    strong_fresh_snapshot,
+                )
+
+                snap = strong_fresh_snapshot(
+                    df, **strong_fresh_params_from_script(pine_code, overrides)
+                )
+                signals.update(snap)
+                pine_ok = bool(snap.get("pine_al"))
             elif pine_source == "guven_skoru" and pine_code:
                 from app.services.pine_guven_skoru import (
                     guven_params_from_script,

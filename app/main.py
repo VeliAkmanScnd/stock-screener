@@ -26,6 +26,12 @@ from app.services.twelvedata_client import TwelveDataError
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    try:
+        from app.services.pine_strong_fresh import ensure_strong_fresh_script
+
+        ensure_strong_fresh_script()
+    except Exception as exc:
+        print(f"Strong Fresh script kaydedilemedi: {exc}", flush=True)
     start_scheduler()
     try:
         from app.services.calc_screener import start_calc_screener

@@ -1,0 +1,740 @@
+//@version=6
+// Trend takibini scalp akışına uyarlayan modelin çizimi.
+//
+// Strong Low  : yeni tepeyi yaptıran dip (iki tepe arasındaki en düşük yer).
+// Strong High : yeni dibi yaptıran tepe (iki dip arasındaki en yüksek yer).
+// Fresh       : kırılımdan sonra fiyatın geri dönmediği range parçası.
+// Hedef       : aktif strong kırılmadan önce gidilmesi beklenen weak high / weak low.
+//
+// Boğa bacağı: bir önceki tepeden, yeni tepeyi getiren dibe.
+// Ayı bacağı : bir önceki dipten, yeni dibi getiren tepeye.
+// Strong kapanışla kırılırsa yapı tersine döner ve hedef karşı likiditeye taşınır.
+// Fitil strong'u delip kapanış içeri dönerse bu bir süpürmedir; strong durur.
+// Strong kırıldıktan sonra karşı strong da kırılırsa bu bir likidite alımıdır.
+// Giriş fibosu her zaman güncel strong ile hedef arasındadır. Strong taşınınca fibo da taşınır.
+
+indicator("Strong Low/High · Fresh · Hedef", shorttitle="Strong Fresh", overlay=true, max_boxes_count=500, max_lines_count=500, max_labels_count=500)
+
+max_bars_back(low, 500)
+max_bars_back(high, 500)
+max_bars_back(close, 500)
+max_bars_back(open, 500)
+
+grpYapi = "Yapı"
+grpCiz = "Çizim"
+grpHedef = "Hedef"
+
+pivotLen = input.int(5, "Swing uzunluğu", minval=1, maxval=50, group=grpYapi, tooltip="3 dakikada scalp akışı için 5. Aynı indikatörü ikinci kez ekleyip 20–40 yaparsan 30 dakikalık filtre strong'unu görürsün.")
+maxGeri = input.int(400, "Bacak tarama (bar)", minval=20, maxval=480, group=grpYapi, tooltip="İki swing arasındaki strong uç bu kadar bar geriye bakılarak bulunur. Scalp'te solu kısa tut.")
+kirilimKapanis = input.bool(true, "Strong kırılımı kapanışla", group=grpYapi, tooltip="Açıkken strong yalnızca kapanışla düşer. Fitil süpürüp içeri kapanırsa strong durur.")
+maxZone = input.int(15, "En fazla fresh kutu", minval=1, maxval=40, group=grpYapi)
+dispMult = input.float(1.2, "Sert mum (gövde / ATR)", minval=0.5, step=0.1, group=grpYapi, tooltip="Kırılım mumu bu kadar ATR'den büyükse fresh kutu 'sert mum' diye işaretlenir.")
+nearPct = input.float(35.0, "Strong'a yakın say (%)", minval=5.0, maxval=50.0, group=grpHedef, tooltip="Fiyat hem strong low hem strong high arasındayken, aralığın bu kadarlık dibindeyse hedef üst, tepesindeyse hedef alt olur.")
+rrMin = input.float(1.7, "Minimum R", minval=0.5, step=0.1, group=grpHedef, tooltip="Stop aktif strong, hedef weak uç kabul edilerek R'nin en az bu kadar olduğu giriş bandı çizilir.")
+cekmeAtr = input.float(0.15, "Hedef oku için geri çekilme (ATR)", minval=0.0, step=0.05, group=grpHedef, tooltip="Fiyat hedefin bu kadar ATR uzağına çekilmeden ok çizilmez. Tepede/dipte ok sıfır mesafeye yapışmasın diye.")
+liqPencere = input.int(80, "Likidite penceresi (bar)", minval=5, maxval=480, group=grpYapi, tooltip="Bir strong kırıldıktan sonra karşı strong da bu kadar bar içinde kırılırsa likidite alımı sayılır. Uzun süre sonraki normal dönüşü likidite diye çizmez.")
+
+showStrong = input.bool(true, "Strong low / strong high", group=grpCiz)
+showFresh = input.bool(true, "Mitige edilmemiş alanlar", group=grpCiz)
+showTarget = input.bool(true, "Beklenen hedef", group=grpCiz)
+showRR = input.bool(true, "R bandı", group=grpCiz)
+showLiq = input.bool(true, "Likidite alımı yazısı", group=grpCiz)
+showFibo = input.bool(true, "Giriş fibosu", group=grpCiz, tooltip="0.5, 0.618, 0.705 ve 0.786 her zaman güncel strong ile hedef arasında çizilir. Strong taşınınca fibo da yeni aralığa gelir. Giriş seviyesi seçilmez.")
+showTable = input.bool(true, "Özet tablo", group=grpCiz)
+
+atr = ta.atr(14)
+max_bars_back(atr, 500)
+ph = ta.pivothigh(high, pivotLen, pivotLen)
+pl = ta.pivotlow(low, pivotLen, pivotLen)
+
+type FreshZone
+    float top
+    float bot
+    float freshTop
+    float freshBot
+    int leftBar
+    int breakBar
+    int dir
+    bool big
+    bool liq
+    bool alive
+    box bx
+
+var zones = array.new<FreshZone>()
+var liqLabels = array.new<label>()
+
+var float lastSH = na
+var int lastSHBar = na
+var float lastSL = na
+var int lastSLBar = na
+
+var int bias = 0
+var float strongLow = na
+var int strongLowBar = na
+var float strongHigh = na
+var int strongHighBar = na
+var float weakHigh = na
+var int weakHighBar = na
+var float weakLow = na
+var int weakLowBar = na
+
+// 1 = strong high az önce kırıldı (long likidite adayı)
+// -1 = strong low az önce kırıldı (short likidite adayı)
+var int flipBekleyen = 0
+var int flipBar = na
+
+bool slBroken = false
+bool shBroken = false
+bool longLiq = false
+bool shortLiq = false
+float brokenPx = na
+
+var int fibDayanak = 0
+var fibLines = array.new<line>(4, na)
+var fibLabs = array.new<label>(4, na)
+
+f_extreme(int fromBar, int toBar, bool wantLow) =>
+    float px = na
+    int pxBar = na
+    int a = math.min(fromBar, toBar)
+    int b = math.max(fromBar, toBar)
+    int enEski = math.max(bar_index - maxGeri, 0)
+    if b > bar_index
+        b := bar_index
+    if a < enEski
+        a := enEski
+    if b >= a and a >= 0
+        int offB = bar_index - b
+        px := wantLow ? low[offB] : high[offB]
+        pxBar := b
+        int span = math.min(b - a, 480)
+        if span > 0
+            for step = 1 to span
+                int barX = b - step
+                int off = bar_index - barX
+                float v = wantLow ? low[off] : high[off]
+                if wantLow ? v < px : v > px
+                    px := v
+                    pxBar := barX
+    [px, pxBar]
+
+f_breakBar(int fromBar, int toBar, float level, int dir) =>
+    int found = na
+    int a = math.max(fromBar + 1, bar_index - maxGeri)
+    int b = math.min(toBar, bar_index)
+    int span = math.min(b - a, 480)
+    if span >= 0 and not na(level)
+        for step = 0 to span
+            int barX = a + step
+            int off = bar_index - barX
+            bool kirildi = dir == 1 ? (kirilimKapanis ? close[off] > level : high[off] > level) : (kirilimKapanis ? close[off] < level : low[off] < level)
+            if kirildi
+                found := barX
+                break
+    found
+
+f_bigBreak(int fromBar, int toBar, float level, int dir) =>
+    bool big = false
+    int a = math.max(fromBar, bar_index - maxGeri)
+    int b = math.min(toBar, bar_index)
+    int span = math.min(b - a, 480)
+    if span >= 0 and not na(level)
+        for step = 0 to span
+            int off = bar_index - (a + step)
+            float govde = math.abs(close[off] - open[off])
+            bool kirildi = dir == 1 ? close[off] > level : close[off] < level
+            if kirildi and govde >= atr[off] * dispMult
+                big := true
+                break
+    big
+
+f_applyVisit(FreshZone z, float lo, float hi) =>
+    if z.dir == 1
+        if lo <= z.freshBot
+            z.alive := false
+        else if lo < z.freshTop
+            z.freshTop := lo
+    else
+        if hi >= z.freshTop
+            z.alive := false
+        else if hi > z.freshBot
+            z.freshBot := hi
+    if z.alive and z.freshTop - z.freshBot <= syminfo.mintick * 2
+        z.alive := false
+    z.alive
+
+f_zoneText(FreshZone z, bool aktif) =>
+    string t = z.liq and z.big ? "Fresh · likidite · sert" : z.liq ? "Fresh · likidite" : z.big ? "Fresh · sert mum" : "Fresh"
+    aktif ? t + " · aktif" : t
+
+f_paintZone(FreshZone z, bool aktif) =>
+    color govde = z.dir == 1 ? color.new(#1F8A70, 88) : color.new(#C44536, 88)
+    color cizgi = z.liq ? color.new(#C6A15B, 0) : z.dir == 1 ? color.new(#0E7C66, 0) : color.new(#A33B32, 0)
+    if not na(z.bx)
+        box.set_top(z.bx, z.freshTop)
+        box.set_bottom(z.bx, z.freshBot)
+        box.set_right(z.bx, bar_index + 1)
+        box.set_bgcolor(z.bx, govde)
+        box.set_border_color(z.bx, cizgi)
+        if aktif
+            box.set_border_width(z.bx, 2)
+        else
+            box.set_border_width(z.bx, 1)
+        box.set_text(z.bx, f_zoneText(z, aktif))
+
+f_pushZone(bool yap, float top, float bot, int leftBar, int breakBar, int dir, bool liq, bool buyuk) =>
+    float zTop = math.max(top, bot)
+    float zBot = math.min(top, bot)
+    if yap and zTop > zBot and not na(breakBar)
+        bool benzer = false
+        if array.size(zones) > 0
+            FreshZone son = array.get(zones, array.size(zones) - 1)
+            float birlesim = math.max(son.top, zTop) - math.min(son.bot, zBot)
+            float kesisim = math.min(son.top, zTop) - math.max(son.bot, zBot)
+            if son.alive and son.dir == dir and birlesim > 0 and kesisim / birlesim >= 0.7
+                benzer := true
+                if liq
+                    son.liq := true
+        if not benzer and showFresh
+            int bas = math.max(leftBar, bar_index - maxGeri)
+            FreshZone z = FreshZone.new(zTop, zBot, zTop, zBot, bas, breakBar, dir, buyuk, liq, true, na)
+            int sag = math.min(bar_index, breakBar + 480)
+            int span = math.min(sag - breakBar, 480)
+            if span > 0
+                for step = 1 to span
+                    int off = bar_index - (breakBar + step)
+                    if not f_applyVisit(z, low[off], high[off])
+                        break
+            if z.alive
+                color govde = dir == 1 ? color.new(#1F8A70, 88) : color.new(#C44536, 88)
+                color cizgi = liq ? color.new(#C6A15B, 0) : dir == 1 ? color.new(#0E7C66, 0) : color.new(#A33B32, 0)
+                z.bx := box.new(bas, z.freshTop, bar_index + 1, z.freshBot, xloc=xloc.bar_index, bgcolor=govde, border_color=cizgi, border_width=1, text=f_zoneText(z, false), text_size=size.tiny, text_color=chart.fg_color, text_halign=text.align_right, text_valign=text.align_center)
+                array.push(zones, z)
+                while array.size(zones) > maxZone
+                    FreshZone eski = array.shift(zones)
+                    if not na(eski.bx)
+                        box.delete(eski.bx)
+
+f_liqYaz(string metin, float y, bool yukari) =>
+    if showLiq
+        label lb = label.new(bar_index, y, metin, style=yukari ? label.style_label_down : label.style_label_up, color=color.new(#C6A15B, 0), textcolor=color.new(#1B1408, 0), size=size.tiny)
+        array.push(liqLabels, lb)
+        while array.size(liqLabels) > 12
+            label eski = array.shift(liqLabels)
+            label.delete(eski)
+
+f_setLine(line ln, int origin, float y, color col, bool dashed) =>
+    line sonuc = ln
+    if na(y)
+        if not na(ln)
+            line.delete(ln)
+        sonuc := na
+    else
+        int x1 = na(origin) ? bar_index : origin
+        if na(ln)
+            if dashed
+                sonuc := line.new(x1, y, bar_index, y, xloc=xloc.bar_index, extend=extend.right, color=col, width=2, style=line.style_dashed)
+            else
+                sonuc := line.new(x1, y, bar_index, y, xloc=xloc.bar_index, extend=extend.right, color=col, width=2, style=line.style_solid)
+        else
+            line.set_xy1(ln, x1, y)
+            line.set_xy2(ln, bar_index, y)
+            line.set_color(ln, col)
+            if dashed
+                line.set_style(ln, line.style_dashed)
+            else
+                line.set_style(ln, line.style_solid)
+            sonuc := ln
+    sonuc
+
+f_setLabel(label lb, float y, string txt, color col) =>
+    label sonuc = lb
+    if na(y) or txt == ""
+        if not na(lb)
+            label.delete(lb)
+        sonuc := na
+    else
+        if na(lb)
+            sonuc := label.new(bar_index, y, txt, xloc=xloc.bar_index, style=label.style_label_left, color=col, textcolor=color.white, size=size.small)
+        else
+            label.set_xy(lb, bar_index, y)
+            label.set_text(lb, txt)
+            label.set_color(lb, col)
+            sonuc := lb
+    sonuc
+
+bool isteTepe = false
+float tepeUst = na
+float tepeAlt = na
+int tepeSol = na
+int tepeKir = na
+bool tepeLiq = false
+
+bool isteDip = false
+float dipUst = na
+float dipAlt = na
+int dipSol = na
+int dipKir = na
+bool dipLiq = false
+
+bool isteLowKir = false
+float lowUst = na
+float lowAlt = na
+int lowSol = na
+int lowKir = na
+bool lowLiq = false
+
+bool isteHighKir = false
+float highUst = na
+float highAlt = na
+int highSol = na
+int highKir = na
+bool highLiq = false
+
+if barstate.isconfirmed
+    if not na(ph)
+        int phBar = bar_index - pivotLen
+        if not na(lastSH) and ph > lastSH and (bias == 1 or na(strongHigh) or ph > strongHigh)
+            [sLow, sLowBar] = f_extreme(lastSHBar, phBar, true)
+            if not na(sLow)
+                bool liqBu = flipBekleyen == -1 and not na(strongHigh) and not na(flipBar) and bar_index - flipBar >= 1 and bar_index - flipBar <= liqPencere and ph > strongHigh
+                strongLow := sLow
+                strongLowBar := sLowBar
+                if na(weakHigh) or ph >= weakHigh
+                    weakHigh := ph
+                    weakHighBar := phBar
+                bias := 1
+                int kirBar = f_breakBar(lastSHBar, phBar, lastSH, 1)
+                if na(kirBar)
+                    kirBar := phBar
+                isteTepe := true
+                tepeUst := lastSH
+                tepeAlt := sLow
+                tepeSol := lastSHBar
+                tepeKir := kirBar
+                tepeLiq := liqBu
+                weakLow := na
+                weakLowBar := na
+                if liqBu
+                    longLiq := true
+                    f_liqYaz("Long likidite alımı", ph, true)
+                    flipBekleyen := 1
+                    flipBar := bar_index
+                if not na(strongHigh) and ph > strongHigh
+                    strongHigh := na
+                    strongHighBar := na
+        lastSH := ph
+        lastSHBar := phBar
+
+    if not na(pl)
+        int plBar = bar_index - pivotLen
+        if not na(lastSL) and pl < lastSL and (bias == -1 or na(strongLow) or pl < strongLow)
+            [sHigh, sHighBar] = f_extreme(lastSLBar, plBar, false)
+            if not na(sHigh)
+                bool liqBu = flipBekleyen == 1 and not na(strongLow) and not na(flipBar) and bar_index - flipBar >= 1 and bar_index - flipBar <= liqPencere and pl < strongLow
+                strongHigh := sHigh
+                strongHighBar := sHighBar
+                if na(weakLow) or pl <= weakLow
+                    weakLow := pl
+                    weakLowBar := plBar
+                bias := -1
+                int kirBar = f_breakBar(lastSLBar, plBar, lastSL, -1)
+                if na(kirBar)
+                    kirBar := plBar
+                isteDip := true
+                dipUst := sHigh
+                dipAlt := lastSL
+                dipSol := lastSLBar
+                dipKir := kirBar
+                dipLiq := liqBu
+                weakHigh := na
+                weakHighBar := na
+                if liqBu
+                    shortLiq := true
+                    f_liqYaz("Short likidite alımı", pl, false)
+                    flipBekleyen := -1
+                    flipBar := bar_index
+                if not na(strongLow) and pl < strongLow
+                    strongLow := na
+                    strongLowBar := na
+        lastSL := pl
+        lastSLBar := plBar
+
+    if bias == 1 and not na(weakHigh) and high > weakHigh
+        weakHigh := high
+        weakHighBar := bar_index
+    if bias == -1 and not na(weakLow) and low < weakLow
+        weakLow := low
+        weakLowBar := bar_index
+
+    bool lowKirildi = not na(strongLow) and (kirilimKapanis ? close < strongLow : low < strongLow)
+    bool highKirildi = not na(strongHigh) and (kirilimKapanis ? close > strongHigh : high > strongHigh)
+
+    if lowKirildi
+        float kirilan = strongLow
+        int kirilanBar = strongLowBar
+        float tepe = not na(weakHigh) ? weakHigh : high
+        int tepeB = not na(weakHighBar) ? weakHighBar : bar_index
+        bool liqBu = flipBekleyen == 1 and not na(flipBar) and bar_index - flipBar >= 1 and bar_index - flipBar <= liqPencere
+        slBroken := true
+        brokenPx := kirilan
+        strongHigh := tepe
+        strongHighBar := tepeB
+        weakLow := low
+        weakLowBar := bar_index
+        strongLow := na
+        strongLowBar := na
+        weakHigh := na
+        weakHighBar := na
+        bias := -1
+        flipBekleyen := -1
+        flipBar := bar_index
+        isteLowKir := true
+        lowUst := tepe
+        lowAlt := kirilan
+        lowSol := na(kirilanBar) ? bar_index : kirilanBar
+        lowKir := bar_index
+        lowLiq := liqBu
+        if liqBu
+            shortLiq := true
+            f_liqYaz("Short likidite alımı", low, false)
+
+    else if highKirildi
+        float kirilan = strongHigh
+        int kirilanB = na(strongHighBar) ? bar_index : strongHighBar
+        [dip, dipB] = f_extreme(kirilanB, bar_index, true)
+        if na(dip)
+            dip := low
+            dipB := bar_index
+        bool liqBu = flipBekleyen == -1 and not na(flipBar) and bar_index - flipBar >= 1 and bar_index - flipBar <= liqPencere
+        shBroken := true
+        brokenPx := kirilan
+        strongLow := dip
+        strongLowBar := dipB
+        weakHigh := high
+        weakHighBar := bar_index
+        strongHigh := na
+        strongHighBar := na
+        weakLow := na
+        weakLowBar := na
+        bias := 1
+        flipBekleyen := 1
+        flipBar := bar_index
+        isteHighKir := true
+        highUst := kirilan
+        highAlt := dip
+        highSol := na(kirilanB) ? bar_index : kirilanB
+        highKir := bar_index
+        highLiq := liqBu
+        if liqBu
+            longLiq := true
+            f_liqYaz("Long likidite alımı", high, true)
+
+    if array.size(zones) > 0
+        int zoneSon = array.size(zones) - 1
+        for i = zoneSon to 0
+            FreshZone z = array.get(zones, i)
+            if not z.alive or na(z.bx)
+                if not na(z.bx)
+                    box.delete(z.bx)
+                array.remove(zones, i)
+            else if bar_index > z.breakBar
+                if not f_applyVisit(z, low, high)
+                    z.alive := false
+                if not z.alive
+                    box.delete(z.bx)
+                    array.remove(zones, i)
+
+int tepeSolG = na(tepeSol) ? bar_index : tepeSol
+int tepeKirG = na(tepeKir) ? bar_index : tepeKir
+int dipSolG = na(dipSol) ? bar_index : dipSol
+int dipKirG = na(dipKir) ? bar_index : dipKir
+int lowSolG = na(lowSol) ? bar_index : lowSol
+int lowKirG = na(lowKir) ? bar_index : lowKir
+int highSolG = na(highSol) ? bar_index : highSol
+int highKirG = na(highKir) ? bar_index : highKir
+bool buyukTepe = f_bigBreak(tepeSolG, tepeKirG, math.max(tepeUst, tepeAlt), 1)
+bool buyukDip = f_bigBreak(dipSolG, dipKirG, math.min(dipUst, dipAlt), -1)
+bool buyukLow = f_bigBreak(lowSolG, lowKirG, math.min(lowUst, lowAlt), -1)
+bool buyukHigh = f_bigBreak(highSolG, highKirG, math.max(highUst, highAlt), 1)
+f_pushZone(isteTepe, tepeUst, tepeAlt, tepeSol, tepeKir, 1, tepeLiq, buyukTepe)
+f_pushZone(isteDip, dipUst, dipAlt, dipSol, dipKir, -1, dipLiq, buyukDip)
+f_pushZone(isteLowKir, lowUst, lowAlt, lowSol, lowKir, -1, lowLiq, buyukLow)
+f_pushZone(isteHighKir, highUst, highAlt, highSol, highKir, 1, highLiq, buyukHigh)
+
+int active = 0
+string yakinNot = ""
+if not na(strongLow) and na(strongHigh)
+    active := 1
+    yakinNot := "Tek strong: Strong Low"
+else if na(strongLow) and not na(strongHigh)
+    active := -1
+    yakinNot := "Tek strong: Strong High"
+else if not na(strongLow) and not na(strongHigh)
+    float rng = strongHigh - strongLow
+    float pos = rng > 0 ? (close - strongLow) / rng : 0.5
+    float esik = nearPct / 100.0
+    if pos <= esik
+        active := 1
+        yakinNot := "Fiyat Strong Low'a yakın"
+    else if pos >= 1.0 - esik
+        active := -1
+        yakinNot := "Fiyat Strong High'a yakın"
+    else
+        active := bias
+        yakinNot := bias == 1 ? "Orta bölge · son yapı boğa" : bias == -1 ? "Orta bölge · son yapı ayı" : "Orta bölge"
+else
+    active := bias
+    yakinNot := "Swing bekleniyor"
+
+float hedef = na
+string hedefAd = ""
+if active == 1
+    hedef := weakHigh
+    hedefAd := "Weak High"
+    if not na(hedef) and close >= hedef and not na(strongHigh) and strongHigh > close
+        hedef := strongHigh
+        hedefAd := "Üst likidite"
+else if active == -1
+    hedef := weakLow
+    hedefAd := "Weak Low"
+    if not na(hedef) and close <= hedef and not na(strongLow) and strongLow < close
+        hedef := strongLow
+        hedefAd := "Alt likidite"
+
+bool hedefAcik = not na(hedef) and (active == 1 ? close < hedef - atr * cekmeAtr : active == -1 ? close > hedef + atr * cekmeAtr : false)
+
+float stopPx = active == 1 ? strongLow : active == -1 ? strongHigh : na
+float risk = not na(stopPx) and not na(hedef) ? (active == 1 ? close - stopPx : stopPx - close) : na
+float odul = not na(hedef) ? (active == 1 ? hedef - close : close - hedef) : na
+float rr = not na(risk) and not na(odul) and risk > 0 and odul > 0 ? odul / risk : na
+float rrGiris = na
+if not na(stopPx) and not na(hedef) and (active == 1 ? hedef > stopPx : stopPx > hedef)
+    rrGiris := active == 1 ? (hedef + rrMin * stopPx) / (rrMin + 1.0) : (rrMin * stopPx + hedef) / (rrMin + 1.0)
+
+int freshSay = 0
+int sertSay = 0
+int liqSay = 0
+int aktifIndex = -1
+if array.size(zones) > 0
+    int zoneUst = array.size(zones) - 1
+    for i = 0 to zoneUst
+        FreshZone z = array.get(zones, i)
+        if z.alive
+            freshSay += 1
+            if z.big
+                sertSay += 1
+            if z.liq
+                liqSay += 1
+            if z.dir == active
+                aktifIndex := i
+
+if showFresh and array.size(zones) > 0
+    int zoneBoya = array.size(zones) - 1
+    for i = 0 to zoneBoya
+        FreshZone z = array.get(zones, i)
+        if z.alive and not na(z.bx)
+            f_paintZone(z, i == aktifIndex)
+
+color colSL = color.new(#0E7C66, 0)
+color colSH = color.new(#9B2226, 0)
+color colHedef = active == -1 ? color.new(#E07A5F, 0) : color.new(#2A9D8F, 0)
+
+var line slLine = na
+var line shLine = na
+var line hedefLine = na
+var line okLine = na
+var label slLabel = na
+var label shLabel = na
+var label hedefLabel = na
+var box rrBox = na
+
+if showStrong
+    slLine := f_setLine(slLine, strongLowBar, strongLow, colSL, false)
+    shLine := f_setLine(shLine, strongHighBar, strongHigh, colSH, false)
+    string slTxt = na(strongLow) ? "" : "STRONG LOW  " + str.tostring(strongLow, format.mintick) + (active == 1 ? "  · aktif" : "")
+    string shTxt = na(strongHigh) ? "" : "STRONG HIGH  " + str.tostring(strongHigh, format.mintick) + (active == -1 ? "  · aktif" : "")
+    slLabel := f_setLabel(slLabel, strongLow, slTxt, colSL)
+    shLabel := f_setLabel(shLabel, strongHigh, shTxt, colSH)
+else
+    if not na(slLine)
+        line.delete(slLine)
+        slLine := na
+    if not na(shLine)
+        line.delete(shLine)
+        shLine := na
+    if not na(slLabel)
+        label.delete(slLabel)
+        slLabel := na
+    if not na(shLabel)
+        label.delete(shLabel)
+        shLabel := na
+
+if showTarget and not na(hedef)
+    hedefLine := f_setLine(hedefLine, bar_index - pivotLen, hedef, colHedef, true)
+    bool hedefAlindi = active == 1 ? close > hedef : active == -1 ? close < hedef : false
+    string hTxt = (hedefAlindi ? "HEDEF alındı · " : "HEDEF · ") + hedefAd + "  " + str.tostring(hedef, format.mintick)
+    hedefLabel := f_setLabel(hedefLabel, hedef, hTxt, colHedef)
+else
+    if not na(hedefLine)
+        line.delete(hedefLine)
+        hedefLine := na
+    if not na(hedefLabel)
+        label.delete(hedefLabel)
+        hedefLabel := na
+
+if barstate.islast and showTarget and hedefAcik
+    if na(okLine)
+        okLine := line.new(bar_index, close, bar_index + 12, hedef, xloc=xloc.bar_index, color=colHedef, width=2, style=line.style_arrow_right)
+    else
+        line.set_xy1(okLine, bar_index, close)
+        line.set_xy2(okLine, bar_index + 12, hedef)
+        line.set_color(okLine, colHedef)
+else if not na(okLine)
+    line.delete(okLine)
+    okLine := na
+
+bool rrCiz = showRR and not na(rrGiris) and not na(stopPx) and (active == 1 ? rrGiris > stopPx and rrGiris < hedef : rrGiris < stopPx and rrGiris > hedef)
+if rrCiz
+    float rrTop = active == 1 ? rrGiris : stopPx
+    float rrBot = active == 1 ? stopPx : rrGiris
+    int hamSol = active == 1 ? strongLowBar : strongHighBar
+    int rrSol = math.max(na(hamSol) ? bar_index - 40 : hamSol, bar_index - 80)
+    color rrRenk = active == 1 ? color.new(#1D4E89, 90) : color.new(#9C6644, 90)
+    color rrCizgi = active == 1 ? color.new(#1D4E89, 20) : color.new(#9C6644, 20)
+    if na(rrBox)
+        rrBox := box.new(rrSol, rrTop, bar_index + 1, rrBot, xloc=xloc.bar_index, bgcolor=rrRenk, border_color=rrCizgi, border_width=1, text="R≥" + str.tostring(rrMin, "#.#") + " bandı", text_size=size.tiny, text_color=chart.fg_color, text_halign=text.align_right, text_valign=text.align_top)
+    else
+        box.set_left(rrBox, rrSol)
+        box.set_right(rrBox, bar_index + 1)
+        box.set_top(rrBox, rrTop)
+        box.set_bottom(rrBox, rrBot)
+        box.set_bgcolor(rrBox, rrRenk)
+        box.set_border_color(rrBox, rrCizgi)
+        box.set_text(rrBox, "R≥" + str.tostring(rrMin, "#.#") + " bandı")
+else if not na(rrBox)
+    box.delete(rrBox)
+    rrBox := na
+
+bool slGuncel = barstate.isconfirmed and not na(strongLow) and (na(strongLow[1]) or math.abs(strongLow - strongLow[1]) > syminfo.mintick)
+bool shGuncel = barstate.isconfirmed and not na(strongHigh) and (na(strongHigh[1]) or math.abs(strongHigh - strongHigh[1]) > syminfo.mintick)
+if slGuncel and not shGuncel
+    fibDayanak := 1
+else if shGuncel and not slGuncel
+    fibDayanak := -1
+else if slGuncel and shGuncel
+    fibDayanak := bias != 0 ? bias : fibDayanak
+if fibDayanak == 1 and na(strongLow)
+    fibDayanak := not na(strongHigh) ? -1 : 0
+if fibDayanak == -1 and na(strongHigh)
+    fibDayanak := not na(strongLow) ? 1 : 0
+if fibDayanak == 0
+    fibDayanak := active
+
+float fibStrong = fibDayanak == 1 ? strongLow : fibDayanak == -1 ? strongHigh : na
+float fibHedef = fibDayanak == 1 ? weakHigh : fibDayanak == -1 ? weakLow : na
+if fibDayanak == 1 and na(fibHedef)
+    fibHedef := hedef
+if fibDayanak == -1 and na(fibHedef)
+    fibHedef := hedef
+int fibOrjin = fibDayanak == 1 ? strongLowBar : fibDayanak == -1 ? strongHighBar : na
+bool fibSirali = fibDayanak == 1 ? fibHedef > fibStrong : fibDayanak == -1 ? fibHedef < fibStrong : false
+bool fibGoster = showFibo and not na(fibStrong) and not na(fibHedef) and fibSirali
+color fibCol = fibDayanak == 1 ? color.new(#1D4E89, 0) : color.new(#BC6C25, 0)
+if fibGoster
+    for k = 0 to 3
+        float oran = k == 0 ? 0.5 : k == 1 ? 0.618 : k == 2 ? 0.705 : 0.786
+        float fy = fibHedef - oran * (fibHedef - fibStrong)
+        string fAd = k == 0 ? "0.5" : k == 1 ? "0.618" : k == 2 ? "0.705" : "0.786"
+        string fTxt = (k == 0 ? "Giriş " : "") + fAd + "  " + str.tostring(fy, format.mintick)
+        line fl = array.get(fibLines, k)
+        label fb = array.get(fibLabs, k)
+        int fx = na(fibOrjin) ? bar_index : fibOrjin
+        if na(fl)
+            fl := line.new(fx, fy, bar_index, fy, xloc=xloc.bar_index, extend=extend.right, color=fibCol, width=1, style=line.style_dotted)
+        else
+            line.set_xy1(fl, fx, fy)
+            line.set_xy2(fl, bar_index, fy)
+            line.set_color(fl, fibCol)
+        if na(fb)
+            fb := label.new(bar_index, fy, fTxt, xloc=xloc.bar_index, style=label.style_label_left, color=fibCol, textcolor=color.white, size=size.tiny)
+        else
+            label.set_xy(fb, bar_index, fy)
+            label.set_text(fb, fTxt)
+            label.set_color(fb, fibCol)
+        array.set(fibLines, k, fl)
+        array.set(fibLabs, k, fb)
+else if array.size(fibLines) > 0
+    for j = 0 to 3
+        line eskiCizgi = array.get(fibLines, j)
+        label eskiYazi = array.get(fibLabs, j)
+        if not na(eskiCizgi)
+            line.delete(eskiCizgi)
+        if not na(eskiYazi)
+            label.delete(eskiYazi)
+        array.set(fibLines, j, na)
+        array.set(fibLabs, j, na)
+
+string yapiAd = active == 1 ? "Boğa" : active == -1 ? "Ayı" : "Bekleniyor"
+string aktifAd = active == 1 and not na(strongLow) ? "Strong Low  " + str.tostring(strongLow, format.mintick) : active == -1 and not na(strongHigh) ? "Strong High  " + str.tostring(strongHigh, format.mintick) : "—"
+string hedefHucre = not na(hedef) ? hedefAd + "  " + str.tostring(hedef, format.mintick) : "—"
+string mesafe = not na(hedef) and close != 0 ? str.tostring((hedef - close) / close * 100.0, "+#.##") + "%" : "—"
+if not na(rr)
+    mesafe := mesafe + "   ·   R " + str.tostring(rr, "#.##")
+string rrNot = na(rr) ? "Strong ve hedef oluşunca R bandı çizilir" : rr >= rrMin ? "Mevcut fiyat R bandının içinde" : "Mevcut fiyattan R yetmez · bandın strong tarafını bekle"
+string freshHucre = str.tostring(freshSay) + " fresh"
+if sertSay > 0
+    freshHucre := freshHucre + " · " + str.tostring(sertSay) + " sert"
+if liqSay > 0
+    freshHucre := freshHucre + " · " + str.tostring(liqSay) + " likidite"
+string fibHucre = not fibGoster ? "—" : (fibDayanak == 1 ? "Strong Low" : "Strong High") + " ↔ hedef"
+
+var table pan = table.new(position.top_right, 2, 9, bgcolor=color.new(chart.bg_color, 8), border_color=color.new(chart.fg_color, 70), border_width=1, frame_color=color.new(chart.fg_color, 70), frame_width=1)
+
+if showTable and barstate.islast
+    table.cell(pan, 0, 0, "Strong · Fresh · Hedef", text_color=color.white, bgcolor=color.new(#10231C, 0), text_size=size.small)
+    table.cell(pan, 1, 0, yapiAd, text_color=color.white, bgcolor=active == 1 ? color.new(#0E7C66, 0) : active == -1 ? color.new(#9B2226, 0) : color.new(#10231C, 0), text_size=size.small, text_halign=text.align_right)
+    table.cell(pan, 0, 1, "Aktif strong", text_color=chart.fg_color, text_size=size.tiny, text_halign=text.align_left)
+    table.cell(pan, 1, 1, aktifAd, text_color=chart.fg_color, text_size=size.tiny, text_halign=text.align_right)
+    table.cell(pan, 0, 2, "Konum", text_color=chart.fg_color, text_size=size.tiny, text_halign=text.align_left)
+    table.cell(pan, 1, 2, yakinNot, text_color=chart.fg_color, text_size=size.tiny, text_halign=text.align_right)
+    table.cell(pan, 0, 3, "Strong Low", text_color=chart.fg_color, text_size=size.tiny, text_halign=text.align_left)
+    table.cell(pan, 1, 3, na(strongLow) ? "—" : str.tostring(strongLow, format.mintick), text_color=colSL, text_size=size.tiny, text_halign=text.align_right)
+    table.cell(pan, 0, 4, "Strong High", text_color=chart.fg_color, text_size=size.tiny, text_halign=text.align_left)
+    table.cell(pan, 1, 4, na(strongHigh) ? "—" : str.tostring(strongHigh, format.mintick), text_color=colSH, text_size=size.tiny, text_halign=text.align_right)
+    table.cell(pan, 0, 5, "Hedef", text_color=chart.fg_color, text_size=size.tiny, text_halign=text.align_left)
+    table.cell(pan, 1, 5, hedefHucre, text_color=colHedef, text_size=size.tiny, text_halign=text.align_right)
+    table.cell(pan, 0, 6, "Mesafe", text_color=chart.fg_color, text_size=size.tiny, text_halign=text.align_left)
+    table.cell(pan, 1, 6, mesafe, text_color=chart.fg_color, text_size=size.tiny, text_halign=text.align_right)
+    table.cell(pan, 0, 7, freshHucre, text_color=chart.fg_color, text_size=size.tiny, text_halign=text.align_left)
+    table.cell(pan, 1, 7, rrNot, text_color=chart.fg_color, text_size=size.tiny, text_halign=text.align_right)
+    table.cell(pan, 0, 8, "Giriş fibo", text_color=chart.fg_color, text_size=size.tiny, text_halign=text.align_left)
+    table.cell(pan, 1, 8, fibHucre, text_color=fibCol, text_size=size.tiny, text_halign=text.align_right)
+else if not showTable and barstate.islast
+    table.clear(pan, 0, 0, 1, 8)
+
+plot(strongLow, "Strong Low", color=colSL, display=display.status_line + display.data_window)
+plot(strongHigh, "Strong High", color=colSH, display=display.status_line + display.data_window)
+plot(hedef, "Hedef", color=colHedef, display=display.status_line + display.data_window)
+plot(rr, "R", display=display.status_line + display.data_window)
+
+alertcondition(slBroken or shBroken, "Strong Low / High kırıldı", "Strong Low veya Strong High kırıldı. Bu tek alert iki kırılımı da yakalar.")
+alertcondition(slBroken, "Strong Low kırıldı", "Strong Low kapanışla kırıldı. Aktif strong high'a taşınır, hedef weak low olur.")
+alertcondition(shBroken, "Strong High kırıldı", "Strong High kapanışla kırıldı. Aktif strong low'a taşınır, hedef weak high olur.")
+if slBroken
+    alert("Strong Low kırıldı @ " + str.tostring(brokenPx, format.mintick) + ". Yapı ayıya döndü. Hedef weak low. Giriş fibo: 0.5, 0.618, 0.705, 0.786.", alert.freq_once_per_bar_close)
+if shBroken
+    alert("Strong High kırıldı @ " + str.tostring(brokenPx, format.mintick) + ". Yapı boğaya döndü. Hedef weak high. Giriş fibo: 0.5, 0.618, 0.705, 0.786.", alert.freq_once_per_bar_close)
+
+alertcondition(slGuncel or shGuncel, "Strong Low / High güncellendi", "Strong Low veya Strong High yeni fiyata taşındı. Fibo da bu aralıkla güncellenir.")
+if slGuncel and shGuncel
+    alert("Strong Low güncellendi @ " + str.tostring(strongLow, format.mintick) + ". Strong High güncellendi @ " + str.tostring(strongHigh, format.mintick) + ".", alert.freq_once_per_bar_close)
+else if slGuncel
+    alert("Strong Low güncellendi @ " + str.tostring(strongLow, format.mintick) + ". Giriş fibosu bu strong ile hedef arasına alındı.", alert.freq_once_per_bar_close)
+else if shGuncel
+    alert("Strong High güncellendi @ " + str.tostring(strongHigh, format.mintick) + ". Giriş fibosu bu strong ile hedef arasına alındı.", alert.freq_once_per_bar_close)
+alertcondition(longLiq, "Long likidite alımı", "Strong low kırıldıktan sonra üst taraf tekrar kırıldı. Long likidite range'i.")
+alertcondition(shortLiq, "Short likidite alımı", "Strong high kırıldıktan sonra alt taraf tekrar kırıldı. Short likidite range'i.")
+
+bool hedefVuruldu = barstate.isconfirmed and not na(hedef[1]) and ((active[1] == 1 and close[1] < hedef[1] - atr[1] * cekmeAtr and high >= hedef[1]) or (active[1] == -1 and close[1] > hedef[1] + atr[1] * cekmeAtr and low <= hedef[1]))
+alertcondition(hedefVuruldu, "Hedefe ulaşıldı", "Fiyat, aktif strong'un beklenen hedefine ulaştı.")

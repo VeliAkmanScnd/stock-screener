@@ -209,6 +209,24 @@ def _extract_guven_skoru(code: str) -> PineALSignal | None:
     )
 
 
+def _extract_strong_fresh(code: str) -> PineALSignal | None:
+    from app.services.pine_strong_fresh import (
+        STRONG_FRESH_MARKER,
+        is_strong_fresh_script,
+        strong_fresh_display_label,
+    )
+
+    if not is_strong_fresh_script(code):
+        return None
+    return PineALSignal(
+        condition=STRONG_FRESH_MARKER,
+        source="strong_fresh",
+        variable_name="slBroken|shBroken|isteTepe|isteDip",
+        first_bar_only=False,
+        display_condition=strong_fresh_display_label(code),
+    )
+
+
 def _extract_choch_bullish(code: str) -> PineALSignal | None:
     """Market structure scripts: bullish ChoCh flip (BigBeluga-style)."""
     from app.services.pine_choch import CHOCH_BULLISH_MARKER, choch_display_label, is_choch_market_structure_script
@@ -244,6 +262,10 @@ def extract_al_condition(pine_code: str) -> PineALSignal | None:
     guven = _extract_guven_skoru(pine_code)
     if guven:
         return guven
+
+    strong = _extract_strong_fresh(pine_code)
+    if strong:
+        return strong
 
     if _is_merged_triple(pine_code):
         from app.services.pine_merged_triple import MERGED_TRIPLE_MARKER, merged_triple_display_label

@@ -12,6 +12,7 @@ from app.database import PineScript
 from app.services.pine_fibo import fibo_display_label
 from app.services.pine_bias_ts import bias_ts_display_label
 from app.services.pine_guven_skoru import guven_display_label
+from app.services.pine_strong_fresh import strong_fresh_display_label
 from app.services.pine_choch import choch_display_label
 from app.services.pine_params import applied_inputs_summary, parse_saved_input_defaults
 from app.services.pine_parser import extract_al_condition
@@ -77,6 +78,9 @@ def execute_scan_config(
             elif detected.source == "guven_skoru":
                 pine_condition = detected.condition
                 pine_label = guven_display_label(pine_code, pine_input_overrides)
+            elif detected.source == "strong_fresh":
+                pine_condition = detected.condition
+                pine_label = strong_fresh_display_label(pine_code, pine_input_overrides)
         else:
             pine_source = row.al_source
             pine_condition = pine_condition or row.al_condition
@@ -88,6 +92,8 @@ def execute_scan_config(
             pine_label = bias_ts_display_label(pine_code, pine_input_overrides)
         if pine_source == "guven_skoru" and pine_code and not pine_label:
             pine_label = guven_display_label(pine_code, pine_input_overrides)
+        if pine_source == "strong_fresh" and pine_code and not pine_label:
+            pine_label = strong_fresh_display_label(pine_code, pine_input_overrides)
 
     if body.get("require_pine_al") and not pine_condition:
         raise ValueError("Pine AL taraması için script veya koşul gerekli")

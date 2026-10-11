@@ -22,7 +22,7 @@ def merge_pine_inputs(pine_code: str, overrides: dict[str, Any] | None = None) -
         return merged
     known = set(merged)
     for key, raw in overrides.items():
-        if key not in known and key != "scan_side":
+        if key not in known and key not in ("scan_side", "sinyal"):
             continue
         if raw is None:
             continue
@@ -59,6 +59,40 @@ def pine_inputs_for_api(
         d["pine_default"] = d["default"]
         out.append(d)
     from app.services.pine_bias_ts import is_bias_ts_script
+    from app.services.pine_strong_fresh import is_strong_fresh_script
+
+    if is_strong_fresh_script(pine_code):
+        saved = saved_defaults or {}
+        if not any(p["name"] == "sinyal" for p in out):
+            event = str(saved.get("sinyal") or "ikisi").strip().lower()
+            out.insert(
+                0,
+                {
+                    "name": "sinyal",
+                    "type": "string",
+                    "default": "ikisi",
+                    "value": event or "ikisi",
+                    "pine_default": "ikisi",
+                    "label": "Olay",
+                    "group": "Tarama",
+                    "options": ["kirilim", "tasima", "ikisi"],
+                },
+            )
+        if not any(p["name"] == "scan_side" for p in out):
+            side = str(saved.get("scan_side") or "both").strip().lower()
+            out.insert(
+                1,
+                {
+                    "name": "scan_side",
+                    "type": "string",
+                    "default": "both",
+                    "value": side or "both",
+                    "pine_default": "both",
+                    "label": "Yön (buy yukarı, sell aşağı)",
+                    "group": "Tarama",
+                    "options": ["both", "buy", "sell"],
+                },
+            )
 
     if is_bias_ts_script(pine_code) and not any(p["name"] == "scan_side" for p in out):
         saved = (saved_defaults or {}).get("scan_side") or "both"
