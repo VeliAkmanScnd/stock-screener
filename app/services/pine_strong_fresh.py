@@ -98,6 +98,15 @@ def _pivots(high: np.ndarray, low: np.ndarray, length: int) -> tuple[np.ndarray,
     return ph, pl
 
 
+def _level_moved(prev: float | None, cur: float | None) -> bool:
+    """True when the stored strong price appears or changes. Clearing it is not a carry."""
+    if cur is None:
+        return False
+    if prev is None:
+        return True
+    return abs(cur - prev) > max(1e-6, abs(cur) * 1e-8)
+
+
 def _extreme(
     high: np.ndarray,
     low: np.ndarray,
@@ -178,6 +187,8 @@ def strong_fresh_snapshot(df: pd.DataFrame, **params) -> dict:
     carry_sell = np.zeros(n, dtype=bool)
 
     for i in range(n):
+        prev_strong_low = strong_low
+        prev_strong_high = strong_high
         if math.isfinite(ph[i]):
             ph_bar = i - pivot_len
             ph_px = float(ph[i])
@@ -191,7 +202,6 @@ def strong_fresh_snapshot(df: pd.DataFrame, **params) -> dict:
                         weak_high = ph_px
                         weak_high_bar = ph_bar
                     bias = 1
-                    carry_buy[i] = True
                     weak_low = None
                     weak_low_bar = None
                     if strong_high is not None and ph_px > strong_high:
@@ -213,7 +223,6 @@ def strong_fresh_snapshot(df: pd.DataFrame, **params) -> dict:
                         weak_low = pl_px
                         weak_low_bar = pl_bar
                     bias = -1
-                    carry_sell[i] = True
                     weak_high = None
                     weak_high_bar = None
                     if strong_low is not None and pl_px < strong_low:
@@ -262,6 +271,30 @@ def strong_fresh_snapshot(df: pd.DataFrame, **params) -> dict:
             bias = 1
             break_buy[i] = True
 
+        # Carry only when the drawn strong price changes.
+        # A lower strong-high after price has already left that high is the
+        # same leg (weak low keeps updating); it is not a new swing.
+        if not break_buy[i] and not break_sell[i]:
+            moved_low = _level_moved(prev_strong_low, strong_low)
+            moved_high = _level_moved(prev_strong_high, strong_high)
+            if (
+                moved_high
+                and prev_strong_high is not None
+                and strong_high is not None
+                and strong_high < prev_strong_high
+                and i > 0
+                and close[i - 1] < prev_strong_high
+            ):
+                moved_high = False
+            if moved_low and not moved_high:
+                carry_buy[i] = True
+            elif moved_high and not moved_low:
+                carry_sell[i] = True
+            elif moved_low and moved_high:
+                if bias >= 0:
+                    carry_buy[i] = True
+                else:
+                    carry_sell[i] = True
     return _finish(empty, event, side, break_buy, break_sell, carry_buy, carry_sell)
 
 
