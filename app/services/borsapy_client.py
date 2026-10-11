@@ -120,11 +120,20 @@ def _split_download(data: pd.DataFrame, symbols: list[str]) -> dict[str, pd.Data
     return out
 
 
-def _period_interval(timeframe: str) -> tuple[str, str, int | None]:
-    """Return (period, interval, resample_rule or None)."""
+def _period_interval(timeframe: str) -> tuple[str, str, str | None]:
+    """Return (period, download interval, resample rule or None).
+
+    Native 15m and 30m bars from borsapy can drop a wick that the 5m series
+    still has. OZKGY 2026-10-08 10:00 is high 12.01 on 15m and 12.08 on 5m,
+    which is the strong high on the chart. Build those bars from 5m.
+    """
     resample_rule = RESAMPLED_TIMEFRAMES.get(timeframe)
     if resample_rule:
         return RESAMPLED_SOURCE_PERIOD, "1h", resample_rule
+    if timeframe == "15m":
+        return INTRADAY_PERIOD, "5m", "15min"
+    if timeframe == "30m":
+        return INTRADAY_PERIOD, "5m", "30min"
     if timeframe in INTRADAY_TIMEFRAMES:
         return INTRADAY_PERIOD, timeframe, None
     if timeframe == "1d":
@@ -161,6 +170,9 @@ def fetch_ohlcv_batch_borsapy(
         if clean_syms and all(s.endswith("1!") for s in clean_syms)
         else "bp_bist"
     )
+    # Don't reuse 15m/30m files built from the native feed; those highs are short.
+    if interval == "5m" and timeframe in ("15m", "30m"):
+        namespace = f"{namespace}_m5"
 
     def fetch_period(
         batch: list[str],
