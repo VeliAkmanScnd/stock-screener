@@ -225,19 +225,8 @@ def strong_fresh_snapshot(df: pd.DataFrame, **params) -> dict:
                     and _price_through(probe, s_low, False)
                 )
                 if s_low is not None and not instant:
-                    swing = _swing_known(pl, s_low_bar, pivot_len, i)
-                    # Don't lift an active strong low onto a candle low that
-                    # never became a swing. Price still has to close through
-                    # the one that is drawn.
-                    keep = (
-                        strong_low is not None
-                        and s_low > strong_low
-                        and swing is False
-                        and not _price_through(probe, strong_low, False)
-                    )
-                    if not keep:
-                        strong_low = s_low
-                        strong_low_bar = s_low_bar
+                    strong_low = s_low
+                    strong_low_bar = s_low_bar
                     if weak_high is None or ph_px >= weak_high:
                         weak_high = ph_px
                         weak_high_bar = ph_bar
@@ -278,6 +267,11 @@ def strong_fresh_snapshot(df: pd.DataFrame, **params) -> dict:
                         and swing is False
                         and not _price_through(probe, strong_high, True)
                     )
+                    # Do not mirror this onto a rising strong low. That low is
+                    # the trough between two higher highs, and it often is not
+                    # a pivot of its own. Holding the old low blocks the later
+                    # bearish swing (ASTOR 12 Oct: 176.60 never reached 199.75,
+                    # so the 11:30 turn never fired).
                     if not keep:
                         strong_high = s_high
                         strong_high_bar = s_high_bar
