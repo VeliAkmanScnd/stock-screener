@@ -267,6 +267,7 @@ def scan_dataframe(
         else (True, {})
     )
     signals.update(signal_bar_fields(df, req.timeframe, universe=market))
+    price_shift = False
 
     if market_cap is not None and "market_cap" not in signals:
         signals["market_cap"] = market_cap
@@ -305,8 +306,14 @@ def scan_dataframe(
                 snap = strong_fresh_snapshot(
                     df, **strong_fresh_params_from_script(pine_code, overrides)
                 )
+                shift = int(snap.pop("strong_bar_shift", 0) or 0)
                 signals.update(snap)
                 pine_ok = bool(snap.get("pine_al"))
+                if pine_ok and shift == 1 and len(df) >= 2:
+                    signals.update(
+                        signal_bar_fields(df.iloc[:-1], req.timeframe, universe=market)
+                    )
+                    price_shift = True
             elif pine_source == "guven_skoru" and pine_code:
                 from app.services.pine_guven_skoru import (
                     guven_params_from_script,
@@ -343,9 +350,10 @@ def scan_dataframe(
             signals["pine_al_error"] = str(e)
             matched = False
 
+    price = _last(df["Close"].iloc[:-1]) if price_shift and len(df) >= 2 else _last(df["Close"])
     return ScanResult(
         symbol=symbol,
-        price=_last(df["Close"]),
+        price=price,
         signals=json_safe(signals),
         matched=bool(matched),
     )

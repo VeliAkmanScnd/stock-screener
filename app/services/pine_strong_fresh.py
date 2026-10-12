@@ -203,6 +203,7 @@ def strong_fresh_snapshot(df: pd.DataFrame, **params) -> dict:
     break_sell = np.zeros(n, dtype=bool)
     carry_buy = np.zeros(n, dtype=bool)
     carry_sell = np.zeros(n, dtype=bool)
+    broken_px = np.full(n, np.nan)
 
     for i in range(n):
         prev_strong_low = strong_low
@@ -301,6 +302,7 @@ def strong_fresh_snapshot(df: pd.DataFrame, **params) -> dict:
             close[i] > strong_high if close_break else high[i] > strong_high
         )
         if low_broken:
+            broken_px[i] = float(strong_low)
             if strong_low_bar is not None and 0 <= strong_low_bar <= i:
                 window = high[strong_low_bar : i + 1]
                 offset = int(np.argmax(window))
@@ -320,6 +322,7 @@ def strong_fresh_snapshot(df: pd.DataFrame, **params) -> dict:
             bias = -1
             break_sell[i] = True
         elif high_broken:
+            broken_px[i] = float(strong_high)
             origin = strong_high_bar if strong_high_bar is not None else i
             dip, dip_bar = _extreme(high, low, i, origin, i, True, max_geri)
             strong_low = dip if dip is not None else float(low[i])
@@ -369,10 +372,36 @@ def strong_fresh_snapshot(df: pd.DataFrame, **params) -> dict:
                     carry_buy[i] = True
                 else:
                     carry_sell[i] = True
-    return _finish(empty, event, side, break_buy, break_sell, carry_buy, carry_sell)
+    return _finish(
+        empty,
+        event,
+        side,
+        break_buy,
+        break_sell,
+        carry_buy,
+        carry_sell,
+        broken_px,
+        close,
+        high,
+        low,
+        close_break,
+    )
 
 
-def _finish(empty, event, side, break_buy, break_sell, carry_buy, carry_sell) -> dict:
+def _finish(
+    empty,
+    event,
+    side,
+    break_buy,
+    break_sell,
+    carry_buy,
+    carry_sell,
+    broken_px,
+    close,
+    high,
+    low,
+    close_break,
+) -> dict:
     if event == "kirilim":
         buy = bool(break_buy[-1])
         sell = bool(break_sell[-1])
@@ -382,20 +411,39 @@ def _finish(empty, event, side, break_buy, break_sell, carry_buy, carry_sell) ->
     else:
         buy = bool(break_buy[-1] or carry_buy[-1])
         sell = bool(break_sell[-1] or carry_sell[-1])
+    # A break is visible on its own bar and on the next bar, while that close
+    # is still through the broken level. The following scan otherwise lands on
+    # a quiet bar and the break is gone (ALARK1! 17:45, seen at 18:20).
+    held = False
+    if event != "tasima" and not buy and not sell and len(break_buy) >= 2:
+        level = float(broken_px[-2])
+        if math.isfinite(level) and bool(break_buy[-2]):
+            probe = float(close[-1] if close_break else high[-1])
+            held = _price_through(probe, level, True)
+            buy = held
+        elif math.isfinite(level) and bool(break_sell[-2]):
+            probe = float(close[-1] if close_break else low[-1])
+            held = _price_through(probe, level, False)
+            sell = held
     if side == "buy":
         sell = False
+        if held and not buy:
+            held = False
     elif side == "sell":
         buy = False
+        if held and not sell:
+            held = False
     out = dict(empty)
     out.update(
         {
             "pine_al": buy or sell,
             "strong_buy": buy,
             "strong_sell": sell,
-            "strong_break": bool(break_buy[-1] or break_sell[-1]),
+            "strong_break": bool(break_buy[-1] or break_sell[-1] or held),
             "strong_carry": bool(carry_buy[-1] or carry_sell[-1]),
             "strong_event": event,
             "strong_side": side,
+            "strong_bar_shift": 1 if held else 0,
         }
     )
     return out
