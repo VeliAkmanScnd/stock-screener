@@ -207,6 +207,7 @@ def strong_fresh_snapshot(df: pd.DataFrame, **params) -> dict:
     for i in range(n):
         prev_strong_low = strong_low
         prev_strong_high = strong_high
+        defense_low = False
         if math.isfinite(ph[i]):
             ph_bar = i - pivot_len
             ph_px = float(ph[i])
@@ -267,11 +268,8 @@ def strong_fresh_snapshot(df: pd.DataFrame, **params) -> dict:
                         and swing is False
                         and not _price_through(probe, strong_high, True)
                     )
-                    # Do not mirror this onto a rising strong low. That low is
-                    # the trough between two higher highs, and it often is not
-                    # a pivot of its own. Holding the old low blocks the later
-                    # bearish swing (ASTOR 12 Oct: 176.60 never reached 199.75,
-                    # so the 11:30 turn never fired).
+                    # Only a falling strong high. A rising strong low is updated
+                    # from the latest confirmed higher low below.
                     if not keep:
                         strong_high = s_high
                         strong_high_bar = s_high_bar
@@ -284,6 +282,20 @@ def strong_fresh_snapshot(df: pd.DataFrame, **params) -> dict:
                     if strong_low is not None and pl_px < strong_low:
                         strong_low = None
                         strong_low_bar = None
+            else:
+                # Last higher low of the uptrend. A close through it flips
+                # direction on that bar. Raising the level is not itself a signal.
+                before = strong_low
+                if (
+                    bias == 1
+                    and strong_low is not None
+                    and pl_px > strong_low
+                    and not _price_through(close[i] if close_break else low[i], pl_px, False)
+                ):
+                    strong_low = pl_px
+                    strong_low_bar = pl_bar
+                if strong_low != before and before == prev_strong_low:
+                    defense_low = True
             last_sl = pl_px
             last_sl_bar = pl_bar
 
@@ -301,8 +313,14 @@ def strong_fresh_snapshot(df: pd.DataFrame, **params) -> dict:
             close[i] > strong_high if close_break else high[i] > strong_high
         )
         if low_broken:
-            tepe = weak_high if weak_high is not None else float(high[i])
-            tepe_bar = weak_high_bar if weak_high_bar is not None else i
+            if strong_low_bar is not None and 0 <= strong_low_bar <= i:
+                window = high[strong_low_bar : i + 1]
+                offset = int(np.argmax(window))
+                tepe = float(window[offset])
+                tepe_bar = strong_low_bar + offset
+            else:
+                tepe = weak_high if weak_high is not None else float(high[i])
+                tepe_bar = weak_high_bar if weak_high_bar is not None else i
             strong_high = tepe
             strong_high_bar = tepe_bar
             weak_low = float(low[i])
@@ -343,7 +361,8 @@ def strong_fresh_snapshot(df: pd.DataFrame, **params) -> dict:
             ):
                 moved_high = False
             if moved_low and not moved_high:
-                carry_buy[i] = True
+                if not defense_low:
+                    carry_buy[i] = True
             elif moved_high and not moved_low:
                 carry_sell[i] = True
             elif moved_low and moved_high:
