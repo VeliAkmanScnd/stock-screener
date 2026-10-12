@@ -1,4 +1,4 @@
-"""Strong Low/High · Fresh · Hedef — last-bar break or swing-carry filter."""
+"""Strong Low/High · Fresh · Hedef — last-bar break filter."""
 
 from __future__ import annotations
 
@@ -14,8 +14,8 @@ STRONG_FRESH_MARKER = "__STRONG_FRESH_LAST__"
 
 _EVENT_LABELS = {
     "kirilim": "Strong kırıldı (trend değişimi)",
-    "tasima": "Strong taşındı (yeni swing)",
-    "ikisi": "Strong kırıldı veya taşındı",
+    "tasima": "Strong kırıldı (trend değişimi)",
+    "ikisi": "Strong kırıldı (trend değişimi)",
 }
 
 
@@ -402,15 +402,10 @@ def _finish(
     low,
     close_break,
 ) -> dict:
-    if event == "kirilim":
-        buy = bool(break_buy[-1])
-        sell = bool(break_sell[-1])
-    elif event == "tasima":
-        buy = bool(carry_buy[-1])
-        sell = bool(carry_sell[-1])
-    else:
-        buy = bool(break_buy[-1] or carry_buy[-1])
-        sell = bool(break_sell[-1] or carry_sell[-1])
+    # A strong level that only relocates is not a scan hit. SOKM 18:00 lifted
+    # strong low 57.53 -> 58.08 when the swing high confirmed, with no break.
+    buy = bool(break_buy[-1])
+    sell = bool(break_sell[-1])
     # A break is visible on its own bar and on the next bar, while that close
     # is still through the broken level. The following scan otherwise lands on
     # a quiet bar and the break is gone (ALARK1! 17:45, seen at 18:20).

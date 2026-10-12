@@ -378,7 +378,8 @@ async def upload_pine(
     elif al and al.source == "strong_fresh":
         msg = (
             "Strong Fresh motoru aktif. "
-            "Olay: kirilim (strong high/low kırıldı) veya tasima (yeni swing ile strong taşındı). "
+            "Strong high veya strong low kırılınca filtreye takılır. "
+            "Strong seviyenin yer değiştirmesi tek başına sinyal değildir. "
             "VIOP taramasında evreni VIOP seçin."
         )
     elif al and al.source == "guven_skoru":
