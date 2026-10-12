@@ -215,6 +215,9 @@ def strong_fresh_snapshot(df: pd.DataFrame, **params) -> dict:
             if last_sh is not None and ph_px > last_sh and bullish_leg:
                 s_low, s_low_bar = _extreme(high, low, i, last_sh_bar, ph_bar, True, max_geri)
                 probe = close[i] if close_break else low[i]
+                # A wick through the active strong high does not start a new
+                # bullish leg. The close has to clear that high first.
+                wicked_high = strong_high is not None and not _price_through(probe, strong_high, True)
                 # A higher pivot that lifts strong low above the current price
                 # would be "broken" by this same bar without the active strong
                 # low having been closed through.
@@ -225,7 +228,7 @@ def strong_fresh_snapshot(df: pd.DataFrame, **params) -> dict:
                     and not _price_through(probe, strong_low, False)
                     and _price_through(probe, s_low, False)
                 )
-                if s_low is not None and not instant:
+                if s_low is not None and not instant and not wicked_high:
                     strong_low = s_low
                     strong_low_bar = s_low_bar
                     if weak_high is None or ph_px >= weak_high:
@@ -361,10 +364,21 @@ def strong_fresh_snapshot(df: pd.DataFrame, **params) -> dict:
             ):
                 moved_high = False
             if moved_low and not moved_high:
-                if not defense_low:
+                stepped_down = (
+                    prev_strong_low is not None
+                    and strong_low is not None
+                    and strong_low < prev_strong_low
+                )
+                if not defense_low and not stepped_down:
                     carry_buy[i] = True
             elif moved_high and not moved_low:
-                carry_sell[i] = True
+                stepped_up = (
+                    prev_strong_high is not None
+                    and strong_high is not None
+                    and strong_high > prev_strong_high
+                )
+                if not stepped_up:
+                    carry_sell[i] = True
             elif moved_low and moved_high:
                 if bias >= 0:
                     carry_buy[i] = True
