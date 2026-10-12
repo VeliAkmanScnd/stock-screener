@@ -255,6 +255,7 @@ def format_signal_telegram_card(
     exchange: str | None = None,
     timeframe: str | None = None,
     bar_label: str | None = None,
+    scan_name: str | None = None,
 ) -> str:
     yon = "SAT" if str(direction).strip().upper() == "SAT" else "AL"
     if yon == "AL":
@@ -278,6 +279,9 @@ def format_signal_telegram_card(
         lines.append(f"Borsa\t: {exchange}")
     if timeframe:
         lines.append(f"Zaman dilimi\t: {_timeframe_label(timeframe)}")
+    scan = (scan_name or "").strip()
+    if scan:
+        lines.append(f"Tarama\t: {scan}")
     if bar_label:
         lines.append(f"Bar\t\t: {bar_label}")
     lines.extend(
@@ -302,6 +306,7 @@ def _signal_cards(
     market: str,
     exchange: str | None = None,
     timeframe: str | None = None,
+    scan_name: str | None = None,
 ) -> list[str]:
     cards: list[str] = []
     for row in results or []:
@@ -324,9 +329,30 @@ def _signal_cards(
                 exchange=exchange,
                 timeframe=timeframe,
                 bar_label=_bar_label_from_signals(signals, timeframe),
+                scan_name=scan_name,
             )
         )
     return cards
+
+
+def format_signal_cards(
+    results: list[dict] | None,
+    *,
+    universe: str,
+    timeframe: str | None = None,
+    custom_source_universe: str | None = None,
+    scan_name: str | None = None,
+) -> list[str]:
+    """Same card text for Telegram and email."""
+    market = _card_market(universe, custom_source_universe, results)
+    exchange = _exchange_label(universe, custom_source_universe)
+    return _signal_cards(
+        results,
+        market=market,
+        exchange=exchange,
+        timeframe=timeframe,
+        scan_name=scan_name,
+    )
 
 
 def _is_viop_scan(
@@ -405,7 +431,11 @@ def send_telegram_scan_result(
     market = _card_market(universe, custom_source_universe, results)
     exchange = _exchange_label(universe, custom_source_universe)
     cards = _signal_cards(
-        results, market=market, exchange=exchange, timeframe=timeframe
+        results,
+        market=market,
+        exchange=exchange,
+        timeframe=timeframe,
+        scan_name=name,
     )
     if not cards:
         if results or match_count > 0:
