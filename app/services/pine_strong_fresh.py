@@ -207,7 +207,6 @@ def strong_fresh_snapshot(df: pd.DataFrame, **params) -> dict:
     for i in range(n):
         prev_strong_low = strong_low
         prev_strong_high = strong_high
-        defense_low = False
         if math.isfinite(ph[i]):
             ph_bar = i - pivot_len
             ph_px = float(ph[i])
@@ -271,8 +270,8 @@ def strong_fresh_snapshot(df: pd.DataFrame, **params) -> dict:
                         and swing is False
                         and not _price_through(probe, strong_high, True)
                     )
-                    # Only a falling strong high. A rising strong low is updated
-                    # from the latest confirmed higher low below.
+                    # A falling strong high only. A rising strong low comes from
+                    # a new higher swing, not from a later candle.
                     if not keep:
                         strong_high = s_high
                         strong_high_bar = s_high_bar
@@ -285,20 +284,6 @@ def strong_fresh_snapshot(df: pd.DataFrame, **params) -> dict:
                     if strong_low is not None and pl_px < strong_low:
                         strong_low = None
                         strong_low_bar = None
-            else:
-                # Last higher low of the uptrend. A close through it flips
-                # direction on that bar. Raising the level is not itself a signal.
-                before = strong_low
-                if (
-                    bias == 1
-                    and strong_low is not None
-                    and pl_px > strong_low
-                    and not _price_through(close[i] if close_break else low[i], pl_px, False)
-                ):
-                    strong_low = pl_px
-                    strong_low_bar = pl_bar
-                if strong_low != before and before == prev_strong_low:
-                    defense_low = True
             last_sl = pl_px
             last_sl_bar = pl_bar
 
@@ -369,7 +354,7 @@ def strong_fresh_snapshot(df: pd.DataFrame, **params) -> dict:
                     and strong_low is not None
                     and strong_low < prev_strong_low
                 )
-                if not defense_low and not stepped_down:
+                if not stepped_down:
                     carry_buy[i] = True
             elif moved_high and not moved_low:
                 stepped_up = (
