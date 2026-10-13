@@ -5,7 +5,9 @@ from __future__ import annotations
 from app.services.ticker_format import (
     is_bist_universe,
     is_binance_universe,
+    is_fx_universe,
     is_viop_universe,
+    clean_fx_symbol,
     to_binance_pair,
 )
 
@@ -21,6 +23,11 @@ def to_tradingview_symbol(symbol: str, universe: str) -> str:
             return sym
         pair = to_binance_pair(sym)
         return f"BINANCE:{pair}" if pair else sym
+    if is_fx_universe(universe):
+        pair = clean_fx_symbol(sym)
+        if pair.startswith("FX:"):
+            return pair
+        return f"FX:{pair}"
     return sym
 
 

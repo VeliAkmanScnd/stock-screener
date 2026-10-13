@@ -122,6 +122,7 @@ function syncCustomSourceUI() {
   }
   if (isCustom) refreshSavedCustomListsSelect();
   syncBistProviderUI();
+  syncFxTimeframe();
 }
 
 function setCustomSourceUniverse(universe) {
@@ -388,6 +389,26 @@ function renderSignalSummary(scanData) {
     .join("");
 }
 
+function isFxMarket(universe) {
+  const u = universe ?? $("#universe")?.value ?? "sp500";
+  if (u === "fx") return true;
+  if (u === "custom") return getCustomSourceUniverse() === "fx";
+  return false;
+}
+
+function syncFxTimeframe() {
+  const fx = isFxMarket();
+  document.querySelectorAll('#timeframe option[value="3m"], #scheduleType option[value="3m"]').forEach((opt) => {
+    opt.hidden = !fx;
+  });
+  const hint = $("#fxTimeframeHint");
+  if (hint) hint.hidden = !fx;
+  if (!fx) {
+    if ($("#timeframe")?.value === "3m") $("#timeframe").value = "5m";
+    if ($("#scheduleType")?.value === "3m") $("#scheduleType").value = "5m";
+  }
+}
+
 function isBinanceMarket(universe) {
   const u = universe ?? $("#universe")?.value ?? "sp500";
   if (u === "binance") return true;
@@ -419,6 +440,12 @@ function formatPrice(price, universe) {
       style: "currency",
       currency: "TRY",
       maximumFractionDigits: 2,
+    }).format(price);
+  }
+  if (isFxMarket(u)) {
+    return new Intl.NumberFormat("en-US", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 5,
     }).format(price);
   }
   if (isBinanceMarket(u)) {
@@ -852,12 +879,13 @@ function applyMaxSymbols(count, labelText, fetchOk = true, message = null) {
   const input = $("#maxSymbols");
   const label = $("#maxSymbolsLabel");
   const n = Math.max(1, count);
+  const noun = isFxMarket() ? "parite" : "hisse";
   input.value = String(n);
   input.max = String(Math.max(n, 20000));
   input.min = "1";
-  label.textContent = `Maks. taranacak hisse (evrende ${n})`;
+  label.textContent = `Maks. taranacak ${noun} (evrende ${n})`;
   if (labelText) {
-    let info = `${labelText} · ${n} hisse`;
+    let info = `${labelText} · ${n} ${noun}`;
     if (!fetchOk) info += " — liste yüklenemedi";
     else if (message) info += " (önbellek)";
     $("#universeInfo").textContent = info;
@@ -883,6 +911,7 @@ async function loadUniverseInfo() {
       nyse: "NYSE",
       all_us: "ABD (tümü)",
       binance: "Binance",
+      fx: "FX",
     };
     applyMaxSymbols(n, `Özel liste (${srcLabels[src] || src})`);
     const pineHelpBist = $("#pineHelpBist");
@@ -900,7 +929,8 @@ async function loadUniverseInfo() {
     const pineHelpViop = $("#pineHelpViop");
     if (pineHelpBist) pineHelpBist.hidden = universe !== "bist";
     if (pineHelpViop) pineHelpViop.hidden = universe !== "viop";
-    if (data.fetch_ok === false && data.count < (universe === "viop" ? 40 : 100)) {
+    const minOk = universe === "viop" ? 40 : universe === "fx" ? 8 : 100;
+    if (data.fetch_ok === false && data.count < minOk) {
       setStatus(
         data.message ||
           "Hisse listesi indirilemedi. «Listeyi yenile» ile tekrar deneyin veya özel liste kullanın.",
@@ -1324,6 +1354,7 @@ function applyTelegramPaste(tokenEl, chatEl) {
 }
 
 const SCHEDULE_TYPE_LABELS = {
+  "3m": "3 dakika",
   "5m": "5 dakika",
   "15m": "15 dakika",
   "30m": "30 dakika",
@@ -1337,6 +1368,7 @@ const SCHEDULE_TYPE_LABELS = {
   hourly: "Saatlik (1H)",
   every_4h: "4 saat",
   every_2h: "2 saat (2H)",
+  every_3m: "3 dakika",
   every_5m: "5 dakika",
   every_15m: "15 dakika",
   every_30m: "30 dakika",
@@ -1350,6 +1382,7 @@ const SCHEDULE_TYPE_ALIASES = {
   hourly: "1h",
   every_4h: "4h",
   every_2h: "2h",
+  every_3m: "3m",
   every_5m: "5m",
   every_15m: "15m",
   every_30m: "30m",
@@ -1360,6 +1393,7 @@ const SCHEDULE_TYPE_ALIASES = {
 };
 
 const WINDOW_SCHEDULE_TYPES = new Set([
+  "3m",
   "5m",
   "15m",
   "30m",
@@ -1369,6 +1403,7 @@ const WINDOW_SCHEDULE_TYPES = new Set([
   "8h",
   "12h",
   "hourly",
+  "every_3m",
   "every_5m",
   "every_15m",
   "every_30m",
@@ -1553,6 +1588,11 @@ function resetScheduleModalForCreate() {
     $("#scheduleType").value = canonicalScheduleType(tf);
   }
   setScheduleWeekdays([0, 1, 2, 3, 4, 5, 6]);
+  if (isFxMarket()) {
+    if ($("#scheduleStartHour")) $("#scheduleStartHour").value = "0";
+    if ($("#scheduleEndHour")) $("#scheduleEndHour").value = "23";
+    setScheduleWeekdays([0, 1, 2, 3, 4, 6]);
+  }
   if ($("#scheduleNotifyEmail")) {
     $("#scheduleNotifyEmail").checked = false;
   }

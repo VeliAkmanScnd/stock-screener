@@ -27,6 +27,7 @@ FRESH_WITHIN = timedelta(minutes=3)
 
 # (yahoo/borsapy period, max age of the last stored bar before a full refetch)
 _TAIL: dict[str, tuple[str, timedelta]] = {
+    "3m": ("5d", timedelta(days=3)),
     "5m": ("5d", timedelta(days=4)),
     "15m": ("5d", timedelta(days=4)),
     "30m": ("5d", timedelta(days=4)),
@@ -72,7 +73,13 @@ def _naive_index(df: pd.DataFrame | None) -> pd.DataFrame | None:
 
 
 def merge_tail(old: pd.DataFrame | None, new: pd.DataFrame | None) -> pd.DataFrame | None:
-    """Keep stored history and replace only from the last stored bar forward."""
+    """Keep history older than the fresh download. The download replaces its own span.
+
+    A bar inside that span is overwritten, so a 15m close that was stored from
+    an unfinished 5m slice is corrected once the window's last 5m bar arrives.
+    A stored bar after the fresh series ends is dropped: the resample left it
+    out because that bucket is still missing its final source bar.
+    """
     new_n = _naive_index(new)
     old_n = _naive_index(old)
     if new_n is None:
@@ -80,12 +87,15 @@ def merge_tail(old: pd.DataFrame | None, new: pd.DataFrame | None) -> pd.DataFra
     if old_n is None or old_n.empty:
         out = new_n
     else:
-        cutoff = old_n.index[-1]
-        fresh = new_n[new_n.index >= cutoff]
-        if fresh.empty:
-            return old_n
-        kept = old_n[old_n.index < cutoff]
-        out = pd.concat([kept, fresh])
+        start = new_n.index[0]
+        end = new_n.index[-1]
+        older = old_n[old_n.index < start]
+        missed = old_n[
+            (old_n.index > start)
+            & (old_n.index < end)
+            & ~old_n.index.isin(new_n.index)
+        ]
+        out = pd.concat([older, missed, new_n])
         out = out[~out.index.duplicated(keep="last")].sort_index()
     if len(out) > MAX_BARS:
         out = out.iloc[-MAX_BARS:]
@@ -134,6 +144,33 @@ def tail_spec(timeframe: str) -> tuple[str, timedelta]:
     return _TAIL.get(timeframe, ("1mo", timedelta(days=25)))
 
 
+def fetched_after_bar_close(
+    frame: pd.DataFrame,
+    fetched_at: datetime,
+    timeframe: str,
+) -> bool:
+    """False when the last bar was still open (or inside the settle gap) at fetch time.
+
+    BIST/VIOP caches store Istanbul-naive timestamps. A frame saved at 10:12
+    whose last bar is the 10:00–10:15 candle still has the live print as Close.
+    Reusing it after 10:15 signals that print.
+    """
+    from app.services.bar_close import BAR_SETTLE_SECONDS, TIMEFRAME_SECONDS
+
+    secs = TIMEFRAME_SECONDS.get((timeframe or "").strip().lower())
+    if not secs or secs >= 86400 or frame is None or frame.empty:
+        return True
+    last = pd.Timestamp(frame.index[-1])
+    if last.tzinfo is not None:
+        last = last.tz_convert("Europe/Istanbul").tz_localize(None)
+    close_at = last + pd.Timedelta(seconds=secs + BAR_SETTLE_SECONDS)
+    fetched = pd.Timestamp(fetched_at)
+    if fetched.tzinfo is None:
+        fetched = fetched.tz_localize("UTC")
+    fetched = fetched.tz_convert("Europe/Istanbul").tz_localize(None)
+    return bool(fetched >= close_at)
+
+
 def cached_ohlcv_batch(
     *,
     namespace: str,
@@ -165,7 +202,10 @@ def cached_ohlcv_batch(
             full.append(sym)
             continue
         fetched_at, frame = loaded
-        if now - fetched_at <= FRESH_WITHIN:
+        if now - fetched_at <= FRESH_WITHIN and (
+            not (namespace.startswith("bp_") or namespace.startswith("yf_fx"))
+            or fetched_after_bar_close(frame, fetched_at, timeframe)
+        ):
             base[sym] = frame
             fresh_n += 1
             continue

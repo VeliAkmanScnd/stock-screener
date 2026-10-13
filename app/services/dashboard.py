@@ -29,6 +29,7 @@ UNIVERSE_LABELS = {
     "sp500": "S&P 500",
     "all_us": "NASDAQ + NYSE + S&P 500",
     "binance": "Binance",
+    "fx": "FX",
     "custom": "Özel",
 }
 

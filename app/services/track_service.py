@@ -11,13 +11,13 @@ from sqlalchemy.orm import Session
 from app.config import DEFAULT_SCHEDULE_TIMEZONE, TRACK_DEFAULT_STOP_PCT, TRACK_DEFAULT_TARGET_PCT
 from app.database import TrackBenchmarkLog, TrackPosition, TrackPriceLog, TrackUserSettings
 from app.services.track_benchmarks import benchmark_meta, fetch_benchmark_price, fetch_benchmark_prices
-from app.services.track_levels import levels_for_timeframe, realized_r
+from app.services.track_levels import levels_for_timeframe, realized_r, reward_r
 from app.services.track_prices import fetch_latest_prices, fetch_latest_quotes
 from app.utils.datetime_fmt import utc_iso
 
 logger = logging.getLogger(__name__)
 
-INTRADAY_TIMEFRAMES = frozenset({"5m", "15m", "30m", "1h", "2h", "4h", "8h", "12h"})
+INTRADAY_TIMEFRAMES = frozenset({"3m", "5m", "15m", "30m", "1h", "2h", "4h", "8h", "12h"})
 ACTIVE_STATUS = "active"
 AFTER_TP_STATUS = "after_tp"
 WATCH_STATUSES = frozenset({ACTIVE_STATUS, AFTER_TP_STATUS})
@@ -41,6 +41,7 @@ UNIVERSE_LABELS: dict[str, str] = {
     "nyse": "NYSE",
     "all_us": "US (tümü)",
     "binance": "Binance",
+    "fx": "FX",
     "custom": "Özel",
 }
 
@@ -181,6 +182,38 @@ def get_or_create_settings(db: Session, user_id: int) -> TrackUserSettings:
     db.commit()
     db.refresh(row)
     return row
+
+
+def _positive_level(value: Any) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if number != number or number <= 0:
+        return None
+    return number
+
+
+def levels_from_signal(signals: Any, direction: str) -> tuple[float, float, float, float, float] | None:
+    """Fib 0.5 entry, 1.7R target, strong stop. Percents are positive risk and reward."""
+    if not isinstance(signals, dict):
+        return None
+    entry = _positive_level(signals.get("fib_entry"))
+    target = _positive_level(signals.get("fib_target"))
+    stop = _positive_level(signals.get("fib_stop"))
+    if entry is None or target is None or stop is None:
+        return None
+    reward = abs(target - entry)
+    risk = abs(entry - stop)
+    if reward <= 0 or risk <= 0:
+        return None
+    target_pct = round(reward / entry * 100, 4)
+    stop_pct = round(risk / entry * 100, 4)
+    if (direction or "AL").upper() == "SAT" and not (target < entry < stop):
+        return None
+    if (direction or "AL").upper() != "SAT" and not (stop < entry < target):
+        return None
+    return entry, target, stop, target_pct, stop_pct
 
 
 def calc_levels(
@@ -363,6 +396,7 @@ def position_to_dict(row: TrackPosition) -> dict[str, Any]:
         "max_price": row.max_price,
         "min_price": row.min_price,
         "mfe_pct": mfe,
+        "mfe_r": reward_r(mfe, row.stop_pct),
         "mae_pct": mae,
         "first_tp_at": utc_iso(row.first_tp_at),
         "first_sl_at": utc_iso(row.first_sl_at),
@@ -416,15 +450,16 @@ def ingest_scan_results(
         price = item.get("price")
         if not symbol or price is None:
             continue
-        entry = float(price)
+        market_px = float(price)
         direction = signal_direction(item.get("signals"))
+        planned = levels_from_signal(item.get("signals"), direction)
         closed_opposite += apply_opposite_signals(
             db,
             user_id=user_id,
             symbol=symbol,
             timeframe=timeframe,
             incoming_direction=direction,
-            exit_price=entry,
+            exit_price=market_px,
             now=now,
         )
         if scan_run_id is not None:
@@ -452,12 +487,16 @@ def ingest_scan_results(
         if already_open:
             continue
 
-        if getattr(settings, "use_tf_level_benchmarks", True):
-            target_pct, stop_pct = levels_for_timeframe(timeframe)
+        if planned is not None:
+            entry, target_price, stop_price, target_pct, stop_pct = planned
         else:
-            target_pct = float(settings.target_pct)
-            stop_pct = float(settings.stop_pct)
-        target_price, stop_price = calc_levels(entry, target_pct, stop_pct, direction)
+            entry = market_px
+            if getattr(settings, "use_tf_level_benchmarks", True):
+                target_pct, stop_pct = levels_for_timeframe(timeframe)
+            else:
+                target_pct = float(settings.target_pct)
+                stop_pct = float(settings.stop_pct)
+            target_price, stop_price = calc_levels(entry, target_pct, stop_pct, direction)
         row = TrackPosition(
             user_id=user_id,
             symbol=symbol,
@@ -468,7 +507,7 @@ def ingest_scan_results(
             stop_price=stop_price,
             target_pct=target_pct,
             stop_pct=stop_pct,
-            current_price=entry,
+            current_price=market_px,
             last_checked_at=now,
             status=ACTIVE_STATUS,
             source_type=source_type,
@@ -479,15 +518,15 @@ def ingest_scan_results(
             timeframe=timeframe,
             direction=direction,
             indicator_label=indicator_label,
-            max_price=entry,
-            min_price=entry,
+            max_price=market_px,
+            min_price=market_px,
         )
         _apply_benchmark_entry(row, universe, benchmark_px)
         if benchmark_px is not None:
             row.benchmark_current_price = float(benchmark_px)
         db.add(row)
         db.flush()
-        log_price(db, row.id, entry, at=now)
+        log_price(db, row.id, market_px, at=now)
         added += 1
 
     if added or closed_opposite:

@@ -19,6 +19,7 @@ BENCHMARKS: dict[str, dict[str, str]] = {
     "nyse": {"symbol": "^NYA", "label": "NYSE"},
     "all_us": {"symbol": "^GSPC", "label": "S&P 500"},
     "binance": {"symbol": "BTC-USD", "label": "BTC"},
+    "fx": {"symbol": "EURUSD=X", "label": "EURUSD"},
     "custom": {"symbol": "^GSPC", "label": "S&P 500"},
 }
 
@@ -33,6 +34,8 @@ def get_benchmark_config(universe: str) -> dict[str, str] | None:
         return BENCHMARKS["viop"]
     if key in ("binance_spot", "crypto"):
         return BENCHMARKS["binance"]
+    if key in ("forex", "parite"):
+        return BENCHMARKS["fx"]
     if key in ("all", "us"):
         return BENCHMARKS["all_us"]
     return None

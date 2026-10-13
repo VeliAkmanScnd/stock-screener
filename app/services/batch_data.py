@@ -15,6 +15,7 @@ from app.services.ticker_format import (
     from_yf_ticker,
     is_binance_universe,
     is_bist_universe,
+    is_fx_universe,
     is_viop_universe,
     to_yf_ticker,
 )
@@ -36,6 +37,7 @@ RESAMPLED_SOURCE_INTERVAL = "1h"
 
 # Bar length in minutes (for volume window aggregation)
 BAR_MINUTES: dict[str, int] = {
+    "3m": 3,
     "5m": 5,
     "15m": 15,
     "30m": 30,
@@ -51,6 +53,7 @@ BAR_MINUTES: dict[str, int] = {
 
 # Max age of last bar before symbol treated as delisted / stale
 STALE_MULTIPLIER: dict[str, timedelta] = {
+    "3m": timedelta(days=3),
     "5m": timedelta(days=3),
     "15m": timedelta(days=5),
     "30m": timedelta(days=7),
@@ -102,13 +105,89 @@ def _split_download(
     return out
 
 
-def _resample_ohlcv(df: pd.DataFrame, rule: str) -> pd.DataFrame | None:
+def _asof_naive(asof: pd.Timestamp | None) -> pd.Timestamp | None:
+    """Clock in the same naive zone as BIST/VIOP bars (Europe/Istanbul)."""
+    if asof is None:
+        return None
+    ts = pd.Timestamp(asof)
+    if ts.tzinfo is not None:
+        ts = ts.tz_convert("Europe/Istanbul").tz_localize(None)
+    return ts
+
+
+def _drop_trailing_open_bucket(
+    source: pd.DataFrame,
+    agg: pd.DataFrame,
+    rule: str,
+    *,
+    asof: pd.Timestamp | None = None,
+) -> pd.DataFrame:
+    """Drop a trailing bucket whose close is not final yet.
+
+    A 15m bar is built from 5m bars, and its close is the last 5m close in the
+    window. If that 5m bar has not printed, an earlier 5m close stands in for
+    it. If the 5m bar is present but still the live last trade, that print can
+    sit through a level and the finished 5m close can come back inside. On the
+    15m chart both cases are a wick.
+
+    ``asof`` is the clock in the same naive zone as ``source``. When it is set,
+    the last bucket is kept only if the next source bar has started, or the
+    clock is past the bucket end plus the settle gap. Callers that omit
+    ``asof`` keep a bucket once its closing source slot exists.
+    """
+    if agg is None or agg.empty or source is None or len(source.index) < 2:
+        return agg
+    step = pd.Series(source.index).diff().median()
+    if not isinstance(step, pd.Timedelta) or step <= pd.Timedelta(0):
+        return agg
+    try:
+        width = pd.Timedelta(pd.tseries.frequencies.to_offset(rule))
+    except (TypeError, ValueError):
+        return agg
+    if width <= step:
+        return agg
+    src = pd.DatetimeIndex(source.index)
+    if src.tz is not None:
+        src = src.tz_localize(None)
+    clock = _asof_naive(asof)
+    from app.services.bar_close import BAR_SETTLE_SECONDS
+
+    settle = pd.Timedelta(seconds=BAR_SETTLE_SECONDS)
+    out = agg
+    for _ in range(3):
+        if out.empty:
+            break
+        start = pd.Timestamp(out.index[-1])
+        if start.tzinfo is not None:
+            start = start.tz_localize(None)
+        end = start + width
+        slot = end - step
+        pos = int(src.searchsorted(pd.Timestamp(end), side="left")) - 1
+        slot_ok = pos >= 0 and src[pos] >= start and src[pos] >= slot
+        if not slot_ok:
+            out = out.iloc[:-1]
+            continue
+        nxt = int(src.searchsorted(pd.Timestamp(end), side="left"))
+        if nxt < len(src):
+            break
+        if clock is None or clock >= end + settle:
+            break
+        out = out.iloc[:-1]
+    return out
+
+
+def _resample_ohlcv(
+    df: pd.DataFrame,
+    rule: str,
+    *,
+    asof: pd.Timestamp | None = None,
+) -> pd.DataFrame | None:
     if df is None or df.empty:
         return None
     work = df.copy()
     if work.index.tz is not None:
         work.index = work.index.tz_localize(None)
-    agg = work.resample(rule).agg(
+    agg = work.resample(rule, label="left", closed="left").agg(
         {
             "Open": "first",
             "High": "max",
@@ -118,6 +197,7 @@ def _resample_ohlcv(df: pd.DataFrame, rule: str) -> pd.DataFrame | None:
         }
     )
     agg = agg.dropna(subset=["Close"])
+    agg = _drop_trailing_open_bucket(work, agg, rule, asof=asof)
     return agg if len(agg) >= 10 else None
 
 
@@ -235,6 +315,11 @@ def fetch_ohlcv_batch(
     if not symbols:
         return {}
 
+    if is_fx_universe(universe):
+        from app.services.fx_data import fetch_ohlcv_batch_fx
+
+        return fetch_ohlcv_batch_fx(symbols, timeframe, on_progress=on_progress)
+
     if is_binance_universe(universe):
         from app.services.binance_data import fetch_ohlcv_batch_binance
 
@@ -281,7 +366,7 @@ def validate_active(
     close = df["Close"].iloc[-1]
     if is_bist_universe(universe) or is_viop_universe(universe):
         min_price = 0.5
-    elif is_binance_universe(universe):
+    elif is_binance_universe(universe) or is_fx_universe(universe):
         min_price = 0.0000001
     else:
         min_price = 0.05
@@ -300,7 +385,7 @@ def validate_active(
     if (now - last_ts) > stale_limit:
         return False, "stale_delisted"
 
-    if not is_viop_universe(universe):
+    if not is_viop_universe(universe) and not is_fx_universe(universe):
         recent_n = min(5, len(df))
         if float(df["Volume"].iloc[-recent_n:].sum()) <= 0:
             return False, "no_volume"

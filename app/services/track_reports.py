@@ -9,7 +9,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.database import TrackPosition
-from app.services.track_levels import MIN_SAMPLE_FOR_RANK, level_benchmarks_for_api, realized_r
+from app.services.track_levels import MIN_SAMPLE_FOR_RANK, level_benchmarks_for_api, realized_r, reward_r
 from app.services.track_service import (
     WATCH_STATUSES,
     _hours_between,
@@ -18,6 +18,7 @@ from app.services.track_service import (
 )
 
 TIMEFRAME_LABELS = {
+    "3m": "3 dakika",
     "5m": "5 dakika",
     "15m": "15 dakika",
     "30m": "30 dakika",
@@ -137,6 +138,7 @@ def performance_report(
         sl_rate = (sl_n / settled_n * 100) if settled_n else 0.0
         expected = _avg(r_values)
         mfes: list[float] = []
+        mfe_rs: list[float] = []
         maes: list[float] = []
         tp_hours: list[float] = []
         sl_hours: list[float] = []
@@ -145,6 +147,9 @@ def performance_report(
             mfe, mae = excursion_pcts(row)
             if mfe is not None:
                 mfes.append(mfe)
+            mfe_multiple = reward_r(mfe, row.stop_pct)
+            if mfe_multiple is not None:
+                mfe_rs.append(mfe_multiple)
             if mae is not None:
                 maes.append(mae)
             if row.hours_to_tp is not None:
@@ -173,6 +178,7 @@ def performance_report(
                 "avg_win_r": _avg(wins),
                 "avg_loss_r": _avg([-v for v in losses]) if losses else None,
                 "avg_mfe_pct": _avg(mfes) or 0.0,
+                "avg_mfe_r": _avg(mfe_rs),
                 "avg_mae_pct": _avg(maes) or 0.0,
                 "avg_hours_to_tp": _avg(tp_hours),
                 "avg_hours_to_sl": _avg(sl_hours),

@@ -14,13 +14,13 @@ Yeni kayıt, taramanın zaman dilimine göre hedef/stop alır (kutu **Periyoda g
 
 | Periyot | Hedef | Stop | R |
 | --- | --- | --- | --- |
-| 5 dakika | +1.5% | −1.0% | 1.50R |
-| **15 dakika** | **+2%** | **−1.5%** | **1.33R** |
-| 30 dakika | +2.5% | −1.8% | 1.39R |
-| **1 saat** | **+3%** | **−2%** | **1.50R** |
-| 4 saat | +5% | −3% | 1.67R |
-| **1 gün** | **+8%** | **−5%** | **1.60R** |
-| 1 hafta | +12% | −7% | 1.71R |
+| 5 dakika | +1.7% | −1.0% | 1.70R |
+| **15 dakika** | **+2.55%** | **−1.5%** | **1.70R** |
+| 30 dakika | +3.06% | −1.8% | 1.70R |
+| **1 saat** | **+3.4%** | **−2%** | **1.70R** |
+| 4 saat | +5.1% | −3% | 1.70R |
+| **1 gün** | **+8.5%** | **−5%** | **1.70R** |
+| 1 hafta | +11.9% | −7% | 1.70R |
 
 Kalın satırlar önerilen karşılaştırma setidir. Kutuyu kapatırsanız **Özel hedef / stop %** (varsayılan 8 / 5) tüm periyotlara uygulanır. 15m ile 1g’yi aynı +8/−5 ile kıyaslamayın.
 
@@ -30,7 +30,7 @@ Bir hisse taramada görününce saat başı fiyatı güncellenir.
 
 1. **Stop** gelirse kapanır. SL’ye varış saati tutulur.
 2. **TP** gelirse kapanmaz. Durum **TP sonrası** olur. Aynı zaman diliminde **ters sinyal** gelene kadar (ör. 15m AL sonrası 15m SAT) veya süre dolana kadar devam eder.
-3. En fazla **10 işlem günü** (yaklaşık 2 hafta). Sonra **arşiv**. Böylece maksimum gidilen yer (max %) kaybolmaz.
+3. En fazla **10 işlem günü** (yaklaşık 2 hafta). Sonra **arşiv**. Böylece maksimum gidilen yer (max %) ve o mesafenin R değeri kaybolmaz.
 4. TP ve SL süreleri saat cinsinden saklanır.
 
 Ters sinyal, o periyottaki taramanın **yeniden çalışıp** aksi yön basmasına bağlıdır. Tarama o gün çalışmazsa süre dolunca arşivlenir.
@@ -39,9 +39,9 @@ Ters sinyal, o periyottaki taramanın **yeniden çalışıp** aksi yön basması
 
 NASDAQ 15m taraması TER’i 80.00’den getirdi.
 
-- Hedef: 81.60 (+2%)
+- Hedef: 82.04 (+2.55%, 1.7R)
 - Stop: 78.80 (−1.5%)
-- Saat 11:00’de 1s bar high 81.70 → **TP sonrası**
+- Saat 11:00’de 1s bar high 82.10 → **TP sonrası**
 - Sonraki SAT sinyali veya 10 işlem günü dolana kadar izlenir
 - Stop, high/low ile de kontrol edilir; aynı saatte hem TP hem SL varsa **stop** yazılır
 

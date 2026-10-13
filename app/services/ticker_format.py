@@ -8,7 +8,14 @@ BIST_YF_SUFFIX = ".IS"
 BIST_UNIVERSES = frozenset({"bist", "borsa_istanbul", "istanbul", "borsa"})
 VIOP_UNIVERSES = frozenset({"viop", "vadeli", "viop_futures"})
 BINANCE_UNIVERSES = frozenset({"binance", "binance_spot", "crypto"})
+FX_UNIVERSES = frozenset({"fx", "forex", "parite"})
 BINANCE_QUOTE = "USDT"
+_FX_ALIASES = {
+    "XAU": "XAUUSD",
+    "XAG": "XAGUSD",
+    "GOLD": "XAUUSD",
+    "SILVER": "XAGUSD",
+}
 
 
 def is_bist_universe(universe: str) -> bool:
@@ -21,6 +28,19 @@ def is_binance_universe(universe: str) -> bool:
 
 def is_viop_universe(universe: str) -> bool:
     return (universe or "").lower() in VIOP_UNIVERSES
+
+
+def is_fx_universe(universe: str) -> bool:
+    return (universe or "").lower() in FX_UNIVERSES
+
+
+def clean_fx_symbol(sym: str) -> str:
+    s = str(sym).strip().upper().replace("/", "").replace("-", "").replace(" ", "")
+    if ":" in s:
+        s = s.split(":")[-1]
+    if s.endswith("=X"):
+        s = s[:-2]
+    return _FX_ALIASES.get(s, s)
 
 
 def clean_viop_symbol(sym: str) -> str:
@@ -94,6 +114,10 @@ def to_yf_ticker(symbol: str, universe: str) -> str:
         if not base:
             return ""
         return f"{base}-USD"
+    if is_fx_universe(universe):
+        from app.services.fx_data import yf_symbol
+
+        return yf_symbol(symbol)
     return clean_us_symbol(symbol)
 
 
@@ -102,4 +126,8 @@ def from_yf_ticker(yf_symbol: str, universe: str) -> str:
         return clean_bist_symbol(yf_symbol)
     if is_binance_universe(universe):
         return clean_binance_symbol(yf_symbol.replace("-USD", ""))
+    if is_fx_universe(universe):
+        from app.services.fx_data import display_symbol
+
+        return display_symbol(yf_symbol) or clean_fx_symbol(yf_symbol)
     return clean_us_symbol(yf_symbol)

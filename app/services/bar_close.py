@@ -8,10 +8,15 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 
-from app.services.ticker_format import is_bist_universe, is_viop_universe
+from app.services.ticker_format import is_bist_universe, is_fx_universe, is_viop_universe
+
+# A 5m close can still be the last trade for a short while after the clock
+# passes the boundary. Wait this long before treating that close as final.
+BAR_SETTLE_SECONDS = 45
 
 TIMEFRAME_SECONDS: dict[str, int] = {
     "1m": 60,
+    "3m": 180,
     "5m": 300,
     "15m": 900,
     "30m": 1800,
@@ -27,7 +32,7 @@ TIMEFRAME_SECONDS: dict[str, int] = {
 
 def market_timezone(universe: str | None) -> str:
     u = (universe or "").lower()
-    if is_bist_universe(u) or is_viop_universe(u):
+    if is_bist_universe(u) or is_viop_universe(u) or is_fx_universe(u):
         return "Europe/Istanbul"
     if u in ("binance", "binance_spot", "crypto"):
         return "UTC"
@@ -107,6 +112,22 @@ def signal_bar_fields(
     if label:
         out["bar_label"] = label
     return out
+
+
+def seconds_until_bar_settled(
+    timeframe: str,
+    now: datetime | None = None,
+) -> float:
+    """Seconds to wait when ``now`` is still inside the post-close settle window."""
+    secs = timeframe_seconds(timeframe)
+    if secs <= 0 or secs >= 86400:
+        return 0.0
+    if now is None:
+        now = datetime.now(ZoneInfo("Europe/Istanbul"))
+    into = float(now.timestamp()) % secs
+    if into < BAR_SETTLE_SECONDS:
+        return BAR_SETTLE_SECONDS - into
+    return 0.0
 
 
 def drop_unclosed_bar(

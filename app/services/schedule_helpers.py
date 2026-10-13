@@ -14,6 +14,7 @@ SCHEDULE_TYPE_ALIASES: dict[str, str] = {
     "hourly": "1h",
     "every_4h": "4h",
     "every_2h": "2h",
+    "every_3m": "3m",
     "every_5m": "5m",
     "every_15m": "15m",
     "every_30m": "30m",
@@ -23,6 +24,7 @@ SCHEDULE_TYPE_ALIASES: dict[str, str] = {
     "weekly": "1wk",
 }
 WINDOW_INTERVAL_MINUTES: dict[str, int] = {
+    "3m": 3,
     "5m": 5,
     "15m": 15,
     "30m": 30,

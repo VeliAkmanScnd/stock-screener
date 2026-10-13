@@ -45,7 +45,7 @@ const TRACK_COLUMNS = [
   { key: "entry_price", label: "Giriş", type: "number", getValue: (r) => r.entry_price },
   { key: "current_price", label: "Güncel", type: "number", getValue: (r) => r.current_price },
   { key: "change_pct", label: "%", type: "number", getValue: (r) => r.change_pct },
-  { key: "mfe_pct", label: "Max %", type: "number", getValue: (r) => r.mfe_pct },
+  { key: "mfe_pct", label: "Max % · R", type: "number", getValue: (r) => r.mfe_pct },
   {
     key: "benchmark",
     label: "Endeks",
@@ -77,6 +77,9 @@ function fmtPrice(v, universe) {
   if (u === "bist") {
     return Number(v).toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
+  if (u === "fx" || u === "forex") {
+    return Number(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 5 });
+  }
   if (u === "binance") {
     const n = Number(v);
     if (n >= 1) return n.toFixed(4);
@@ -95,6 +98,12 @@ function fmtBenchmarkPrice(v) {
   return n.toFixed(4);
 }
 
+function benchTargetPct(stopPct) {
+  const stop = Number(stopPct);
+  if (!Number.isFinite(stop)) return stopPct;
+  return Math.round(stop * 1.7 * 100) / 100;
+}
+
 function renderLevelBenchmarks(selector, rows) {
   const host = document.querySelector(selector);
   if (!host) return;
@@ -106,10 +115,11 @@ function renderLevelBenchmarks(selector, rows) {
     .map((b) => {
       const feat = b.featured ? " featured" : "";
       const tag = b.featured ? '<span class="perf-badge">önerilen</span>' : "";
+      const target = benchTargetPct(b.stop_pct);
       return `<div class="tf-bench-chip${feat}">
         <strong>${b.label}${tag}</strong>
-        <span>+${b.target_pct}% / −${b.stop_pct}%</span>
-        <span>${b.r_multiple != null ? `${b.r_multiple}R` : ""}</span>
+        <span>+${target}% / −${b.stop_pct}%</span>
+        <span>1.7R</span>
       </div>`;
     })
     .join("");
@@ -119,6 +129,14 @@ function fmtPct(v) {
   if (v == null || Number.isNaN(v)) return "—";
   const sign = v > 0 ? "+" : "";
   return `${sign}${v}%`;
+}
+
+function fmtMfe(row) {
+  const pct = fmtPct(row.mfe_pct);
+  if (row.mfe_r == null || Number.isNaN(Number(row.mfe_r))) return pct;
+  const n = Number(row.mfe_r);
+  const sign = n > 0 ? "+" : "";
+  return `${pct} · ${sign}${n.toFixed(2)}R`;
 }
 
 function pctClass(v) {
@@ -652,7 +670,7 @@ function renderTrackTableBody(rows, isActive) {
           <td>${fmtPrice(r.entry_price, r.universe)}</td>
           <td>${fmtPrice(r.current_price, r.universe)}</td>
           <td class="${pctClass(r.change_pct)}">${chg}</td>
-          <td class="${pctClass(r.mfe_pct)}">${fmtPct(r.mfe_pct)}</td>
+          <td class="${pctClass(r.mfe_pct)}">${fmtMfe(r)}</td>
           <td>${fmtBenchmarkPrice(r.benchmark_current_price)}<br><span class="hint">${bmLabel}</span></td>
           <td class="${pctClass(r.benchmark_change_pct)}">${bmChg}</td>
           <td>${fmtPrice(r.target_price, r.universe)}<br><span class="hint">${r.direction === "SAT" ? "−" : "+"}${r.target_pct}%</span></td>

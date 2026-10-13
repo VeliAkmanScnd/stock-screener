@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Callable
 
 import pandas as pd
@@ -16,6 +18,10 @@ logger = logging.getLogger(__name__)
 
 OHLCV_COLS = ["Open", "High", "Low", "Close", "Volume"]
 BORSA_PY_CHUNK_SIZE = 25
+BORSA_PY_WORKERS = 4
+# 15m/30m are built from 5m. 40 calendar days is enough for the strong-fresh
+# lookback and is much smaller than a 60d cold download of the whole board.
+_RESAMPLE_SOURCE_PERIOD = "40d"
 _tv_auth_applied = False
 
 
@@ -131,9 +137,9 @@ def _period_interval(timeframe: str) -> tuple[str, str, str | None]:
     if resample_rule:
         return RESAMPLED_SOURCE_PERIOD, "1h", resample_rule
     if timeframe == "15m":
-        return INTRADAY_PERIOD, "5m", "15min"
+        return _RESAMPLE_SOURCE_PERIOD, "5m", "15min"
     if timeframe == "30m":
-        return INTRADAY_PERIOD, "5m", "30min"
+        return _RESAMPLE_SOURCE_PERIOD, "5m", "30min"
     if timeframe in INTRADAY_TIMEFRAMES:
         return INTRADAY_PERIOD, timeframe, None
     if timeframe == "1d":
@@ -174,38 +180,68 @@ def fetch_ohlcv_batch_borsapy(
     if interval == "5m" and timeframe in ("15m", "30m"):
         namespace = f"{namespace}_m5"
 
+    wait = 0.0
+    if timeframe in INTRADAY_TIMEFRAMES or resample_rule:
+        from app.services.bar_close import seconds_until_bar_settled
+
+        wait = seconds_until_bar_settled(timeframe)
+    if wait > 0:
+        logger.info("Waiting %.0fs for the %s bar to settle", wait, timeframe)
+        time.sleep(wait)
+    asof = pd.Timestamp.now(tz="Europe/Istanbul")
+
+    def _download_chunk(chunk: list[str], use_period: str) -> dict[str, pd.DataFrame]:
+        raw = bp.download(
+            chunk,
+            period=use_period,
+            interval=interval,
+            group_by="ticker",
+            progress=False,
+        )
+        chunk_frames = _split_download(raw, chunk)
+        if not resample_rule:
+            return chunk_frames
+        out: dict[str, pd.DataFrame] = {}
+        for sym, frame in chunk_frames.items():
+            resampled = _resample_ohlcv(frame, resample_rule, asof=asof)
+            if resampled is not None:
+                out[sym] = resampled
+        return out
+
     def fetch_period(
         batch: list[str],
         use_period: str,
         offset: int,
         total: int,
     ) -> dict[str, pd.DataFrame]:
+        chunks = [
+            batch[i : i + BORSA_PY_CHUNK_SIZE]
+            for i in range(0, len(batch), BORSA_PY_CHUNK_SIZE)
+        ]
         frames: dict[str, pd.DataFrame] = {}
+        if not chunks:
+            return frames
         done = offset
-        for i in range(0, len(batch), BORSA_PY_CHUNK_SIZE):
-            chunk = batch[i : i + BORSA_PY_CHUNK_SIZE]
+        workers = 1 if len(chunks) == 1 else min(BORSA_PY_WORKERS, len(chunks))
+
+        def _one(chunk: list[str]) -> tuple[list[str], dict[str, pd.DataFrame], Exception | None]:
             try:
-                raw = bp.download(
-                    chunk,
-                    period=use_period,
-                    interval=interval,
-                    group_by="ticker",
-                    progress=False,
-                )
-                chunk_frames = _split_download(raw, chunk)
-                if resample_rule:
-                    for sym, frame in chunk_frames.items():
-                        resampled = _resample_ohlcv(frame, resample_rule)
-                        if resampled is not None:
-                            frames[sym] = resampled
-                else:
-                    frames.update(chunk_frames)
+                return chunk, _download_chunk(chunk, use_period), None
             except Exception as exc:
-                logger.warning("borsapy chunk failed (%s): %s", chunk[:3], exc)
-            done += len(chunk)
-            if on_progress:
-                label = chunk[-1] if chunk else ""
-                on_progress(min(done, total), total, label)
+                return chunk, {}, exc
+
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = [pool.submit(_one, chunk) for chunk in chunks]
+            for fut in as_completed(futures):
+                chunk, built, exc = fut.result()
+                if exc is not None:
+                    logger.warning("borsapy chunk failed (%s): %s", chunk[:3], exc)
+                else:
+                    frames.update(built)
+                done += len(chunk)
+                if on_progress:
+                    label = chunk[-1] if chunk else ""
+                    on_progress(min(done, total), total, label)
         return frames
 
     from app.services.ohlcv_store import cached_ohlcv_batch

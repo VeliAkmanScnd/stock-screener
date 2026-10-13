@@ -26,7 +26,9 @@ from app.services.ticker_format import (
     clean_viop_symbol,
     is_bist_universe,
     is_binance_universe,
+    is_fx_universe,
     is_viop_universe,
+    clean_fx_symbol,
 )
 
 logger = logging.getLogger(__name__)
@@ -45,7 +47,7 @@ SYMBOL_CACHE_VERSION = "v3"
 NASDAQ_LIQUID_CACHE = "nasdaq"
 NASDAQ_ALL_CACHE = "nasdaq_all"
 
-INTRADAY_TIMEFRAMES = {"5m", "15m", "30m", "1h"}
+INTRADAY_TIMEFRAMES = {"3m", "5m", "15m", "30m", "1h"}
 INTRADAY_PERIOD = "60d"
 INTRADAY_MIN_BARS = 55
 
@@ -317,6 +319,13 @@ def get_viop_symbols() -> tuple[str, ...]:
 
 
 @lru_cache(maxsize=1)
+def get_fx_symbols() -> tuple[str, ...]:
+    from app.services.fx_data import FX_PAIRS
+
+    return FX_PAIRS
+
+
+@lru_cache(maxsize=1)
 def get_binance_symbols() -> tuple[str, ...]:
     symbols, _ = _resolve_cached(
         "binance", fetch_binance_usdt_symbols_live, "Binance Spot (USDT)"
@@ -361,6 +370,10 @@ def get_universe_meta(universe: str) -> UniverseMeta:
             from app.services.viop_data import fetch_viop_symbols_live
 
             _, meta = _resolve_cached("viop", fetch_viop_symbols_live, "VIOP")
+        elif key == "fx":
+            from app.services.fx_data import FX_PAIRS
+
+            return UniverseMeta(ok=True, source=f"FX majör + XAU/XAG ({len(FX_PAIRS)})", cached=False)
         elif key == "binance":
             _, meta = _resolve_cached(
                 "binance", fetch_binance_usdt_symbols_live, "Binance Spot (USDT)"
@@ -391,6 +404,8 @@ def get_universe_symbols(universe: str) -> list[str]:
         return list(get_bist_symbols())
     if key == "viop":
         return list(get_viop_symbols())
+    if key == "fx":
+        return list(get_fx_symbols())
     if key == "binance":
         return list(get_binance_symbols())
     if key in ("all", "all_us", "us"):
@@ -477,7 +492,7 @@ def refresh_universe_cache(universe: str | None = None) -> dict[str, int]:
     targets = (
         [universe]
         if universe and universe not in ("all_us", "all")
-        else ["sp500", "nasdaq", "nasdaq_all", "nyse", "bist", "viop", "binance", "all_us"]
+        else ["sp500", "nasdaq", "nasdaq_all", "nyse", "bist", "viop", "binance", "fx", "all_us"]
     )
     counts: dict[str, int] = {}
     for name in targets:
@@ -512,6 +527,11 @@ def parse_symbol_list(text: str, universe: str = "sp500") -> list[str]:
         return sorted({clean_viop_symbol(s) for s in raw if s.strip()})
     if is_binance_universe(universe):
         return sorted({clean_binance_symbol(s) for s in raw if s.strip()})
+    if is_fx_universe(universe):
+        from app.services.fx_data import FX_PAIRS
+
+        known = set(FX_PAIRS)
+        return sorted({clean_fx_symbol(s) for s in raw if clean_fx_symbol(s) in known})
     return sorted({_clean_symbol(s) for s in raw if s.strip()})
 
 
@@ -538,6 +558,12 @@ def fetch_ohlcv(
 
         frames = fetch_ohlcv_batch_binance([symbol], timeframe)
         return frames.get(clean_binance_symbol(symbol))
+
+    if is_fx_universe(universe):
+        from app.services.fx_data import fetch_ohlcv_batch_fx
+
+        frames = fetch_ohlcv_batch_fx([symbol], timeframe)
+        return frames.get(clean_fx_symbol(symbol))
 
     from app.services.batch_data import RESAMPLED_SOURCE_INTERVAL, RESAMPLED_SOURCE_PERIOD, RESAMPLED_TIMEFRAMES, _resample_ohlcv
 

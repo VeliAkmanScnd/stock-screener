@@ -9,6 +9,7 @@ import logging
 import threading
 import time
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -17,16 +18,22 @@ from app.database import ScanRun, ScheduledScan, SessionLocal
 from app.services.email_service import send_tv_list_email
 from app.services.telegram_service import send_telegram_scan_result, telegram_configured
 from app.services.scan_executor import execute_scan_config
-from app.services.schedule_helpers import min_run_interval_seconds
+from app.services.schedule_helpers import (
+    WINDOW_INTERVAL_MINUTES,
+    min_run_interval_seconds,
+    normalize_schedule_type,
+)
 
 logger = logging.getLogger(__name__)
 
 # Same-minute scans run together. Start order is VIOP, then BIST, then Nasdaq,
 # but a still-running scan does not hold the next one (a long BIST/Nasdaq must
-# not push the following VIOP past its slot). Same schedule still will not
-# overlap itself.
+# not push the following VIOP past its slot). The same schedule may start the
+# next bar while its previous bar is still running, so a slow pass does not
+# swallow the following close. Two passes at once is the cap.
 _UNIVERSE_PRIORITY = {
     "viop": 0,
+    "fx": 0,
     "bist": 1,
     "nasdaq": 2,
     "nasdaq_all": 2,
@@ -162,6 +169,19 @@ def cleanup_stale_running_scans(
         db.close()
 
 
+def _started_before_current_slot(schedule_type: str | None, started_at: datetime, now: datetime) -> bool:
+    """True when ``started_at`` belongs to an earlier bar than ``now``."""
+    interval = WINDOW_INTERVAL_MINUTES.get(normalize_schedule_type(schedule_type))
+    if not interval:
+        return False
+    tz = ZoneInfo("Europe/Istanbul")
+    local_now = _as_utc(now).astimezone(tz)
+    midnight = local_now.replace(hour=0, minute=0, second=0, microsecond=0)
+    minutes = local_now.hour * 60 + local_now.minute
+    slot_start = midnight + timedelta(minutes=(minutes // interval) * interval)
+    return _as_utc(started_at).astimezone(tz) < slot_start
+
+
 def _duplicate_skip_reason(
     db: Session,
     sched: ScheduledScan,
@@ -195,6 +215,23 @@ def _duplicate_skip_reason(
                 running.id,
                 sched.id,
             )
+        elif _started_before_current_slot(sched.schedule_type, running.started_at, now):
+            others = (
+                db.query(ScanRun)
+                .filter(
+                    ScanRun.scheduled_scan_id == sched.id,
+                    ScanRun.status == "running",
+                    ScanRun.id != running.id,
+                )
+                .count()
+            )
+            if others:
+                return f"already running (run #{running.id})"
+            logger.info(
+                "Schedule %s is still on the previous bar (run #%s); starting this bar",
+                sched.id,
+                running.id,
+            )
         else:
             return f"already running (run #{running.id})"
     elif running:
@@ -210,7 +247,9 @@ def _duplicate_skip_reason(
         )
         .first()
     )
-    if recent:
+    if recent and not _started_before_current_slot(
+        sched.schedule_type, recent.started_at, now
+    ):
         return f"started recently (run #{recent.id})"
 
     if bypass_min_gap:

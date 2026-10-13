@@ -163,6 +163,7 @@
               <option value="bist">BIST — Borsa İstanbul</option>
               <option value="viop">VIOP — vadeli kontratlar</option>
               <option value="binance">Binance Spot (USDT)</option>
+              <option value="fx">FX — majör pariteler + XAU/XAG</option>
               <option value="custom">Özel liste</option>
             </select>
             <button type="button" class="btn secondary btn-block" id="btnRefreshUniverse" title="Hisse listesini internetten yeniden indir">Yenile</button>
@@ -209,8 +210,9 @@
               <option value="nyse">NYSE</option>
               <option value="all_us">ABD (tümü)</option>
               <option value="binance">Binance Spot</option>
+              <option value="fx">FX — majör pariteler</option>
             </select>
-            <p class="hint">BIST için <strong>BIST</strong>, vadeli kontratlar için <strong>VIOP</strong> seçin (ör. F_THYAO1026).</p>
+            <p class="hint">BIST için <strong>BIST</strong>, vadeli kontratlar için <strong>VIOP</strong>, pariteler için <strong>FX</strong> seçin.</p>
           </label>
           <label class="field" id="bistProviderWrap" hidden>
             <span>BIST veri kaynağı</span>
@@ -241,7 +243,9 @@
               <option value="30m">30 dakika</option>
               <option value="15m">15 dakika</option>
               <option value="5m">5 dakika</option>
+              <option value="3m" hidden>3 dakika</option>
             </select>
+            <p class="hint" id="fxTimeframeHint" hidden>FX taraması 3 ve 5 dakikada. Altın ve gümüş COMEX vadeli (GC, SI); Yahoo spot XAUUSD vermiyor.</p>
           </label>
           <label class="field">
             <span id="maxSymbolsLabel">Maks. taranacak hisse</span>
@@ -469,7 +473,7 @@
       </nav>
       <section class="card track-settings-card" id="perfSettings">
         <h2>Takip ayarları</h2>
-        <p class="hint">Yeni eşleşmeler periyot benchmark’ına göre TP/SL alır (15m +2/−1.5, 1s +3/−2, 1g +8/−5). Saat başı high/low güncellenir; TP sonrası ters sinyale veya 10 işlem gününe kadar izlenir.</p>
+        <p class="hint">Yeni eşleşmeler periyot benchmark’ına göre TP/SL alır; hedef her periyotta stopun 1.7 katıdır (15m +2.55/−1.5, 1s +3.4/−2, 1g +8.5/−5). Saat başı high/low güncellenir; TP sonrası ters sinyale veya 10 işlem gününe kadar izlenir.</p>
         <div class="tf-bench-wrap">
           <p class="hint">Periyot TP/SL benchmark — yeni pozisyonlar buna göre açılır</p>
           <div class="tf-bench-grid" id="trackLevelBenchmarks"></div>
@@ -588,7 +592,7 @@
                 <th>SL</th>
                 <th>Ters sinyal</th>
                 <th>TP %</th>
-                <th>Ort. max %</th>
+                <th>Ort. max % · R</th>
                 <th>Ort. TP süre</th>
                 <th>Ort. SL süre</th>
               </tr>
@@ -621,7 +625,7 @@
                 <th>Tarama</th>
                 <th>Filtre</th>
                 <th>Giriş</th>
-                <th>Max %</th>
+                <th>Max % · R</th>
                 <th>R</th>
                 <th>TP süre</th>
                 <th>SL süre</th>
@@ -697,6 +701,7 @@
               <option value="30m">30 dakika</option>
               <option value="15m">15 dakika</option>
               <option value="5m">5 dakika</option>
+              <option value="3m" hidden>3 dakika</option>
             </select>
           </label>
           <div class="schedule-time-fields" id="scheduleTimeWrap">

@@ -110,12 +110,15 @@ def api_universe_info(universe: str = "sp500", refresh: bool = False):
         "bist": "BIST (Borsa İstanbul)",
         "viop": "VIOP (vadeli kontratlar)",
         "binance": "Binance Spot (USDT)",
+        "fx": "FX — majör pariteler + XAU/XAG",
         "custom": "Özel liste",
     }
     if universe == "binance":
         min_count = 50
     elif universe == "viop":
         min_count = 40
+    elif universe == "fx":
+        min_count = 8
     else:
         min_count = 100
     if universe == "custom":

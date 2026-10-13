@@ -11,6 +11,8 @@ import pandas as pd
 from app.services.pine_params import merge_pine_inputs
 
 STRONG_FRESH_MARKER = "__STRONG_FRESH_LAST__"
+FIB_ENTRY = 0.5
+RR_TARGET = 1.7
 
 _EVENT_LABELS = {
     "kirilim": "Strong kırıldı (trend değişimi)",
@@ -111,6 +113,53 @@ def _price_through(price: float, level: float | None, above: bool) -> bool:
     if level is None:
         return False
     return price > level if above else price < level
+
+
+def _fib_price(hedef: float, strong: float, ratio: float) -> float:
+    """Pine: fibHedef - ratio * (fibHedef - fibStrong). 0.5 is the midpoint."""
+    return hedef - ratio * (hedef - strong)
+
+
+def signal_trade_levels(
+    *,
+    buy: bool,
+    strong_low: float | None,
+    strong_high: float | None,
+    weak_high: float | None,
+    weak_low: float | None,
+) -> dict:
+    """Entry is the 0.5 fib between the active strong and the opposite weak.
+
+    Stop stays on that strong. Take-profit is 1.7 times the entry-to-stop risk,
+    so the reward is not the weak level itself.
+    """
+    if buy:
+        stop = strong_low
+        hedef = weak_high
+        if stop is None or hedef is None or not hedef > stop:
+            return {}
+        entry = _fib_price(hedef, stop, FIB_ENTRY)
+        risk = entry - stop
+        if risk <= 0:
+            return {}
+        target = entry + RR_TARGET * risk
+    else:
+        stop = strong_high
+        hedef = weak_low
+        if stop is None or hedef is None or not hedef < stop:
+            return {}
+        entry = _fib_price(hedef, stop, FIB_ENTRY)
+        risk = stop - entry
+        if risk <= 0:
+            return {}
+        target = entry - RR_TARGET * risk
+    return {
+        "fib_entry": float(entry),
+        "fib_target": float(target),
+        "fib_stop": float(stop),
+        "fib_ratio": FIB_ENTRY,
+        "fib_rr": RR_TARGET,
+    }
 
 
 def _swing_known(pivots: np.ndarray, bar: int | None, pivot_len: int, i: int) -> bool | None:
@@ -372,7 +421,7 @@ def strong_fresh_snapshot(df: pd.DataFrame, **params) -> dict:
                     carry_buy[i] = True
                 else:
                     carry_sell[i] = True
-    return _finish(
+    out = _finish(
         empty,
         event,
         side,
@@ -386,6 +435,17 @@ def strong_fresh_snapshot(df: pd.DataFrame, **params) -> dict:
         low,
         close_break,
     )
+    if out.get("strong_buy") or out.get("strong_sell"):
+        out.update(
+            signal_trade_levels(
+                buy=bool(out.get("strong_buy")),
+                strong_low=strong_low,
+                strong_high=strong_high,
+                weak_high=weak_high,
+                weak_low=weak_low,
+            )
+        )
+    return out
 
 
 def _finish(

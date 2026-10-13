@@ -13,10 +13,12 @@ from app.services.http_ssl import default_ssl_context
 from app.services.schedule_helpers import normalize_schedule_type
 from app.services.ticker_format import (
     clean_bist_symbol,
+    clean_fx_symbol,
     clean_us_symbol,
     clean_viop_symbol,
     is_binance_universe,
     is_bist_universe,
+    is_fx_universe,
     is_viop_universe,
     to_binance_pair,
     to_viop_continuous_symbol,
@@ -37,8 +39,18 @@ _EXCHANGE_LABELS = {
     "sp500": "S&P 500",
     "all_us": "NASDAQ + NYSE + S&P 500",
     "binance": "Binance",
+    "fx": "FX",
     "custom": "Özel",
 }
+
+
+def _fx_digits(symbol: str) -> int:
+    pair = clean_fx_symbol(symbol)
+    if pair == "XAUUSD":
+        return 2
+    if pair in ("USDJPY", "XAGUSD"):
+        return 3
+    return 5
 
 
 def _bot_token(override: str | None = None) -> str:
@@ -178,8 +190,20 @@ def send_telegram_document(
     _post("sendDocument", data=data, files=files, bot_token=bot_token)
 
 
-def _tr_price(value: float) -> str:
-    return f"{float(value):.2f}".replace(".", ",")
+def _tr_price(value: float, digits: int = 2) -> str:
+    return f"{float(value):.{int(digits)}f}".replace(".", ",")
+
+
+def _signal_level(signals: dict | None, key: str) -> float | None:
+    if not isinstance(signals, dict):
+        return None
+    try:
+        value = float(signals.get(key))
+    except (TypeError, ValueError):
+        return None
+    if value != value or value <= 0:
+        return None
+    return value
 
 
 def _signal_direction(signals: dict | None) -> str:
@@ -256,9 +280,16 @@ def format_signal_telegram_card(
     timeframe: str | None = None,
     bar_label: str | None = None,
     scan_name: str | None = None,
+    signals: dict | None = None,
 ) -> str:
     yon = "SAT" if str(direction).strip().upper() == "SAT" else "AL"
-    if yon == "AL":
+    giris = _signal_level(signals, "fib_entry")
+    fib_tp = _signal_level(signals, "fib_target")
+    fib_sl = _signal_level(signals, "fib_stop")
+    if giris is not None and fib_tp is not None and fib_sl is not None:
+        tp = fib_tp
+        sl = fib_sl
+    elif yon == "AL":
         tp = price * (1 + _VIOP_TP_PCT)
         sl = price * (1 - _VIOP_SL_PCT)
     else:
@@ -272,8 +303,11 @@ def format_signal_telegram_card(
         contract = to_viop_continuous_symbol(symbol)
     elif market == "binance":
         contract = to_binance_pair(symbol) or str(symbol).strip().upper()
+    elif market == "fx":
+        contract = clean_fx_symbol(symbol)
     else:
         contract = clean_us_symbol(symbol)
+    digits = _fx_digits(contract) if market == "fx" else 2
     lines = []
     if exchange:
         lines.append(f"Borsa\t: {exchange}")
@@ -287,10 +321,16 @@ def format_signal_telegram_card(
     lines.extend(
         [
             f"Kontrat\t: {contract}",
-            f"Fiyat\t: {_tr_price(price)}",
+            f"Fiyat\t: {_tr_price(price, digits)}",
+        ]
+    )
+    if giris is not None:
+        lines.append(f"Giriş\t: {_tr_price(giris, digits)}")
+    lines.extend(
+        [
             f"Yön\t\t: {yon}",
-            f"Kar AL\t: {_tr_price(tp)}",
-            f"Stop\t\t: {_tr_price(sl)}",
+            f"Kar AL\t: {_tr_price(tp, digits)}",
+            f"Stop\t\t: {_tr_price(sl, digits)}",
         ]
     )
     return "\n".join(lines)
@@ -330,6 +370,7 @@ def _signal_cards(
                 timeframe=timeframe,
                 bar_label=_bar_label_from_signals(signals, timeframe),
                 scan_name=scan_name,
+                signals=signals,
             )
         )
     return cards
@@ -386,6 +427,8 @@ def _card_market(
         return "bist"
     if is_binance_universe(src):
         return "binance"
+    if is_fx_universe(src):
+        return "fx"
     return "us"
 
 

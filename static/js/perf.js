@@ -28,6 +28,12 @@ function fmtR(v) {
   return `${sign}${n.toFixed(2)}R`;
 }
 
+function fmtMaxMove(pct, r) {
+  const pctText = fmtPerfPct(pct);
+  if (r == null || Number.isNaN(Number(r))) return pctText;
+  return `${pctText} · ${fmtR(r)}`;
+}
+
 function perfEsc(s) {
   return String(s ?? "")
     .replace(/&/g, "&amp;")
@@ -45,10 +51,11 @@ function renderPerfBenchmarks(rows) {
   host.innerHTML = (rows || [])
     .map((b) => {
       const feat = b.featured ? " featured" : "";
+      const target = typeof benchTargetPct === "function" ? benchTargetPct(b.stop_pct) : b.target_pct;
       return `<div class="tf-bench-chip${feat}">
         <strong>${perfEsc(b.label)}</strong>
-        <span>+${b.target_pct}% / −${b.stop_pct}%</span>
-        <span>${b.r_multiple != null ? `${b.r_multiple}R` : ""}</span>
+        <span>+${target}% / −${b.stop_pct}%</span>
+        <span>1.7R</span>
       </div>`;
     })
     .join("");
@@ -110,7 +117,7 @@ function renderPerfGroups(groups, minSample) {
         <td>${g.sl_count}</td>
         <td>${g.opposite_count}</td>
         <td class="${Number(g.win_rate) >= 50 ? "track-pct-up" : ""}">${fmtPerfPct(g.win_rate)}</td>
-        <td class="${Number(g.avg_mfe_pct) >= 0 ? "track-pct-up" : "track-pct-down"}">${fmtPerfPct(g.avg_mfe_pct)}</td>
+        <td class="${Number(g.avg_mfe_pct) >= 0 ? "track-pct-up" : "track-pct-down"}">${fmtMaxMove(g.avg_mfe_pct, g.avg_mfe_r)}</td>
         <td>${fmtHours(g.avg_hours_to_tp)}</td>
         <td>${fmtHours(g.avg_hours_to_sl)}</td>
       </tr>`;
@@ -135,7 +142,7 @@ function renderPerfHistory(rows) {
         <td>${perfEsc(r.source_label || "—")}</td>
         <td>${perfEsc(r.indicator_label || "—")}</td>
         <td>${r.entry_at ? String(r.entry_at).slice(0, 16).replace("T", " ") : "—"}</td>
-        <td class="${Number(r.mfe_pct) >= 0 ? "track-pct-up" : "track-pct-down"}">${fmtPerfPct(r.mfe_pct)}</td>
+        <td class="${Number(r.mfe_pct) >= 0 ? "track-pct-up" : "track-pct-down"}">${fmtMaxMove(r.mfe_pct, r.mfe_r)}</td>
         <td class="${rCls}">${fmtR(r.realized_r)}</td>
         <td>${fmtHours(r.hours_to_tp)}</td>
         <td>${fmtHours(r.hours_to_sl)}</td>
