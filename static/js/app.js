@@ -1944,7 +1944,7 @@ async function loadScheduledScans() {
             ? formatLocalDateTime(nextAt, tz)
             : r.enabled
               ? "—"
-              : "Durduruldu";
+              : '<span class="schedule-stopped-label">Durduruldu</span>';
         if (r.enabled && r.window) {
           const w = r.window;
           if (!w.inside_window && w.reason) {
@@ -1954,8 +1954,12 @@ async function loadScheduledScans() {
           }
         }
         const status = formatScheduleLastStatus(r);
-        return `<tr>
-          <td><strong>${r.name}</strong> ${status}</td>
+        const stopped = !r.enabled;
+        const stoppedMark = stopped
+          ? '<span class="status-pill stopped">Durduruldu</span> '
+          : "";
+        return `<tr class="${stopped ? "is-stopped" : ""}">
+          <td>${stoppedMark}<strong>${escapeHtml(r.name)}</strong> ${status}</td>
           <td>${r.owner_username || "—"}</td>
           <td>${SCHEDULE_TYPE_LABELS[r.schedule_type] || r.schedule_type}</td>
           <td>${formatScheduleTime(r)}</td>
@@ -1965,7 +1969,7 @@ async function loadScheduledScans() {
           <td class="scheduled-actions">
             <button type="button" class="btn secondary btn-sm" data-edit-sched="${r.id}">Düzenle</button>
             <button type="button" class="btn secondary btn-sm" data-run-now="${r.id}">Şimdi</button>
-            <button type="button" class="btn secondary btn-sm" data-toggle="${r.id}" data-enabled="${r.enabled ? "1" : "0"}">${r.enabled ? "Durdur" : "Başlat"}</button>
+            <button type="button" class="btn ${stopped ? "btn-start" : "secondary"} btn-sm" data-toggle="${r.id}" data-enabled="${r.enabled ? "1" : "0"}">${stopped ? "Başlat" : "Durdur"}</button>
             <button type="button" class="btn danger btn-sm" data-delete-sched="${r.id}">Sil</button>
           </td>
         </tr>`;

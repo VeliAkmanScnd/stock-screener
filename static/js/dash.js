@@ -226,8 +226,8 @@ function renderDashScans(rows) {
         live && prog
           ? `<span class="dash-row-progress">${dashEsc(dashPhaseLabel(prog.phase))} — ${dashEsc(prog.message || "")}</span>`
           : "";
-      return `<tr class="dash-row-link" data-goto="schedules">
-        <td><strong>${dashEsc(r.name)}</strong>${r.enabled ? "" : ' <span class="status-pill">durdu</span>'}${running}${progLine}</td>
+      return `<tr class="dash-row-link${r.enabled ? "" : " is-stopped"}" data-goto="schedules">
+        <td>${r.enabled ? "" : '<span class="status-pill stopped">Durduruldu</span> '}<strong>${dashEsc(r.name)}</strong>${running}${progLine}</td>
         <td>${dashEsc(r.timeframe_label)}</td>
         <td>${dashEsc(r.universe_label)}</td>
         <td>${r.runs || 0}${idle ? ' <span class="dash-muted">dönemde yok</span>' : ""}</td>
