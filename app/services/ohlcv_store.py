@@ -203,7 +203,7 @@ def cached_ohlcv_batch(
             continue
         fetched_at, frame = loaded
         if now - fetched_at <= FRESH_WITHIN and (
-            not (namespace.startswith("bp_") or namespace.startswith("yf_fx"))
+            not (namespace.startswith("bp_") or namespace.startswith(("yf_fx", "oanda_fx")))
             or fetched_after_bar_close(frame, fetched_at, timeframe)
         ):
             base[sym] = frame

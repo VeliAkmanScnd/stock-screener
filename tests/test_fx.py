@@ -21,13 +21,13 @@ class FxUniverseTests(unittest.TestCase):
         self.assertIn("XAUUSD", FX_PAIRS)
         self.assertIn("XAGUSD", FX_PAIRS)
 
-    def test_yahoo_symbols(self):
-        self.assertEqual(yf_symbol("EURUSD"), "EURUSD=X")
-        self.assertEqual(yf_symbol("USDJPY"), "USDJPY=X")
-        self.assertEqual(to_yf_ticker("XAUUSD", "fx"), "GC=F")
-        self.assertEqual(to_yf_ticker("XAGUSD", "fx"), "SI=F")
-        self.assertEqual(display_symbol("GC=F"), "XAUUSD")
-        self.assertEqual(display_symbol("SI=F"), "XAGUSD")
+    def test_oanda_symbols(self):
+        self.assertEqual(yf_symbol("EURUSD"), "OANDA:EURUSD")
+        self.assertEqual(yf_symbol("USDJPY"), "OANDA:USDJPY")
+        self.assertEqual(to_yf_ticker("XAUUSD", "fx"), "OANDA:XAUUSD")
+        self.assertEqual(to_yf_ticker("XAGUSD", "fx"), "OANDA:XAGUSD")
+        self.assertEqual(display_symbol("OANDA:XAUUSD"), "XAUUSD")
+        self.assertEqual(display_symbol("OANDA:XAGUSD"), "XAGUSD")
 
     def test_aliases(self):
         self.assertEqual(clean_fx_symbol("XAU"), "XAUUSD")

@@ -12,9 +12,11 @@ from app.services.price_utils import last_close_price, last_quote, yf_frame_for_
 from app.services.ticker_format import (
     clean_binance_symbol,
     clean_bist_symbol,
+    clean_fx_symbol,
     clean_viop_symbol,
     is_binance_universe,
     is_bist_universe,
+    is_fx_universe,
     is_viop_universe,
     to_yf_ticker,
 )
@@ -52,6 +54,20 @@ def fetch_latest_quotes(
             missing = [s for s in symbols if clean_binance_symbol(s) not in out]
             fallback = fetch_latest_quotes(missing, universe, interval="1d")
             out.update(fallback)
+        return out
+
+    if is_fx_universe(universe):
+        from app.services.fx_data import fetch_ohlcv_batch_fx
+
+        tf = "1h" if interval == "1h" else "1d"
+        frames = fetch_ohlcv_batch_fx(symbols, tf)
+        for sym in symbols:
+            key = clean_fx_symbol(sym)
+            quote = last_quote(frames.get(key))
+            if quote is None:
+                quote = _quote_from_close(last_close_price(frames.get(key)))
+            if quote is not None:
+                out[key] = quote
         return out
 
     if is_viop_universe(universe):

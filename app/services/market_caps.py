@@ -32,10 +32,10 @@ def _fetch_one_cap_yf(yf_ticker: str, symbol: str) -> tuple[str, float | None]:
 
 
 def fetch_market_caps(symbols: list[str], universe: str = "sp500") -> dict[str, float]:
-    from app.services.ticker_format import to_yf_ticker
+    from app.services.ticker_format import is_fx_universe, to_yf_ticker
 
     caps: dict[str, float] = {}
-    if not symbols:
+    if not symbols or is_fx_universe(universe):
         return caps
 
     workers = min(MAX_CAP_WORKERS, max(4, len(symbols) // 20))
