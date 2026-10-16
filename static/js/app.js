@@ -398,15 +398,26 @@ function isFxMarket(universe) {
 
 function syncFxTimeframe() {
   const fx = isFxMarket();
-  document.querySelectorAll('#timeframe option[value="3m"], #scheduleType option[value="3m"]').forEach((opt) => {
-    opt.hidden = !fx;
+  document.querySelectorAll("#timeframe, #scheduleType").forEach((sel) => {
+    let opt = sel.querySelector('option[value="3m"]');
+    if (!fx) {
+      if (sel.value === "3m") sel.value = "5m";
+      opt?.remove();
+      return;
+    }
+    if (!opt) {
+      opt = document.createElement("option");
+      opt.value = "3m";
+      opt.textContent = "3 dakika";
+      const five = sel.querySelector('option[value="5m"]');
+      if (five) five.after(opt);
+      else sel.append(opt);
+    }
+    opt.hidden = false;
+    opt.disabled = false;
   });
   const hint = $("#fxTimeframeHint");
   if (hint) hint.hidden = !fx;
-  if (!fx) {
-    if ($("#timeframe")?.value === "3m") $("#timeframe").value = "5m";
-    if ($("#scheduleType")?.value === "3m") $("#scheduleType").value = "5m";
-  }
 }
 
 function isBinanceMarket(universe) {
@@ -1010,6 +1021,8 @@ function renderPineInputField(p, value) {
       sell: "SELL",
       both: "BUY veya SELL",
       "": "Grafik zaman dilimi",
+      "3": "3 dakika",
+      "5": "5 dakika",
       "15": "15 dakika",
       "60": "1 saat",
       "120": "2 saat",
@@ -1587,6 +1600,7 @@ function resetScheduleModalForCreate() {
   if ($("#scheduleType")) {
     $("#scheduleType").value = canonicalScheduleType(tf);
   }
+  syncFxTimeframe();
   setScheduleWeekdays([0, 1, 2, 3, 4, 5, 6]);
   if (isFxMarket()) {
     if ($("#scheduleStartHour")) $("#scheduleStartHour").value = "0";
@@ -2357,6 +2371,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     const pineHelpBist = $("#pineHelpBist");
     if (pineHelpBist) pineHelpBist.hidden = getCustomSourceUniverse() !== "bist";
     syncBistProviderUI();
+    syncFxTimeframe();
     loadUniverseInfo();
   });
 

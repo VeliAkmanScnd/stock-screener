@@ -218,6 +218,7 @@ def schedule_config():
             {"id": "30m", "label": "30 dakika"},
             {"id": "15m", "label": "15 dakika"},
             {"id": "5m", "label": "5 dakika"},
+            {"id": "3m", "label": "3 dakika"},
         ],
     }
 
