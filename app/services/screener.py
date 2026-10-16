@@ -295,8 +295,14 @@ def scan_dataframe(
                     chart_tf=req.timeframe,
                     **bias_ts_params_from_script(pine_code, overrides),
                 )
+                shift = int(snap.pop("bias_bar_shift", 0) or 0)
                 signals.update(snap)
                 pine_ok = bool(snap.get("pine_al"))
+                if pine_ok and shift == 1 and len(df) >= 2:
+                    signals.update(
+                        signal_bar_fields(df.iloc[:-1], req.timeframe, universe=market)
+                    )
+                    price_shift = True
             elif pine_source == "strong_fresh" and pine_code:
                 from app.services.pine_strong_fresh import (
                     strong_fresh_params_from_script,
@@ -321,8 +327,14 @@ def scan_dataframe(
                 )
 
                 snap = guven_snapshot(df, **guven_params_from_script(pine_code, overrides))
+                shift = int(snap.pop("guven_bar_shift", 0) or 0)
                 signals.update(snap)
                 pine_ok = bool(snap.get("pine_al"))
+                if pine_ok and shift == 1 and len(df) >= 2:
+                    signals.update(
+                        signal_bar_fields(df.iloc[:-1], req.timeframe, universe=market)
+                    )
+                    price_shift = True
             elif pine_source == "candle_green_first" and pine_code:
                 from app.services.pine_fibo import fibo_params_from_script, fibo_trend_snapshot
 

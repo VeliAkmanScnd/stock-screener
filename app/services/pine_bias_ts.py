@@ -246,6 +246,33 @@ def bias_ts_series(
     }
 
 
+def _hold_previous_signal(
+    buy: bool, sell: bool, prev_buy: bool, prev_sell: bool, side: str
+) -> tuple[bool, bool, int]:
+    """Keep a one-bar signal visible on the next closed bar.
+
+    A 15m scan that is still running when the next slot starts lands on a quiet
+    bar and Telegram is skipped. The card stays on the signal bar.
+    """
+    held = False
+    if not buy and not sell:
+        if prev_buy:
+            buy = True
+            held = True
+        elif prev_sell:
+            sell = True
+            held = True
+    if side == "sell":
+        buy = False
+        if held and not sell:
+            held = False
+    elif side == "buy":
+        sell = False
+        if held and not buy:
+            held = False
+    return buy, sell, 1 if held else 0
+
+
 def bias_ts_snapshot(df: pd.DataFrame, **params) -> dict:
     side = params.pop("side", "both")
     chart_tf = params.pop("chart_tf", None)
@@ -256,10 +283,14 @@ def bias_ts_snapshot(df: pd.DataFrame, **params) -> dict:
             "bias_ts_buy": False,
             "bias_ts_sell": False,
             "bias_ts_side": side,
+            "bias_bar_shift": 0,
         }
     s = bias_ts_series(df, chart_tf=chart_tf, **params)
     buy = bool(s["buy_sig"].iloc[-1])
     sell = bool(s["sell_sig"].iloc[-1])
+    prev_buy = bool(s["buy_sig"].iloc[-2]) if len(s["buy_sig"]) >= 2 else False
+    prev_sell = bool(s["sell_sig"].iloc[-2]) if len(s["sell_sig"]) >= 2 else False
+    buy, sell, shift = _hold_previous_signal(buy, sell, prev_buy, prev_sell, side)
     if side == "sell":
         ok = sell
     elif side == "both":
@@ -275,6 +306,7 @@ def bias_ts_snapshot(df: pd.DataFrame, **params) -> dict:
         "bias_bull": bool(s["bias_bull"].iloc[-1]),
         "ts_green": bool(s["ts_green"].iloc[-1]),
         "bias_dist_pct": float(dist) if pd.notna(dist) else None,
+        "bias_bar_shift": shift,
     }
 
 
