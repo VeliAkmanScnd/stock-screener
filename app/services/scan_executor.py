@@ -43,6 +43,7 @@ def execute_scan_config(
     config: dict[str, Any],
     db: Session,
     progress_callback: Callable[[str, int, int, str], None] | None = None,
+    on_match: Callable[..., None] | None = None,
 ) -> dict[str, Any]:
     """Execute scan; returns same shape as POST /api/scan (without raising HTTPException)."""
     body = scan_body_from_dict(config)
@@ -121,7 +122,12 @@ def execute_scan_config(
     )
 
     results, stats = run_scan(
-        req, pine_condition, pine_source, pine_code, progress_callback=progress_callback
+        req,
+        pine_condition,
+        pine_source,
+        pine_code,
+        progress_callback=progress_callback,
+        on_match=on_match,
     )
 
     pine_inputs_applied = (

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Callable
@@ -17,8 +18,13 @@ from app.services.ticker_format import clean_bist_symbol
 logger = logging.getLogger(__name__)
 
 OHLCV_COLS = ["Open", "High", "Low", "Close", "Volume"]
-BORSA_PY_CHUNK_SIZE = 25
+# One symbol per task so a finished contract can be scanned immediately.
+# Four sockets is the rate TradingView accepts; a fifth handshake returns 429.
+BORSA_PY_CHUNK_SIZE = 1
 BORSA_PY_WORKERS = 4
+_TV_SLOTS = threading.Semaphore(BORSA_PY_WORKERS)
+_flight_lock = threading.Lock()
+_flights: dict[tuple, dict] = {}
 # 15m/30m are built from 5m. 40 calendar days is enough for the strong-fresh
 # lookback and is much smaller than a 60d cold download of the whole board.
 _RESAMPLE_SOURCE_PERIOD = "40d"
@@ -157,6 +163,7 @@ def fetch_ohlcv_batch_borsapy(
     on_progress: Callable[[int, int, str], None] | None = None,
     progress_offset: int = 0,
     progress_total: int | None = None,
+    on_frames: Callable[[dict[str, pd.DataFrame]], None] | None = None,
 ) -> dict[str, pd.DataFrame]:
     if not is_borsapy_available():
         raise ImportError("borsapy yüklü değil — pip install borsapy")
@@ -191,13 +198,14 @@ def fetch_ohlcv_batch_borsapy(
     asof = pd.Timestamp.now(tz="Europe/Istanbul")
 
     def _download_chunk(chunk: list[str], use_period: str) -> dict[str, pd.DataFrame]:
-        raw = bp.download(
-            chunk,
-            period=use_period,
-            interval=interval,
-            group_by="ticker",
-            progress=False,
-        )
+        with _TV_SLOTS:
+            raw = bp.download(
+                chunk,
+                period=use_period,
+                interval=interval,
+                group_by="ticker",
+                progress=False,
+            )
         chunk_frames = _split_download(raw, chunk)
         if not resample_rule:
             return chunk_frames
@@ -213,6 +221,7 @@ def fetch_ohlcv_batch_borsapy(
         use_period: str,
         offset: int,
         total: int,
+        on_chunk: Callable[[dict[str, pd.DataFrame]], None] | None = None,
     ) -> dict[str, pd.DataFrame]:
         chunks = [
             batch[i : i + BORSA_PY_CHUNK_SIZE]
@@ -236,8 +245,10 @@ def fetch_ohlcv_batch_borsapy(
                 chunk, built, exc = fut.result()
                 if exc is not None:
                     logger.warning("borsapy chunk failed (%s): %s", chunk[:3], exc)
-                else:
+                elif built:
                     frames.update(built)
+                    if on_chunk:
+                        on_chunk(built)
                 done += len(chunk)
                 if on_progress:
                     label = chunk[-1] if chunk else ""
@@ -246,14 +257,41 @@ def fetch_ohlcv_batch_borsapy(
 
     from app.services.ohlcv_store import cached_ohlcv_batch
 
-    return cached_ohlcv_batch(
-        namespace=namespace,
-        timeframe=timeframe,
-        symbols=clean_syms,
-        min_bars=min_bars,
-        full_period=period,
-        fetch_period=fetch_period,
-        on_progress=on_progress,
-        progress_offset=progress_offset,
-        progress_total=progress_total,
-    )
+    flight_key = (namespace, timeframe, tuple(sorted(clean_syms)))
+    with _flight_lock:
+        flight = _flights.get(flight_key)
+        if flight is None:
+            flight = {"event": threading.Event(), "box": {}}
+            _flights[flight_key] = flight
+            leader = True
+        else:
+            leader = False
+    if not leader:
+        flight["event"].wait()
+        if flight["box"].get("error") is not None:
+            raise flight["box"]["error"]
+        frames = flight["box"].get("frames") or {}
+        return {sym: frame.copy() for sym, frame in frames.items()}
+
+    try:
+        frames = cached_ohlcv_batch(
+            namespace=namespace,
+            timeframe=timeframe,
+            symbols=clean_syms,
+            min_bars=min_bars,
+            full_period=period,
+            fetch_period=fetch_period,
+            on_progress=on_progress,
+            progress_offset=progress_offset,
+            progress_total=progress_total,
+            on_frames=on_frames,
+        )
+        flight["box"]["frames"] = frames
+        return frames
+    except Exception as exc:
+        flight["box"]["error"] = exc
+        raise
+    finally:
+        flight["event"].set()
+        with _flight_lock:
+            _flights.pop(flight_key, None)

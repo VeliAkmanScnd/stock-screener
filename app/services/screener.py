@@ -377,6 +377,7 @@ def run_scan(
     pine_source: str | None = None,
     pine_code: str | None = None,
     progress_callback: Callable[[str, int, int, str], None] | None = None,
+    on_match: Callable[[ScanResult], None] | None = None,
 ) -> tuple[list[ScanResult], ScanStats]:
     def report(phase: str, done: int, total: int, detail: str = "") -> None:
         if progress_callback:
@@ -391,46 +392,49 @@ def run_scan(
         report("downloading", done, total, symbol)
 
     bist_provider = req.bist_data_provider if is_bist_universe(market) else None
+    needs_cap = _filter_enabled(req.filters, "market_cap_min")
+    caps = fetch_market_caps(list(symbols), market) if needs_cap else {}
+    seen: set[str] = set()
+    results: list[ScanResult] = []
+
+    def _consume(frames: dict[str, pd.DataFrame]) -> None:
+        for sym, df in frames.items():
+            if sym in seen:
+                continue
+            seen.add(sym)
+            ok, reason = validate_active(df, req.timeframe, market)
+            if not ok:
+                stats.skipped_inactive += 1
+                key = reason or "inactive"
+                stats.skip_reasons[key] = stats.skip_reasons.get(key, 0) + 1
+                continue
+            stats.scanned += 1
+            row = scan_dataframe(
+                sym,
+                df,
+                req,
+                caps.get(sym),
+                pine_condition,
+                pine_source,
+                pine_code,
+            )
+            if row.matched:
+                results.append(row)
+                stats.matched += 1
+                if on_match:
+                    on_match(row)
+            report("scanning", stats.scanned, max(stats.scanned, len(symbols)), sym)
+
     frames = fetch_ohlcv_batch(
         symbols,
         req.timeframe,
         market,
         on_progress=on_download,
         bist_provider=bist_provider,
+        on_frames=_consume,
     )
     stats.downloaded = len(frames)
-
-    active: dict[str, pd.DataFrame] = {}
-    for sym, df in frames.items():
-        ok, reason = validate_active(df, req.timeframe, market)
-        if ok:
-            active[sym] = df
-        else:
-            stats.skipped_inactive += 1
-            key = reason or "inactive"
-            stats.skip_reasons[key] = stats.skip_reasons.get(key, 0) + 1
-
-    needs_cap = _filter_enabled(req.filters, "market_cap_min")
-    caps = fetch_market_caps(list(active.keys()), market) if needs_cap else {}
-
-    results: list[ScanResult] = []
-    active_items = list(active.items())
-    total_scan = len(active_items)
-    for idx, (sym, df) in enumerate(active_items, start=1):
-        stats.scanned += 1
-        r = scan_dataframe(
-            sym,
-            df,
-            req,
-            caps.get(sym),
-            pine_condition,
-            pine_source,
-            pine_code,
-        )
-        if r.matched:
-            results.append(r)
-            stats.matched += 1
-        report("scanning", idx, total_scan, sym)
+    _consume(frames)
 
     results.sort(key=lambda x: x.symbol)
     return results, stats

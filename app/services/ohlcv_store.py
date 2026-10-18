@@ -178,10 +178,11 @@ def cached_ohlcv_batch(
     symbols: list[str],
     min_bars: int,
     full_period: str,
-    fetch_period: Callable[[list[str], str, int, int], dict[str, pd.DataFrame]],
+    fetch_period: Callable[..., dict[str, pd.DataFrame]],
     on_progress: Callable[[int, int, str], None] | None = None,
     progress_offset: int = 0,
     progress_total: int | None = None,
+    on_frames: Callable[[dict[str, pd.DataFrame]], None] | None = None,
 ) -> dict[str, pd.DataFrame]:
     """Return frames, downloading a short tail when history is already stored."""
     if not symbols:
@@ -231,12 +232,9 @@ def cached_ohlcv_batch(
 
     out = dict(base)
 
-    def _take(batch: list[str], period: str, *, replace: bool) -> None:
-        nonlocal done
-        if not batch:
-            return
-        got = fetch_period(batch, period, done, total)
-        for sym, frame in got.items():
+    def _store(frames: dict[str, pd.DataFrame], *, replace: bool) -> dict[str, pd.DataFrame]:
+        ready: dict[str, pd.DataFrame] = {}
+        for sym, frame in frames.items():
             if replace:
                 merged = _naive_index(frame)
             else:
@@ -245,6 +243,33 @@ def cached_ohlcv_batch(
                 continue
             _save(namespace, timeframe, sym, merged)
             out[sym] = merged
+            ready[sym] = merged
+        return ready
+
+    def _take(batch: list[str], period: str, *, replace: bool) -> None:
+        nonlocal done
+        if not batch:
+            return
+        consumed = False
+
+        def _on_chunk(frames: dict[str, pd.DataFrame]) -> None:
+            nonlocal consumed
+            consumed = True
+            ready = _store(frames, replace=replace)
+            if on_frames and ready:
+                on_frames(ready)
+
+        got = fetch_period(
+            batch,
+            period,
+            done,
+            total,
+            on_chunk=_on_chunk if on_frames else None,
+        )
+        if not consumed:
+            ready = _store(got, replace=replace)
+            if on_frames and ready:
+                on_frames(ready)
         done += len(batch)
 
     _take(full, full_period, replace=True)

@@ -14,7 +14,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.database import ScanRun, ScheduledScan, SessionLocal
+from app.database import ScanRun, ScanSignalLast, ScheduledScan, SessionLocal
 from app.services.email_service import send_tv_list_email
 from app.services.telegram_service import send_telegram_scan_result, telegram_configured
 from app.services.scan_executor import execute_scan_config
@@ -496,7 +496,64 @@ def _execute_scheduled_scan(
         progress = make_schedule_progress_callback(scheduled_id)
 
         config = json.loads(sched.config_json)
-        payload = execute_scan_config(config, db, progress_callback=progress)
+        from app.services.signal_dedupe import _direction, _price_key
+
+        repeat_rows = (
+            db.query(ScanSignalLast)
+            .filter(
+                ScanSignalLast.user_id == sched.user_id,
+                ScanSignalLast.fingerprint == f"s:{int(sched.id)}",
+            )
+            .all()
+        )
+        repeat_prices = {
+            (str(row.symbol).upper(), str(row.direction or "AL")): round(float(row.price), 2)
+            for row in repeat_rows
+        }
+        streamed: set[tuple[str, str, float]] = set()
+
+        def _on_match(row) -> None:
+            item = {"symbol": row.symbol, "price": row.price, "signals": row.signals}
+            symbol = str(row.symbol or "").strip().upper()
+            price = _price_key(row.price)
+            if not symbol or price is None:
+                return
+            direction = _direction(row.signals)
+            key = (symbol, direction, price)
+            if key in streamed:
+                return
+            if repeat_prices.get((symbol, direction)) == price:
+                return
+            if not notify_telegram:
+                return
+            if not (
+                telegram_configured()
+                or (getattr(sched, "telegram_to", None) or "").strip()
+                or (getattr(sched, "telegram_bot_token", None) or "").strip()
+            ):
+                return
+            try:
+                send_telegram_scan_result(
+                    name=sched.name,
+                    universe=str(config.get("universe") or ""),
+                    timeframe=str(config.get("timeframe") or ""),
+                    match_count=1,
+                    tv_list_text="",
+                    extra_chat_ids=getattr(sched, "telegram_to", None),
+                    filename=f"tv_{sched.id}_live.txt",
+                    results=[item],
+                    custom_source_universe=config.get("custom_source_universe"),
+                    bot_token=getattr(sched, "telegram_bot_token", None),
+                )
+            except Exception:
+                logger.exception("Early telegram failed for %s", symbol)
+                return
+            streamed.add(key)
+
+        notify_telegram = bool(getattr(sched, "notify_telegram", True))
+        payload = execute_scan_config(
+            config, db, progress_callback=progress, on_match=_on_match
+        )
         from app.services.signal_dedupe import apply_repeat_price_filter, scan_fingerprint
 
         update_schedule_progress(
@@ -571,10 +628,18 @@ def _execute_scheduled_scan(
                 notify_errors.append(f"e-posta: {exc}")
                 logger.exception("Email failed for schedule %s", scheduled_id)
 
-        telegram_sent = False
-        telegram_sent_count = 0
+        telegram_sent = bool(streamed)
+        telegram_sent_count = len(streamed)
         notify_telegram = bool(getattr(sched, "notify_telegram", True))
-        if notify_telegram and (
+        pending_results = []
+        for item in list(payload.get("results") or []):
+            symbol = str(item.get("symbol") or "").strip().upper()
+            price = _price_key(item.get("price"))
+            direction = _direction(item.get("signals"))
+            if price is None or (symbol, direction, price) in streamed:
+                continue
+            pending_results.append(item)
+        if notify_telegram and pending_results and (
             telegram_configured()
             or (getattr(sched, "telegram_to", None) or "").strip()
             or (getattr(sched, "telegram_bot_token", None) or "").strip()
@@ -584,15 +649,15 @@ def _execute_scheduled_scan(
                     name=sched.name,
                     universe=str(payload.get("universe") or ""),
                     timeframe=str(payload.get("timeframe") or ""),
-                    match_count=match_count,
+                    match_count=len(pending_results),
                     tv_list_text=tv_text or "",
                     extra_chat_ids=getattr(sched, "telegram_to", None),
                     filename=f"tv_{sched.id}_{run_row.id}.txt",
-                    results=list(payload.get("results") or []),
+                    results=pending_results,
                     custom_source_universe=payload.get("custom_source_universe"),
                     bot_token=getattr(sched, "telegram_bot_token", None),
                 )
-                telegram_sent_count = int(sent or 0)
+                telegram_sent_count += int(sent or 0)
                 telegram_sent = telegram_sent_count > 0
                 if match_count > 0 and not telegram_sent:
                     notify_errors.append(

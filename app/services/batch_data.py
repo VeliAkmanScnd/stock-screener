@@ -255,6 +255,7 @@ def fetch_yfinance_ohlcv_batch(
     on_progress: Callable[[int, int, str], None] | None = None,
     progress_offset: int = 0,
     progress_total: int | None = None,
+    on_frames: Callable[[dict[str, pd.DataFrame]], None] | None = None,
 ) -> dict[str, pd.DataFrame]:
     """Yahoo Finance batch download (US, BIST .IS, etc.)."""
     if not symbols:
@@ -279,7 +280,9 @@ def fetch_yfinance_ohlcv_batch(
         use_period: str,
         offset: int,
         total: int,
+        on_chunk: Callable[[dict[str, pd.DataFrame]], None] | None = None,
     ) -> dict[str, pd.DataFrame]:
+        del on_chunk
         return _yf_download_period(
             batch,
             universe=universe,
@@ -301,6 +304,7 @@ def fetch_yfinance_ohlcv_batch(
         on_progress=on_progress,
         progress_offset=progress_offset,
         progress_total=progress_total,
+        on_frames=on_frames,
     )
 
 
@@ -310,6 +314,7 @@ def fetch_ohlcv_batch(
     universe: str = "sp500",
     on_progress: Callable[[int, int, str], None] | None = None,
     bist_provider: str | None = None,
+    on_frames: Callable[[dict[str, pd.DataFrame]], None] | None = None,
 ) -> dict[str, pd.DataFrame]:
     """Download many symbols in chunks (much faster than one-by-one)."""
     if not symbols:
@@ -318,7 +323,9 @@ def fetch_ohlcv_batch(
     if is_fx_universe(universe):
         from app.services.fx_data import fetch_ohlcv_batch_fx
 
-        return fetch_ohlcv_batch_fx(symbols, timeframe, on_progress=on_progress)
+        return fetch_ohlcv_batch_fx(
+            symbols, timeframe, on_progress=on_progress, on_frames=on_frames
+        )
 
     if is_binance_universe(universe):
         from app.services.binance_data import fetch_ohlcv_batch_binance
@@ -328,7 +335,9 @@ def fetch_ohlcv_batch(
     if is_viop_universe(universe):
         from app.services.viop_data import fetch_ohlcv_batch_viop
 
-        frames = fetch_ohlcv_batch_viop(symbols, timeframe, on_progress=on_progress)
+        frames = fetch_ohlcv_batch_viop(
+            symbols, timeframe, on_progress=on_progress, on_frames=on_frames
+        )
         return {s: f for s, f in frames.items() if len(f) >= 30}
 
     if is_bist_universe(universe):
@@ -337,11 +346,17 @@ def fetch_ohlcv_batch(
 
         min_bars = MIN_BARS.get(timeframe, 30)
         frames = fetch_ohlcv_batch_bist(
-            symbols, timeframe, on_progress=on_progress, provider_override=bist_provider
+            symbols,
+            timeframe,
+            on_progress=on_progress,
+            provider_override=bist_provider,
+            on_frames=on_frames,
         )
         return {s: f for s, f in frames.items() if len(f) >= min_bars}
 
-    return fetch_yfinance_ohlcv_batch(symbols, timeframe, universe, on_progress=on_progress)
+    return fetch_yfinance_ohlcv_batch(
+        symbols, timeframe, universe, on_progress=on_progress, on_frames=on_frames
+    )
 
 
 def bars_for_minutes(timeframe: str, minutes: int) -> int:

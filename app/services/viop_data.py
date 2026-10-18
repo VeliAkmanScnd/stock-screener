@@ -175,6 +175,7 @@ def fetch_ohlcv_batch_viop(
     symbols: list[str],
     timeframe: str,
     on_progress: Callable[[int, int, str], None] | None = None,
+    on_frames: Callable[[dict[str, pd.DataFrame]], None] | None = None,
 ) -> dict[str, pd.DataFrame]:
     """Batch OHLCV: every contract maps to its continuous (TOASO1!), never cash equity."""
     clean = [clean_viop_symbol(s) for s in symbols if clean_viop_symbol(s)]
@@ -197,8 +198,21 @@ def fetch_ohlcv_batch_viop(
     try:
         from app.services.borsapy_client import fetch_ohlcv_batch_borsapy
 
+        def _on_cont(frames: dict[str, pd.DataFrame]) -> None:
+            if not on_frames:
+                return
+            mapped: dict[str, pd.DataFrame] = {}
+            for cont, frame in frames.items():
+                for code in by_cont.get(cont, []):
+                    mapped[code] = frame
+            if mapped:
+                on_frames(mapped)
+
         fetched = fetch_ohlcv_batch_borsapy(
-            unique_cont, timeframe, on_progress=on_progress
+            unique_cont,
+            timeframe,
+            on_progress=on_progress,
+            on_frames=_on_cont if on_frames else None,
         )
         for cont in unique_cont:
             frame = _pick_continuous(fetched, cont)

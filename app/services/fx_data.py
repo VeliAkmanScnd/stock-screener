@@ -98,12 +98,15 @@ def _download_spec(timeframe: str) -> tuple[str, str, str | None]:
 def _download_one(symbol: str, period: str, interval: str) -> pd.DataFrame | None:
     from borsapy._providers.tradingview import get_tradingview_provider
 
-    raw = get_tradingview_provider().get_history(
-        symbol=symbol,
-        period=period,
-        interval=interval,
-        exchange=_EXCHANGE,
-    )
+    from app.services.borsapy_client import _TV_SLOTS
+
+    with _TV_SLOTS:
+        raw = get_tradingview_provider().get_history(
+            symbol=symbol,
+            period=period,
+            interval=interval,
+            exchange=_EXCHANGE,
+        )
     return _frame(raw)
 
 
@@ -111,6 +114,7 @@ def fetch_ohlcv_batch_fx(
     symbols: list[str],
     timeframe: str,
     on_progress: Callable[[int, int, str], None] | None = None,
+    on_frames: Callable[[dict[str, pd.DataFrame]], None] | None = None,
 ) -> dict[str, pd.DataFrame]:
     from app.services.bar_close import seconds_until_bar_settled
     from app.services.borsapy_client import ensure_tradingview_auth
@@ -136,6 +140,7 @@ def fetch_ohlcv_batch_fx(
         use_period: str,
         offset: int,
         total: int,
+        on_chunk: Callable[[dict[str, pd.DataFrame]], None] | None = None,
     ) -> dict[str, pd.DataFrame]:
         frames: dict[str, pd.DataFrame] = {}
         for sym in batch:
@@ -149,10 +154,13 @@ def fetch_ohlcv_batch_fx(
             if rule:
                 asof = pd.Timestamp.now(tz="Europe/Istanbul")
                 built = _resample_ohlcv(frame, rule, asof=asof)
-                if built is not None:
-                    frames[sym] = built
             else:
-                frames[sym] = frame
+                built = frame
+            if built is None:
+                continue
+            frames[sym] = built
+            if on_chunk:
+                on_chunk({sym: built})
         if on_progress:
             on_progress(min(offset + len(batch), total), total, batch[-1] if batch else "")
         return frames
@@ -165,4 +173,5 @@ def fetch_ohlcv_batch_fx(
         full_period=period,
         fetch_period=fetch_period,
         on_progress=on_progress,
+        on_frames=on_frames,
     )

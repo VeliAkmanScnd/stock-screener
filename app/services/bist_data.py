@@ -180,6 +180,7 @@ def _fetch_borsapy(
     on_progress: Callable[[int, int, str], None] | None,
     progress_offset: int,
     progress_total: int,
+    on_frames: Callable[[dict[str, pd.DataFrame]], None] | None = None,
 ) -> dict[str, pd.DataFrame]:
     from app.services.borsapy_client import fetch_ohlcv_batch_borsapy, is_borsapy_available
 
@@ -191,6 +192,7 @@ def _fetch_borsapy(
         on_progress=on_progress,
         progress_offset=progress_offset,
         progress_total=progress_total,
+        on_frames=on_frames,
     )
 
 
@@ -199,6 +201,7 @@ def fetch_ohlcv_batch_bist(
     timeframe: str,
     on_progress: Callable[[int, int, str], None] | None = None,
     provider_override: str | None = None,
+    on_frames: Callable[[dict[str, pd.DataFrame]], None] | None = None,
 ) -> dict[str, pd.DataFrame]:
     """Download BIST OHLCV (cached; provider from scan or .env)."""
     clean_syms = [clean_bist_symbol(s) for s in symbols if clean_bist_symbol(s)]
@@ -212,6 +215,8 @@ def fetch_ohlcv_batch_bist(
 
     if on_progress and done:
         on_progress(done, total, "önbellek")
+    if on_frames and frames:
+        on_frames(frames)
 
     if not missing:
         return frames
@@ -220,7 +225,9 @@ def fetch_ohlcv_batch_bist(
     if provider == "twelvedata":
         fetched = _fetch_twelvedata(to_fetch, timeframe, on_progress)
     elif provider == "borsapy":
-        fetched = _fetch_borsapy(to_fetch, timeframe, on_progress, done, total)
+        fetched = _fetch_borsapy(
+            to_fetch, timeframe, on_progress, done, total, on_frames=on_frames
+        )
     else:
         fetched = _fetch_yahoo(to_fetch, timeframe, on_progress, done, total)
 
