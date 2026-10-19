@@ -248,7 +248,10 @@ def fetch_ohlcv_batch_borsapy(
                 elif built:
                     frames.update(built)
                     if on_chunk:
-                        on_chunk(built)
+                        try:
+                            on_chunk(built)
+                        except Exception:
+                            logger.exception("OHLCV chunk callback failed")
                 done += len(chunk)
                 if on_progress:
                     label = chunk[-1] if chunk else ""

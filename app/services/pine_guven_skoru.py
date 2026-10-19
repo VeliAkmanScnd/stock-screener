@@ -241,7 +241,7 @@ def guven_series(df: pd.DataFrame, **params) -> dict[str, pd.Series]:
 
 
 def guven_snapshot(df: pd.DataFrame, **params) -> dict:
-    from app.services.pine_bias_ts import _hold_previous_signal
+    from app.services.pine_bias_ts import latest_session_signal
 
     side = params.pop("side", "both")
     if df is None or len(df) < 30:
@@ -255,19 +255,16 @@ def guven_snapshot(df: pd.DataFrame, **params) -> dict:
             "guven_bar_shift": 0,
         }
     s = guven_series(df, **params)
-    buy = bool(s["buy_cond"].iloc[-1])
-    sell = bool(s["sell_cond"].iloc[-1])
-    prev_buy = bool(s["buy_cond"].iloc[-2]) if len(s["buy_cond"]) >= 2 else False
-    prev_sell = bool(s["sell_cond"].iloc[-2]) if len(s["sell_cond"]) >= 2 else False
-    buy, sell, shift = _hold_previous_signal(buy, sell, prev_buy, prev_sell, side)
+    buy, sell, shift = latest_session_signal(s["buy_cond"], s["sell_cond"], side)
     if side == "sell":
         ok = sell
     elif side == "both":
         ok = buy or sell
     else:
         ok = buy
-    b_score = s["buy_tot"].iloc[-1]
-    s_score = s["sell_tot"].iloc[-1]
+    at = -1 - shift
+    b_score = s["buy_tot"].iloc[at]
+    s_score = s["sell_tot"].iloc[at]
     return {
         "pine_al": ok,
         "guven_buy": buy,

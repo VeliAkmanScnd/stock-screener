@@ -246,31 +246,39 @@ def bias_ts_series(
     }
 
 
-def _hold_previous_signal(
-    buy: bool, sell: bool, prev_buy: bool, prev_sell: bool, side: str
-) -> tuple[bool, bool, int]:
-    """Keep a one-bar signal visible on the next closed bar.
+def _bar_session_day(ts) -> pd.Timestamp:
+    t = pd.Timestamp(ts)
+    if t.tzinfo is not None:
+        t = t.tz_convert("Europe/Istanbul").tz_localize(None)
+    return t.normalize()
 
-    A 15m scan that is still running when the next slot starts lands on a quiet
-    bar and Telegram is skipped. The card stays on the signal bar.
+
+def latest_session_signal(
+    buy_s: pd.Series, sell_s: pd.Series, side: str
+) -> tuple[bool, bool, int]:
+    """Latest Bias or Güven mark from today's Istanbul session.
+
+    A scan that misses the signal bar still reports it later the same day.
+    The shift is how many closed bars back that mark sits, so the card keeps
+    that bar's price. Yesterday's last bar is not carried into the next session.
     """
-    held = False
-    if not buy and not sell:
-        if prev_buy:
-            buy = True
-            held = True
-        elif prev_sell:
-            sell = True
-            held = True
-    if side == "sell":
-        buy = False
-        if held and not sell:
-            held = False
-    elif side == "buy":
-        sell = False
-        if held and not buy:
-            held = False
-    return buy, sell, 1 if held else 0
+    n = len(buy_s)
+    if n == 0:
+        return False, False, 0
+    today = pd.Timestamp.now(tz="Europe/Istanbul").tz_localize(None).normalize()
+    for offset in range(n):
+        i = n - 1 - offset
+        if _bar_session_day(buy_s.index[i]) != today:
+            break
+        buy = bool(buy_s.iloc[i])
+        sell = bool(sell_s.iloc[i])
+        if side == "sell":
+            buy = False
+        elif side == "buy":
+            sell = False
+        if buy or sell:
+            return buy, sell, offset
+    return False, False, 0
 
 
 def bias_ts_snapshot(df: pd.DataFrame, **params) -> dict:
@@ -286,25 +294,22 @@ def bias_ts_snapshot(df: pd.DataFrame, **params) -> dict:
             "bias_bar_shift": 0,
         }
     s = bias_ts_series(df, chart_tf=chart_tf, **params)
-    buy = bool(s["buy_sig"].iloc[-1])
-    sell = bool(s["sell_sig"].iloc[-1])
-    prev_buy = bool(s["buy_sig"].iloc[-2]) if len(s["buy_sig"]) >= 2 else False
-    prev_sell = bool(s["sell_sig"].iloc[-2]) if len(s["sell_sig"]) >= 2 else False
-    buy, sell, shift = _hold_previous_signal(buy, sell, prev_buy, prev_sell, side)
+    buy, sell, shift = latest_session_signal(s["buy_sig"], s["sell_sig"], side)
     if side == "sell":
         ok = sell
     elif side == "both":
         ok = buy or sell
     else:
         ok = buy
-    dist = s["bias_dist_pct"].iloc[-1]
+    at = -1 - shift
+    dist = s["bias_dist_pct"].iloc[at]
     return {
         "pine_al": ok,
         "bias_ts_buy": buy,
         "bias_ts_sell": sell,
         "bias_ts_side": side,
-        "bias_bull": bool(s["bias_bull"].iloc[-1]),
-        "ts_green": bool(s["ts_green"].iloc[-1]),
+        "bias_bull": bool(s["bias_bull"].iloc[at]),
+        "ts_green": bool(s["ts_green"].iloc[at]),
         "bias_dist_pct": float(dist) if pd.notna(dist) else None,
         "bias_bar_shift": shift,
     }

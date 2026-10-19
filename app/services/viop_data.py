@@ -205,8 +205,12 @@ def fetch_ohlcv_batch_viop(
             for cont, frame in frames.items():
                 for code in by_cont.get(cont, []):
                     mapped[code] = frame
-            if mapped:
+            if not mapped:
+                return
+            try:
                 on_frames(mapped)
+            except Exception:
+                logger.exception("VIOP scan callback failed")
 
         fetched = fetch_ohlcv_batch_borsapy(
             unique_cont,

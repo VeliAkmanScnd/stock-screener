@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
@@ -16,6 +17,8 @@ from app.services.indicators import build_indicator_frame, crossover, ema
 from app.services.market_caps import fetch_market_caps
 from app.services.pine_evaluator import PineEvalError, evaluate_pine_al
 from app.utils.json_safe import json_safe
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -267,7 +270,7 @@ def scan_dataframe(
         else (True, {})
     )
     signals.update(signal_bar_fields(df, req.timeframe, universe=market))
-    price_shift = False
+    bar_shift = 0
 
     if market_cap is not None and "market_cap" not in signals:
         signals["market_cap"] = market_cap
@@ -298,11 +301,11 @@ def scan_dataframe(
                 shift = int(snap.pop("bias_bar_shift", 0) or 0)
                 signals.update(snap)
                 pine_ok = bool(snap.get("pine_al"))
-                if pine_ok and shift == 1 and len(df) >= 2:
+                if pine_ok and shift >= 1 and len(df) > shift:
+                    bar_shift = shift
                     signals.update(
-                        signal_bar_fields(df.iloc[:-1], req.timeframe, universe=market)
+                        signal_bar_fields(df.iloc[:-shift], req.timeframe, universe=market)
                     )
-                    price_shift = True
             elif pine_source == "strong_fresh" and pine_code:
                 from app.services.pine_strong_fresh import (
                     strong_fresh_params_from_script,
@@ -316,10 +319,10 @@ def scan_dataframe(
                 signals.update(snap)
                 pine_ok = bool(snap.get("pine_al"))
                 if pine_ok and shift == 1 and len(df) >= 2:
+                    bar_shift = 1
                     signals.update(
                         signal_bar_fields(df.iloc[:-1], req.timeframe, universe=market)
                     )
-                    price_shift = True
             elif pine_source == "guven_skoru" and pine_code:
                 from app.services.pine_guven_skoru import (
                     guven_params_from_script,
@@ -330,11 +333,11 @@ def scan_dataframe(
                 shift = int(snap.pop("guven_bar_shift", 0) or 0)
                 signals.update(snap)
                 pine_ok = bool(snap.get("pine_al"))
-                if pine_ok and shift == 1 and len(df) >= 2:
+                if pine_ok and shift >= 1 and len(df) > shift:
+                    bar_shift = shift
                     signals.update(
-                        signal_bar_fields(df.iloc[:-1], req.timeframe, universe=market)
+                        signal_bar_fields(df.iloc[:-shift], req.timeframe, universe=market)
                     )
-                    price_shift = True
             elif pine_source == "candle_green_first" and pine_code:
                 from app.services.pine_fibo import fibo_params_from_script, fibo_trend_snapshot
 
@@ -362,7 +365,11 @@ def scan_dataframe(
             signals["pine_al_error"] = str(e)
             matched = False
 
-    price = _last(df["Close"].iloc[:-1]) if price_shift and len(df) >= 2 else _last(df["Close"])
+    price = (
+        _last(df["Close"].iloc[:-bar_shift])
+        if bar_shift and len(df) > bar_shift
+        else _last(df["Close"])
+    )
     return ScanResult(
         symbol=symbol,
         price=price,
@@ -401,29 +408,36 @@ def run_scan(
         for sym, df in frames.items():
             if sym in seen:
                 continue
-            seen.add(sym)
-            ok, reason = validate_active(df, req.timeframe, market)
-            if not ok:
-                stats.skipped_inactive += 1
-                key = reason or "inactive"
-                stats.skip_reasons[key] = stats.skip_reasons.get(key, 0) + 1
-                continue
-            stats.scanned += 1
-            row = scan_dataframe(
-                sym,
-                df,
-                req,
-                caps.get(sym),
-                pine_condition,
-                pine_source,
-                pine_code,
-            )
-            if row.matched:
-                results.append(row)
-                stats.matched += 1
-                if on_match:
-                    on_match(row)
-            report("scanning", stats.scanned, max(stats.scanned, len(symbols)), sym)
+            try:
+                ok, reason = validate_active(df, req.timeframe, market)
+                if not ok:
+                    seen.add(sym)
+                    stats.skipped_inactive += 1
+                    key = reason or "inactive"
+                    stats.skip_reasons[key] = stats.skip_reasons.get(key, 0) + 1
+                    continue
+                row = scan_dataframe(
+                    sym,
+                    df,
+                    req,
+                    caps.get(sym),
+                    pine_condition,
+                    pine_source,
+                    pine_code,
+                )
+                seen.add(sym)
+                stats.scanned += 1
+                if row.matched:
+                    results.append(row)
+                    stats.matched += 1
+                    if on_match:
+                        try:
+                            on_match(row)
+                        except Exception:
+                            logger.exception("Scan match callback failed for %s", sym)
+                report("scanning", stats.scanned, max(stats.scanned, len(symbols)), sym)
+            except Exception:
+                logger.exception("Scan failed for %s", sym)
 
     frames = fetch_ohlcv_batch(
         symbols,
