@@ -1335,7 +1335,7 @@ function collectScanBody() {
     pine_script_id: $("#savedPine").value ? parseInt($("#savedPine").value, 10) : null,
     pine_condition_override: $("#pineOverride").value.trim() || null,
     pine_input_overrides: $("#savedPine").value ? collectPineInputs() : {},
-    require_pine_al: $("#requirePineAl").checked,
+    require_pine_al: $("#requirePineAl").checked || !!($("#savedPine").value),
     max_symbols: parseInt($("#maxSymbols").value, 10) || 80,
     bist_data_provider: getSelectedBistProvider(),
     notify_telegram: $("#notifyTelegram")?.checked !== false,

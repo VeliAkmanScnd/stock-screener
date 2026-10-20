@@ -206,7 +206,8 @@ def _signal_level(signals: dict | None, key: str) -> float | None:
     return value
 
 
-def _signal_direction(signals: dict | None) -> str:
+def _signal_direction(signals: dict | None) -> str | None:
+    """Return AL/SAT, or None when the row has no engine buy/sell flag."""
     sig = signals or {}
     buy = bool(
         sig.get("bias_ts_buy")
@@ -234,7 +235,9 @@ def _signal_direction(signals: dict | None) -> str:
         return "SAT" if side == "sell" else "AL"
     if sell:
         return "SAT"
-    return "AL"
+    if buy:
+        return "AL"
+    return None
 
 
 def _exchange_label(universe: str, custom_source_universe: str | None = None) -> str:
@@ -359,11 +362,14 @@ def _signal_cards(
         if not symbol:
             continue
         signals = row.get("signals") if isinstance(row.get("signals"), dict) else {}
+        direction = _signal_direction(signals)
+        if direction is None:
+            continue
         cards.append(
             format_signal_telegram_card(
                 symbol,
                 price,
-                _signal_direction(signals),
+                direction,
                 market=market,
                 exchange=exchange,
                 timeframe=timeframe,

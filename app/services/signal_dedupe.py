@@ -11,9 +11,9 @@ from app.database import ScanSignalLast
 from app.services.tv_export import build_tradingview_list
 
 
-def _direction(signals: Any) -> str:
+def _direction(signals: Any) -> str | None:
     if not isinstance(signals, dict):
-        return "AL"
+        return None
     buy = bool(
         signals.get("bias_ts_buy")
         or signals.get("bag_buy")
@@ -40,7 +40,9 @@ def _direction(signals: Any) -> str:
         return "SAT" if side == "sell" else "AL"
     if sell and not buy:
         return "SAT"
-    return "AL"
+    if buy:
+        return "AL"
+    return None
 
 
 def _price_key(value: Any) -> float | None:
@@ -112,6 +114,9 @@ def apply_repeat_price_filter(
             skipped += 1
             continue
         direction = _direction(item.get("signals"))
+        if direction is None:
+            skipped += 1
+            continue
         batch_key = (symbol, direction, price)
         if batch_key in seen_batch:
             skipped += 1

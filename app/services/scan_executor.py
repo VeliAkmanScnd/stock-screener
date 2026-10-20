@@ -102,6 +102,15 @@ def execute_scan_config(
         if pine_source == "strong_fresh" and pine_code and not pine_label:
             pine_label = strong_fresh_display_label(pine_code, pine_input_overrides)
 
+    # A selected Pine script must drive the match. Without that, every symbol
+    # would pass and Telegram fills with last-bar AL cards that are not signals.
+    if pine_script_id and not pine_condition:
+        raise ValueError(
+            "Seçilen Pine script için tarama motoru bulunamadı. "
+            "Bias × ALMA × Güven dosyasını yeniden yükleyin."
+        )
+    if pine_script_id:
+        body["require_pine_al"] = True
     if body.get("require_pine_al") and not pine_condition:
         raise ValueError("Pine AL taraması için script veya koşul gerekli")
 

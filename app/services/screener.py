@@ -281,7 +281,9 @@ def scan_dataframe(
         else:
             signals["market_cap_currency"] = "USD"
 
-    if pine_condition:
+    if req.pine_script_id and not pine_condition:
+        matched = False
+    elif pine_condition:
         try:
             overrides = req.pine_input_overrides or None
             if pine_source == "merged_triple" and pine_code:

@@ -519,6 +519,8 @@ def _execute_scheduled_scan(
             if not symbol or price is None:
                 return
             direction = _direction(row.signals)
+            if direction is None:
+                return
             key = (symbol, direction, price)
             if key in streamed:
                 return
@@ -636,7 +638,7 @@ def _execute_scheduled_scan(
             symbol = str(item.get("symbol") or "").strip().upper()
             price = _price_key(item.get("price"))
             direction = _direction(item.get("signals"))
-            if price is None or (symbol, direction, price) in streamed:
+            if direction is None or price is None or (symbol, direction, price) in streamed:
                 continue
             pending_results.append(item)
         if notify_telegram and pending_results and (

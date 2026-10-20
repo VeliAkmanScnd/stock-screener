@@ -246,6 +246,29 @@ def bias_ts_series(
     }
 
 
+def hold_one_bar_signal(
+    buy: bool, sell: bool, prev_buy: bool, prev_sell: bool, side: str
+) -> tuple[bool, bool, int]:
+    """Keep a signal visible on the next closed bar only."""
+    held = False
+    if not buy and not sell:
+        if prev_buy:
+            buy = True
+            held = True
+        elif prev_sell:
+            sell = True
+            held = True
+    if side == "sell":
+        buy = False
+        if held and not sell:
+            held = False
+    elif side == "buy":
+        sell = False
+        if held and not buy:
+            held = False
+    return buy, sell, 1 if held else 0
+
+
 def _bar_session_day(ts) -> pd.Timestamp:
     t = pd.Timestamp(ts)
     if t.tzinfo is not None:

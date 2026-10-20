@@ -11,7 +11,11 @@ import re
 
 import pandas as pd
 
-from app.services.pine_bias_ts import bias_ts_params_from_script, bias_ts_series, latest_session_signal
+from app.services.pine_bias_ts import (
+    bias_ts_params_from_script,
+    bias_ts_series,
+    hold_one_bar_signal,
+)
 from app.services.pine_guven_skoru import guven_params_from_script, guven_series
 from app.services.pine_params import merge_pine_inputs
 
@@ -172,7 +176,12 @@ def bag_snapshot(df: pd.DataFrame, **params) -> dict:
             "sell": False,
         }
     s = bag_series(df, chart_tf=chart_tf, **params)
-    buy, sell, shift = latest_session_signal(s["buy_sig"], s["sell_sig"], side)
+    # Event bars only (chart vertical lines). Do not re-fire morning marks all day.
+    buy = bool(s["buy_sig"].iloc[-1])
+    sell = bool(s["sell_sig"].iloc[-1])
+    prev_buy = bool(s["buy_sig"].iloc[-2]) if len(s["buy_sig"]) >= 2 else False
+    prev_sell = bool(s["sell_sig"].iloc[-2]) if len(s["sell_sig"]) >= 2 else False
+    buy, sell, shift = hold_one_bar_signal(buy, sell, prev_buy, prev_sell, side)
     if side == "sell":
         ok = sell
     elif side == "both":
