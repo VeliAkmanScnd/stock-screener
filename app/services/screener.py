@@ -243,6 +243,33 @@ def resolve_symbols(req: ScanRequest) -> list[str]:
     return syms[: req.max_symbols]
 
 
+def _engine_direction_hit(signals: dict[str, Any], pine_source: str | None) -> bool:
+    """True when a dedicated engine left an explicit AL/SAT (or known) hit flag."""
+    if signals.get("bag_buy") or signals.get("bag_sell"):
+        return True
+    if signals.get("bias_ts_buy") or signals.get("bias_ts_sell"):
+        return True
+    if signals.get("guven_buy") or signals.get("guven_sell"):
+        return True
+    if signals.get("strong_buy") or signals.get("strong_sell"):
+        return True
+    if signals.get("merged_triple_buy"):
+        return True
+    if signals.get("first_green_bar"):
+        return True
+    if pine_source in (
+        "bias_alma_guven",
+        "bias_ts",
+        "guven_skoru",
+        "strong_fresh",
+        "merged_triple",
+        "candle_green_first",
+    ):
+        return False
+    # Generic Pine AL expression: pine_al alone is enough.
+    return bool(signals.get("pine_al"))
+
+
 def scan_dataframe(
     symbol: str,
     df: pd.DataFrame,
@@ -381,9 +408,21 @@ def scan_dataframe(
             if pine_source == "candle_green_first":
                 signals["pine_al"] = pine_ok
                 signals["pine_al_mode"] = "first_green_bar"
-            matched = pine_ok if (req.require_pine_al and not has_filters) else (matched and pine_ok)
+            if req.pine_script_id or req.require_pine_al:
+                matched = bool(pine_ok)
+            else:
+                matched = (
+                    pine_ok
+                    if (req.require_pine_al and not has_filters)
+                    else (matched and pine_ok)
+                )
         except PineEvalError as e:
             signals["pine_al_error"] = str(e)
+            matched = False
+
+    # Open-board guard: last-bar AL floods had no engine buy/sell flag.
+    if matched and (req.pine_script_id or pine_source):
+        if not _engine_direction_hit(signals, pine_source):
             matched = False
 
     price = (

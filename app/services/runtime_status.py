@@ -26,6 +26,24 @@ def _watchdog_tail() -> str | None:
         return None
 
 
+def _git_revision() -> str | None:
+    import subprocess
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[2]
+    try:
+        out = subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=root,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            timeout=3,
+        )
+        return (out or "").strip() or None
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
 def build_runtime_status() -> dict:
     from app.services.scheduler import scheduler_status
 
@@ -39,11 +57,13 @@ def build_runtime_status() -> dict:
     next_at = next_jobs[0]["next_run"] if next_jobs else None
     istanbul = now.astimezone(ZoneInfo("Europe/Istanbul"))
     skew = clock_skew_info()
+    git_rev = _git_revision()
 
     return {
         "ok": True,
         "app": "TradeLABtr",
         "server": "up",
+        "git_commit": git_rev,
         "started_at": utc_iso(started),
         "uptime_seconds": uptime_sec,
         "scheduler_running": bool(sched.get("running")),

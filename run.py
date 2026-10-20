@@ -44,6 +44,19 @@ def main() -> int:
     host = os.getenv("HOST", "0.0.0.0").strip() or "0.0.0.0"
     port = int(os.getenv("PORT", "8000"))
 
+    try:
+        import subprocess
+
+        rev = subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=ROOT,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            timeout=3,
+        ).strip()
+        print(f"TradeLABtr git: {rev}", flush=True)
+    except Exception:
+        print("TradeLABtr git: (unknown)", flush=True)
     print(f"TradeLABtr bind: http://{host}:{port}", flush=True)
     print(f"Tarayici (bu makine): http://127.0.0.1:{port}/login", flush=True)
     if host in {"127.0.0.1", "localhost"}:

@@ -35,7 +35,12 @@ echo Bind  : %HOST%:%PORT%
 echo Log   : storage\server.log
 echo.
 
+echo Git:
+git rev-parse --short HEAD 2>nul
+if errorlevel 1 echo   (git yok)
+echo.
 echo Eski surec varsa durduruluyor (git pull sonrasi yeni kod icin)...
+echo NOT: Sadece git pull yetmez — watchdog eski sureci acik birakir. Bu bat portu oldurur.
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\free-listen-port.ps1" %PORT%
 if errorlevel 1 (
   echo.
