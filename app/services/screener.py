@@ -290,6 +290,25 @@ def scan_dataframe(
                 snap = merged_triple_snapshot(df, pine_code, overrides)
                 signals.update(snap)
                 pine_ok = bool(snap["merged_triple_buy"])
+            elif pine_source == "bias_alma_guven" and pine_code:
+                from app.services.pine_bias_alma_guven import (
+                    bag_params_from_script,
+                    bag_snapshot,
+                )
+
+                snap = bag_snapshot(
+                    df,
+                    chart_tf=req.timeframe,
+                    **bag_params_from_script(pine_code, overrides),
+                )
+                shift = int(snap.pop("bag_bar_shift", 0) or 0)
+                signals.update(snap)
+                pine_ok = bool(snap.get("pine_al"))
+                if pine_ok and shift >= 1 and len(df) > shift:
+                    bar_shift = shift
+                    signals.update(
+                        signal_bar_fields(df.iloc[:-shift], req.timeframe, universe=market)
+                    )
             elif pine_source == "bias_ts" and pine_code:
                 from app.services.pine_bias_ts import bias_ts_params_from_script, bias_ts_snapshot
 

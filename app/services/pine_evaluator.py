@@ -177,6 +177,10 @@ def evaluate_pine_al(
 ) -> bool:
     """Evaluate buy signal; Fibo candle scripts always use dedicated engine."""
     from app.services.pine_fibo import FIBO_MARKER, fibo_first_green_from_script
+    from app.services.pine_bias_alma_guven import (
+        BIAS_ALMA_GUVEN_MARKER,
+        bag_from_script,
+    )
     from app.services.pine_bias_ts import BIAS_TS_MARKER, bias_ts_from_script
     from app.services.pine_choch import CHOCH_BULLISH_MARKER, choch_bullish_from_script
     from app.services.pine_guven_skoru import GUVEN_SKORU_MARKER, guven_from_script
@@ -185,6 +189,10 @@ def evaluate_pine_al(
     from app.services.pine_parser import _inline_variables
     from app.services.pine_params import merge_pine_inputs
 
+    if source == "bias_alma_guven" or condition == BIAS_ALMA_GUVEN_MARKER:
+        if not pine_code:
+            raise PineEvalError("Pine script dosyası gerekli (Bias × ALMA × Güven)")
+        return bag_from_script(df, pine_code, pine_input_overrides)
     if source == "bias_ts" or condition == BIAS_TS_MARKER:
         if not pine_code:
             raise PineEvalError("Pine script dosyası gerekli (Bias x Trend Strength)")

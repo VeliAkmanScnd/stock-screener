@@ -1,0 +1,34 @@
+//@version=6
+indicator("Bias × ALMA × Güven", shorttitle="Bias×ALMA×Güven", overlay=true, max_labels_count=500)
+
+// Scanner confluence (TradeLABtr):
+// SELL — Bias kırmızı, kapanış Bias altında, ALMA kırmızı, Güven sat eşik üzeri
+// BUY  — Bias yeşil, kapanış Bias üstünde, ALMA yeşil, Güven al eşik üzeri
+// Açık/koyu kırmızı fark etmez. Tarayıcı bag_buy / bag_sell ile bu motoru seçer.
+
+g_bias = "HA Market Bias"
+g_alma = "ALMA / Güven"
+g_filt = "Filtre"
+
+ha_htf = input.timeframe("60", "Bias HTF", group=g_bias)
+ha_len = input.int(233, "Bias periyot", group=g_bias)
+ha_len2 = input.int(233, "Bias belirginleştirme", group=g_bias)
+osc_len = input.int(7, "Oscillator Period", group=g_bias)
+lenn = input.int(60, "TS periyot (uzaklık)", group=g_bias)
+
+thr = input.float(80.0, "Güven eşiği %", group=g_alma)
+almaLen = input.int(24, "ALMA Len", group=g_alma)
+almaOff = input.float(0.7, "ALMA Offset", group=g_alma)
+almaSig = input.float(4.0, "ALMA Sigma", group=g_alma)
+perLen = input.int(21, "Percentile Len", group=g_alma)
+medLen = input.int(21, "Median Len", group=g_alma)
+medMult = input.float(1.8, "Median Mult", group=g_alma)
+
+use_dist = input.bool(true, "Bias uzaklık filtresi", group=g_filt)
+max_dist = input.float(5.0, "Maks. bias uzaklığı (%)", group=g_filt)
+
+// Placeholders so the scanner fingerprint matches. Real signals are computed in Python.
+bool bag_buy = false
+bool bag_sell = false
+plotshape(bag_buy, title="BAG BUY", style=shape.triangleup, location=location.belowbar, color=color.lime, size=size.tiny)
+plotshape(bag_sell, title="BAG SELL", style=shape.triangledown, location=location.abovebar, color=color.red, size=size.tiny)

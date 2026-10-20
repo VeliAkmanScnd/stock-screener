@@ -177,6 +177,24 @@ def _finalize_condition(code: str, expr: str, var_name: str | None = None) -> Pi
     return PineALSignal(expr, "plotshape" if not var_name else "variable", var_name)
 
 
+def _extract_bias_alma_guven(code: str) -> PineALSignal | None:
+    from app.services.pine_bias_alma_guven import (
+        BIAS_ALMA_GUVEN_MARKER,
+        bag_display_label,
+        is_bias_alma_guven_script,
+    )
+
+    if not is_bias_alma_guven_script(code):
+        return None
+    return PineALSignal(
+        condition=BIAS_ALMA_GUVEN_MARKER,
+        source="bias_alma_guven",
+        variable_name="bag_buy|bag_sell",
+        first_bar_only=False,
+        display_condition=bag_display_label(code),
+    )
+
+
 def _extract_bias_ts(code: str) -> PineALSignal | None:
     from app.services.pine_bias_ts import BIAS_TS_MARKER, bias_ts_display_label, is_bias_ts_script
 
@@ -254,6 +272,10 @@ def extract_al_condition(pine_code: str) -> PineALSignal | None:
     5. strategy.entry long with id AL
     """
     code = _strip_comments(pine_code)
+
+    bag = _extract_bias_alma_guven(pine_code)
+    if bag:
+        return bag
 
     bias_ts = _extract_bias_ts(pine_code)
     if bias_ts:

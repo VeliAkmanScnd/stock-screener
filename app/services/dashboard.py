@@ -87,12 +87,14 @@ def _direction(signals: Any) -> str:
         return "AL"
     buy = bool(
         signals.get("bias_ts_buy")
+        or signals.get("bag_buy")
         or signals.get("guven_buy")
         or signals.get("strong_buy")
         or signals.get("buy")
     )
     sell = bool(
         signals.get("bias_ts_sell")
+        or signals.get("bag_sell")
         or signals.get("guven_sell")
         or signals.get("strong_sell")
         or signals.get("sell")
@@ -100,6 +102,7 @@ def _direction(signals: Any) -> str:
     if buy and sell:
         side = str(
             signals.get("bias_ts_side")
+            or signals.get("bag_side")
             or signals.get("guven_side")
             or signals.get("strong_side")
             or signals.get("side")

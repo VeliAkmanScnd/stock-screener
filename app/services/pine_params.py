@@ -58,6 +58,7 @@ def pine_inputs_for_api(
         d["value"] = effective_param_value(p, saved_defaults)
         d["pine_default"] = d["default"]
         out.append(d)
+    from app.services.pine_bias_alma_guven import is_bias_alma_guven_script
     from app.services.pine_bias_ts import is_bias_ts_script
     from app.services.pine_strong_fresh import is_strong_fresh_script
 
@@ -94,7 +95,10 @@ def pine_inputs_for_api(
                 },
             )
 
-    if is_bias_ts_script(pine_code) and not any(p["name"] == "scan_side" for p in out):
+    if (
+        (is_bias_alma_guven_script(pine_code) or is_bias_ts_script(pine_code))
+        and not any(p["name"] == "scan_side" for p in out)
+    ):
         saved = (saved_defaults or {}).get("scan_side") or "both"
         out.insert(
             0,

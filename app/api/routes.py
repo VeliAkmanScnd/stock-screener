@@ -216,13 +216,23 @@ def list_pine_scripts(db: Session = Depends(get_db)):
             content = None
             if not al_condition:
                 content = load_pine_content(r)
-            elif al_source not in ("bias_ts", "guven_skoru", "strong_fresh"):
+            elif al_source not in (
+                "bias_alma_guven",
+                "bias_ts",
+                "guven_skoru",
+                "strong_fresh",
+            ):
                 # Upgrade scripts that were saved as generic AL before dual engines.
+                from app.services.pine_bias_alma_guven import is_bias_alma_guven_script
                 from app.services.pine_bias_ts import is_bias_ts_script
                 from app.services.pine_guven_skoru import is_guven_skoru_script
 
                 content = load_pine_content(r)
-                if not (is_bias_ts_script(content) or is_guven_skoru_script(content)):
+                if not (
+                    is_bias_alma_guven_script(content)
+                    or is_bias_ts_script(content)
+                    or is_guven_skoru_script(content)
+                ):
                     content = None
             if content is not None:
                 al = extract_al_condition(content)
@@ -232,6 +242,7 @@ def list_pine_scripts(db: Session = Depends(get_db)):
                         "candle_green_first",
                         "merged_triple",
                         "choch_bullish",
+                        "bias_alma_guven",
                         "bias_ts",
                         "guven_skoru",
                         "strong_fresh",
@@ -354,6 +365,7 @@ async def upload_pine(
             "candle_green_first",
             "merged_triple",
             "choch_bullish",
+            "bias_alma_guven",
             "bias_ts",
             "guven_skoru",
             "strong_fresh",
@@ -373,7 +385,13 @@ async def upload_pine(
 
     params = pine_inputs_for_api(content)
     msg = "AL koşulu otomatik bulundu."
-    if al and al.source == "bias_ts":
+    if al and al.source == "bias_alma_guven":
+        msg = (
+            "Bias × ALMA × Güven motoru aktif. "
+            "Bias rengi + fiyat tarafı + ALMA rengi + Güven eşiği birlikte aranır. "
+            "VIOP için evreni VIOP seçin."
+        )
+    elif al and al.source == "bias_ts":
         msg = (
             "Bias × Trend Strength motoru aktif. "
             "Son barda BUY (veya seçilen yön) taranır. VIOP için evreni VIOP seçin."
