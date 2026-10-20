@@ -966,6 +966,7 @@ async function loadSavedPine(selectId) {
     opt.value = s.id;
     let status = "AL ?";
     if (!s.available) status = "eksik";
+    else if (s.al_source === "bias_alma_guven") status = "Bias×ALMA×Güven ✓";
     else if (s.al_source === "guven_skoru") status = "eşik ✓";
     else if (s.al_source === "bias_ts") status = "AL/SAT ✓";
     else if (s.al_condition) status = "AL ✓";
