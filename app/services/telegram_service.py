@@ -312,6 +312,7 @@ def format_signal_telegram_card(
     if exchange:
         lines.append(f"Borsa\t: {exchange}")
     lines.append(f"Kontrat\t: {contract}")
+    lines.append(f"Yön\t\t: {yon}")
     if timeframe:
         lines.append(f"Zaman dilimi\t: {_timeframe_label(timeframe)}")
     scan = (scan_name or "").strip()
@@ -324,7 +325,6 @@ def format_signal_telegram_card(
         lines.append(f"Giriş\t: {_tr_price(giris, digits)}")
     lines.extend(
         [
-            f"Yön\t\t: {yon}",
             f"Kar AL\t: {_tr_price(tp, digits)}",
             f"Stop\t\t: {_tr_price(sl, digits)}",
         ]
