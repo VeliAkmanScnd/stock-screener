@@ -1653,6 +1653,10 @@ body {
   margin: 0.75rem 0 1rem;
 }
 
+.perf-filters input[type="search"] {
+  min-width: 0;
+}
+
 .perf-section-nav {
   display: flex;
   flex-wrap: wrap;

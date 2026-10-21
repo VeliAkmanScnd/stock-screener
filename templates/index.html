@@ -6,7 +6,7 @@
   <title>TradeLABtr Stock Screener</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/css/style.css?v=45" />
+  <link rel="stylesheet" href="/static/css/style.css?v=46" />
   <link rel="stylesheet" href="/static/css/auth.css?v=5" />
 </head>
 <body>
@@ -570,17 +570,29 @@
             <span>Bitiş</span>
             <input type="date" id="perfDateTo" />
           </label>
+          <label class="field">
+            <span>Başlık</span>
+            <input type="search" id="perfTitleFilter" placeholder="Tarama / grup adı" autocomplete="off" />
+          </label>
           <label class="field track-check">
             <input type="checkbox" id="perfDedupeSymbol" />
             <span>Sembol başına ilk sinyal</span>
           </label>
           <button type="submit" class="btn primary">Raporu getir</button>
         </form>
-        <p class="auth-status" id="perfReportStatus"></p>
+        <div class="track-list-head">
+          <p class="auth-status" id="perfReportStatus"></p>
+          <div class="track-list-actions">
+            <button type="button" class="btn danger btn-sm" id="btnPerfDeleteSelectedReport" title="Seçilen grupların kayıtlarını sil">
+              Seçilenleri sil
+            </button>
+          </div>
+        </div>
         <div class="table-wrap">
           <table class="scheduled-scans-table track-table">
             <thead>
               <tr>
+                <th class="track-th-check"><input type="checkbox" id="perfGroupSelectAll" title="Görünen grupları seç" /></th>
                 <th>#</th>
                 <th>Grup</th>
                 <th>Kapanan</th>
@@ -598,7 +610,7 @@
               </tr>
             </thead>
             <tbody id="perfReportBody">
-              <tr class="empty"><td colspan="14">Rapor için tarih seçip getirin; boş bırakılırsa tüm geçmiş gelir.</td></tr>
+              <tr class="empty"><td colspan="15">Rapor için tarih seçip getirin; boş bırakılırsa tüm geçmiş gelir.</td></tr>
             </tbody>
           </table>
         </div>
@@ -610,6 +622,9 @@
             <p class="hint">Aynı filtrelere göre tekil kayıtlar. Max %, TP/SL süreleri ve arşiv durumu burada tutulur. Canlı tablo yukarıda Aktif / Geçmiş altındadır.</p>
           </div>
           <div class="track-list-actions">
+            <button type="button" class="btn danger btn-sm" id="btnPerfDeleteSelected" title="Seçilen grupların ve satırların kayıtlarını sil">
+              Seçilenleri sil
+            </button>
             <button type="button" class="btn danger btn-sm" id="btnPerfHistoryReset" title="Rapor satırlarının kaynağı olan tüm pozisyon kayıtlarını sil">
               Rapor satırlarını sıfırla
             </button>
@@ -619,6 +634,7 @@
           <table class="scheduled-scans-table track-table">
             <thead>
               <tr>
+                <th class="track-th-check"><input type="checkbox" id="perfHistorySelectAll" title="Görünen satırları seç" /></th>
                 <th>Sembol</th>
                 <th>Yön</th>
                 <th>Periyot</th>
@@ -633,7 +649,7 @@
               </tr>
             </thead>
             <tbody id="perfHistoryBody">
-              <tr class="empty"><td colspan="11">Kayıt yok.</td></tr>
+              <tr class="empty"><td colspan="12">Kayıt yok.</td></tr>
             </tbody>
           </table>
         </div>
@@ -840,7 +856,7 @@
   <script src="/static/js/dash.js?v=15"></script>
   <script src="/static/js/app.js?v=60"></script>
   <script src="/static/js/track.js?v=13"></script>
-  <script src="/static/js/perf.js?v=4"></script>
+  <script src="/static/js/perf.js?v=5"></script>
   <script src="/static/js/help.js?v=2"></script>
 </body>
 </html>

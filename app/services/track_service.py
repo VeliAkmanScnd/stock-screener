@@ -1035,18 +1035,22 @@ def reset_all_positions(db: Session, user_id: int) -> int:
     return int(deleted or 0)
 
 
-def delete_closed_positions_by_ids(db: Session, user_id: int, position_ids: list[int]) -> int:
+def delete_positions_by_ids(
+    db: Session,
+    user_id: int,
+    position_ids: list[int],
+    *,
+    include_active: bool = False,
+) -> int:
     if not position_ids:
         return 0
-    rows = (
-        db.query(TrackPosition)
-        .filter(
-            TrackPosition.user_id == user_id,
-            TrackPosition.id.in_(position_ids),
-            ~TrackPosition.status.in_(WATCH_STATUSES),
-        )
-        .all()
+    q = db.query(TrackPosition).filter(
+        TrackPosition.user_id == user_id,
+        TrackPosition.id.in_(position_ids),
     )
+    if not include_active:
+        q = q.filter(~TrackPosition.status.in_(WATCH_STATUSES))
+    rows = q.all()
     if not rows:
         return 0
     ids = [r.id for r in rows]
@@ -1055,3 +1059,7 @@ def delete_closed_positions_by_ids(db: Session, user_id: int, position_ids: list
         db.delete(row)
     db.commit()
     return len(ids)
+
+
+def delete_closed_positions_by_ids(db: Session, user_id: int, position_ids: list[int]) -> int:
+    return delete_positions_by_ids(db, user_id, position_ids, include_active=False)

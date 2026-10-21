@@ -165,6 +165,7 @@ def performance_report(
             {
                 "key": key,
                 "label": _group_label(key, group_by),
+                "position_ids": [r.id for r in items],
                 "count": n,
                 "open_count": open_n,
                 "settled_count": settled_n,
@@ -216,5 +217,12 @@ def performance_report(
         "groups": groups,
     }
     if include_positions:
-        out["positions"] = [position_to_dict(r) for r in rows[:800]]
+        positions = []
+        for row in rows[:800]:
+            item = position_to_dict(row)
+            gkey = _group_key(row, group_by)
+            item["group_key"] = gkey
+            item["group_label"] = _group_label(gkey, group_by)
+            positions.append(item)
+        out["positions"] = positions
     return out

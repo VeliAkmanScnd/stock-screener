@@ -28,6 +28,7 @@ from app.services.track_service import (
     position_to_dict,
     reopen_positions_by_ids,
     delete_closed_positions_by_ids,
+    delete_positions_by_ids,
     update_active_prices,
 )
 from app.utils.datetime_fmt import utc_iso
@@ -63,6 +64,7 @@ class TrackIngestBody(BaseModel):
 
 class TrackBulkIdsBody(BaseModel):
     position_ids: list[int] = Field(min_length=1)
+    include_active: bool = False
 
 
 def _settings_dict(row) -> dict[str, Any]:
@@ -268,7 +270,12 @@ def bulk_delete_positions(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    count = delete_closed_positions_by_ids(db, user.id, body.position_ids)
+    if body.include_active:
+        count = delete_positions_by_ids(
+            db, user.id, body.position_ids, include_active=True
+        )
+    else:
+        count = delete_closed_positions_by_ids(db, user.id, body.position_ids)
     return {"ok": True, "deleted": count}
 
 
