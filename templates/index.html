@@ -6,8 +6,8 @@
   <title>TradeLABtr Stock Screener</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/css/style.css?v=46" />
-  <link rel="stylesheet" href="/static/css/auth.css?v=5" />
+  <link rel="stylesheet" href="/static/css/style.css?v=47" />
+  <link rel="stylesheet" href="/static/css/auth.css?v=6" />
 </head>
 <body>
   <div class="app">
@@ -23,6 +23,7 @@
         <div class="app-tabs">
           <button type="button" class="app-tab active" id="tabDash">Özet</button>
           <button type="button" class="app-tab" id="tabScan">Tarama</button>
+          <button type="button" class="app-tab" id="tabAlarm">Alarm</button>
           <button type="button" class="app-tab" id="tabViop">VIOP</button>
           <button type="button" class="app-tab" id="tabHisse">Hisse</button>
           <button type="button" class="app-tab" id="tabPerf">Performans</button>
@@ -674,6 +675,128 @@
       </article>
     </main>
 
+    <main class="layout alarm-panel hidden" id="alarmPanel">
+      <section class="card">
+        <div class="track-list-head">
+          <div>
+            <h2>VIOP pay alarmı</h2>
+            <p class="hint">Aynı Pine kodu, her alarmda ayrı parametre. Bir veya birkaç pay kontratı seçin; tarama o periyotta Telegram’a düşer.</p>
+          </div>
+          <div class="track-list-actions">
+            <button type="button" class="btn secondary btn-sm" id="btnAlarmNew">Yeni alarm</button>
+            <button type="button" class="btn secondary btn-sm" id="btnAlarmRunNow">Şimdi çalıştır</button>
+            <button type="submit" class="btn primary btn-sm" form="alarmForm" id="btnAlarmSave">Kaydet</button>
+          </div>
+        </div>
+        <form id="alarmForm" class="alarm-form">
+          <input type="hidden" id="alarmId" value="" />
+          <div class="alarm-form-grid">
+            <label class="field">
+              <span>Ad</span>
+              <input type="text" id="alarmName" required placeholder="Örn: THYAO Bias 15dk" />
+            </label>
+            <label class="field">
+              <span>Pine</span>
+              <select id="alarmPine" required>
+                <option value="">— Seçin —</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Periyot</span>
+              <select id="alarmTimeframe">
+                <option value="3m">3 dakika</option>
+                <option value="5m">5 dakika</option>
+                <option value="15m" selected>15 dakika</option>
+                <option value="30m">30 dakika</option>
+                <option value="1h">1 saat</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Başlangıç saati</span>
+              <input type="number" id="alarmStartHour" min="0" max="23" value="9" />
+            </label>
+            <label class="field">
+              <span>Bitiş saati</span>
+              <input type="number" id="alarmEndHour" min="0" max="23" value="18" />
+            </label>
+            <label class="field">
+              <span>Dakika (slot)</span>
+              <input type="number" id="alarmMinute" min="0" max="59" value="35" />
+            </label>
+          </div>
+          <div class="field" id="alarmWeekdaysWrap">
+            <span>Günler</span>
+            <div class="schedule-weekdays" id="alarmWeekdays">
+              <label class="schedule-weekday"><input type="checkbox" value="0" checked> Pzt</label>
+              <label class="schedule-weekday"><input type="checkbox" value="1" checked> Sal</label>
+              <label class="schedule-weekday"><input type="checkbox" value="2" checked> Çar</label>
+              <label class="schedule-weekday"><input type="checkbox" value="3" checked> Per</label>
+              <label class="schedule-weekday"><input type="checkbox" value="4" checked> Cum</label>
+              <label class="schedule-weekday"><input type="checkbox" value="5"> Cmt</label>
+              <label class="schedule-weekday"><input type="checkbox" value="6"> Paz</label>
+            </div>
+          </div>
+          <div class="pine-params-box alarm-pine-box" id="alarmPineBox" hidden>
+            <p class="hint">Bu alarmın Pine parametreleri — diğer alarmları etkilemez.</p>
+            <div id="alarmPineForm" class="pine-inputs-form"></div>
+          </div>
+          <div class="alarm-contracts-wrap">
+            <div class="track-list-head">
+              <div>
+                <h3>VIOP pay kontratları</h3>
+                <p class="hint" id="alarmContractHint">Seçilen 0</p>
+              </div>
+              <div class="track-list-actions">
+                <input type="search" id="alarmContractFilter" placeholder="THYAO, Arçelik…" autocomplete="off" />
+                <button type="button" class="btn secondary btn-sm" id="btnAlarmSelectAllPay">Tümü</button>
+                <button type="button" class="btn secondary btn-sm" id="btnAlarmClearPay">Temizle</button>
+              </div>
+            </div>
+            <div class="alarm-contract-grid" id="alarmContractGrid"></div>
+          </div>
+          <div class="alarm-form-grid">
+            <label class="field track-check">
+              <input type="checkbox" id="alarmNotifyTelegram" checked />
+              <span>Telegram’a gönder</span>
+            </label>
+            <label class="field">
+              <span>Telegram chat id (isteğe bağlı)</span>
+              <input type="text" id="alarmTelegram" placeholder="-5005450345" autocomplete="off" />
+            </label>
+            <label class="field">
+              <span>Bot token (isteğe bağlı)</span>
+              <input type="text" id="alarmTelegramToken" placeholder=".env yoksa buraya" autocomplete="off" />
+            </label>
+            <label class="field track-check">
+              <input type="checkbox" id="alarmEnabled" checked />
+              <span>Aktif</span>
+            </label>
+          </div>
+          <p class="auth-status" id="alarmFormStatus"></p>
+        </form>
+      </section>
+      <section class="card">
+        <h2>Kayıtlı alarmlar</h2>
+        <p class="hint">Her satır ayrı ayar + kontrat listesidir. Aynı Pine’ı onlarca pay için kopyalayabilirsiniz.</p>
+        <div class="table-wrap">
+          <table class="scheduled-scans-table">
+            <thead>
+              <tr>
+                <th>Ad</th>
+                <th>Periyot</th>
+                <th>Kontrat</th>
+                <th>Son / sonraki</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="alarmListBody">
+              <tr class="empty"><td colspan="5">Henüz alarm yok.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
     <main class="calc-panel hidden" id="viopPanel">
       <iframe
         id="viopFrame"
@@ -852,11 +975,12 @@
     </div>
   </div>
 
-  <script src="/static/js/auth.js?v=10"></script>
+  <script src="/static/js/auth.js?v=11"></script>
   <script src="/static/js/dash.js?v=15"></script>
-  <script src="/static/js/app.js?v=60"></script>
+  <script src="/static/js/app.js?v=61"></script>
   <script src="/static/js/track.js?v=13"></script>
   <script src="/static/js/perf.js?v=5"></script>
   <script src="/static/js/help.js?v=2"></script>
+  <script src="/static/js/alarm.js?v=1"></script>
 </body>
 </html>

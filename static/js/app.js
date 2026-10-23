@@ -1936,7 +1936,7 @@ async function loadScheduledScans() {
   if (!tbody) return;
   try {
     const res = await apiFetch("/api/scheduled-scans");
-    const rows = await res.json();
+    const rows = (await res.json()).filter((r) => !r?.scan_config?.alarm);
     scheduledScansById = Object.fromEntries(rows.map((r) => [String(r.id), r]));
     if (!rows.length) {
       tbody.innerHTML =

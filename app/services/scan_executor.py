@@ -25,7 +25,7 @@ from app.utils.json_safe import json_safe
 
 def scan_body_from_dict(data: dict[str, Any]) -> dict[str, Any]:
     """Normalize stored JSON config."""
-    return {
+    body = {
         "universe": data.get("universe", "sp500"),
         "custom_symbols": data.get("custom_symbols", ""),
         "custom_source_universe": data.get("custom_source_universe"),
@@ -38,6 +38,10 @@ def scan_body_from_dict(data: dict[str, Any]) -> dict[str, Any]:
         "max_symbols": int(data.get("max_symbols", 100)),
         "bist_data_provider": data.get("bist_data_provider"),
     }
+    if data.get("alarm"):
+        body["alarm"] = True
+        body["alarm_kind"] = data.get("alarm_kind") or "viop_pay"
+    return body
 
 
 def execute_scan_config(

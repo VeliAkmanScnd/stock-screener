@@ -1657,6 +1657,63 @@ body {
   min-width: 0;
 }
 
+.alarm-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: 0.65rem;
+  align-items: end;
+  margin: 0.5rem 0 0.85rem;
+}
+
+.alarm-contracts-wrap {
+  margin: 0.75rem 0 1rem;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.alarm-contracts-wrap h3 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.alarm-contracts-wrap .track-list-actions input[type="search"] {
+  width: 10rem;
+  min-width: 8rem;
+}
+
+.alarm-contract-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+  gap: 0.35rem;
+  max-height: 16rem;
+  overflow: auto;
+  margin-top: 0.6rem;
+}
+
+.alarm-contract {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.28rem 0.4rem;
+  border-radius: 8px;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.alarm-contract:hover {
+  background: color-mix(in srgb, var(--card, #1c1f26) 80%, white 20%);
+}
+
+.alarm-contract input {
+  width: auto;
+  margin: 0;
+}
+
+.alarm-pine-box {
+  margin: 0.5rem 0 0.75rem;
+}
+
 .perf-section-nav {
   display: flex;
   flex-wrap: wrap;
