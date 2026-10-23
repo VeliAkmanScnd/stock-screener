@@ -279,6 +279,9 @@ const SIGNAL_LABELS = {
   bias_ts_buy: "Bias×TS BUY",
   bias_ts_sell: "Bias×TS SELL",
   bias_ts_side: "Bias×TS yön",
+  market_bias_buy: "Market Bias AL",
+  market_bias_sell: "Market Bias SAT",
+  market_bias_side: "Market Bias yön",
   guven_buy: "Güven AL",
   guven_sell: "Güven SAT",
   guven_side: "Güven yön",
@@ -967,6 +970,7 @@ async function loadSavedPine(selectId) {
     let status = "AL ?";
     if (!s.available) status = "eksik";
     else if (s.al_source === "bias_alma_guven") status = "Bias×ALMA×Güven ✓";
+    else if (s.al_source === "market_bias") status = "Market Bias AL/SAT ✓";
     else if (s.al_source === "guven_skoru") status = "eşik ✓";
     else if (s.al_source === "bias_ts") status = "AL/SAT ✓";
     else if (s.al_condition) status = "AL ✓";
@@ -1021,10 +1025,14 @@ function renderPineInputField(p, value) {
       buy: "BUY",
       sell: "SELL",
       both: "BUY veya SELL",
+      Percent: "Yüzde",
+      "Swing RR": "Swing RR",
       "": "Grafik zaman dilimi",
       "3": "3 dakika",
       "5": "5 dakika",
       "15": "15 dakika",
+      "30": "30 dakika",
+      "45": "45 dakika",
       "60": "1 saat",
       "120": "2 saat",
       "240": "4 saat",
@@ -1053,7 +1061,9 @@ function renderPineParams(parameters, scriptId, hasSavedDefaults = false) {
   currentPineScriptId = scriptId || null;
   currentPineParameters = parameters || [];
   currentPineHasSavedDefaults = !!hasSavedDefaults;
-  const editable = (parameters || []).filter((p) => p.group !== "Visual");
+  const editable = (parameters || []).filter(
+    (p) => p.group !== "Visual" && p.group !== "Display Settings" && p.type !== "color"
+  );
 
   if (!editable.length) {
     box.hidden = true;

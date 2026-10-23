@@ -7,6 +7,8 @@ from typing import Any
 
 from app.services.pine_parser import PineInputParam, extract_pine_inputs
 
+HIDDEN_PINE_GROUPS = {"Visual", "Display Settings"}
+
 
 def _strip_quotes(val: str) -> str:
     v = val.strip()
@@ -54,12 +56,15 @@ def pine_inputs_for_api(
 ) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for p in extract_pine_inputs(pine_code):
+        if p.kind == "color" or p.group in HIDDEN_PINE_GROUPS:
+            continue
         d = param_to_api_dict(p)
         d["value"] = effective_param_value(p, saved_defaults)
         d["pine_default"] = d["default"]
         out.append(d)
     from app.services.pine_bias_alma_guven import is_bias_alma_guven_script
     from app.services.pine_bias_ts import is_bias_ts_script
+    from app.services.pine_market_bias import is_market_bias_script
     from app.services.pine_strong_fresh import is_strong_fresh_script
 
     if is_strong_fresh_script(pine_code):
@@ -96,7 +101,11 @@ def pine_inputs_for_api(
             )
 
     if (
-        (is_bias_alma_guven_script(pine_code) or is_bias_ts_script(pine_code))
+        (
+            is_bias_alma_guven_script(pine_code)
+            or is_bias_ts_script(pine_code)
+            or is_market_bias_script(pine_code)
+        )
         and not any(p["name"] == "scan_side" for p in out)
     ):
         saved = (saved_defaults or {}).get("scan_side") or "both"
@@ -128,7 +137,7 @@ def param_to_api_dict(p: PineInputParam) -> dict[str, Any]:
         d["options"] = p.options
     elif p.kind == "timeframe":
         d["type"] = "string"
-        d["options"] = ["", "3", "5", "15", "60", "120", "240", "D"]
+        d["options"] = ["", "3", "5", "15", "30", "45", "60", "120", "240", "D"]
     if p.minval is not None:
         d["min"] = p.minval
     if p.maxval is not None:
@@ -171,7 +180,7 @@ def applied_inputs_summary(pine_code: str, overrides: dict[str, Any] | None) -> 
     defaults = {p.name: p.default for p in extract_pine_inputs(pine_code)}
     out: list[dict[str, str]] = []
     for p in extract_pine_inputs(pine_code):
-        if p.group == "Visual":
+        if p.group in HIDDEN_PINE_GROUPS:
             continue
         cur = merged.get(p.name, "")
         if str(cur).strip() != str(defaults.get(p.name, "")).strip():

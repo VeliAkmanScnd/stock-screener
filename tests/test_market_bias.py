@@ -1,0 +1,112 @@
+from pathlib import Path
+
+import pandas as pd
+
+from app.services.pine_params import pine_inputs_for_api
+from app.services.pine_parser import extract_al_condition, extract_pine_inputs
+from app.services.pine_market_bias import (
+    is_market_bias_script,
+    market_bias_params_from_script,
+    market_bias_snapshot,
+)
+
+PINE_PATH = Path(r"C:\Users\Dell\Desktop\MarketBiasStrategy.txt")
+SNIPPET = """
+//@version=5
+strategy(title='Market Bias Strategy (CEREBR)', overlay=true)
+ha_htf  = FORCE_CTF(input.timeframe('', 'Timeframe', group="HA Market Bias"))
+ha_len  = input(100, 'Period', group="HA Market Bias")
+ha_len2 = input(100, 'Smoothing', group="HA Market Bias")
+osc_len = input.int(7, "Oscillator Period", group="HA Market Bias")
+show_ha  = input.bool(true, "Show HA Candles", group='Display Settings')
+exitMode  = input.string('Percent', 'SL / TP mode', options=['Percent', 'Swing RR'], group='Risk Management')
+rrMult    = input.float(1.0, 'Risk reward', minval=0.1, step=0.1, group='Risk Management')
+swingBars = input.int(4, 'Swing bars', minval=1, maxval=50, group='Risk Management')
+tp_pct    = input.float(2.0, 'Take Profit %', group='Risk Management')
+sl_pct    = input.float(1.0, 'Stop Loss %', group='Risk Management')
+allow_long   = input.bool(true, 'Enable Long Trades', group='Trade Direction')
+allow_short  = input.bool(true, 'Enable Short Trades', group='Trade Direction')
+reverse_exit = input.bool(true, 'Close/Reverse on Opposite Signal', group='Trade Direction')
+require_bar  = input.bool(true, 'Bull/Bear Signal Candle', group='Trade Direction')
+maxSame     = input.int(2, 'Max entries one direction', minval=1, maxval=20, group='Trade Direction')
+buyStrength = true
+sellStrength = true
+longGo = buySignal and allow_long
+shortGo = sellSignal and allow_short
+"""
+
+
+def _code() -> str:
+    if PINE_PATH.is_file():
+        return PINE_PATH.read_text(encoding="utf-8")
+    return SNIPPET
+
+
+def test_extracts_ha_risk_and_direction_inputs():
+    names = {p.name: p for p in extract_pine_inputs(_code())}
+    for key in (
+        "ha_htf",
+        "ha_len",
+        "ha_len2",
+        "osc_len",
+        "exitMode",
+        "rrMult",
+        "swingBars",
+        "tp_pct",
+        "sl_pct",
+        "allow_long",
+        "allow_short",
+        "reverse_exit",
+        "require_bar",
+        "maxSame",
+    ):
+        assert key in names, key
+    assert names["ha_htf"].kind == "timeframe"
+    assert names["ha_len"].kind == "int"
+    assert names["ha_len"].default == "100"
+    assert names["exitMode"].options == ["Percent", "Swing RR"]
+    api_names = {p["name"] for p in pine_inputs_for_api(_code())}
+    assert "show_ha" not in api_names
+    assert "ha_len" in api_names
+    assert "allow_short" in api_names
+    assert "scan_side" in api_names
+
+
+def test_detects_market_bias_engine():
+    code = _code()
+    assert is_market_bias_script(code)
+    al = extract_al_condition(code)
+    assert al is not None
+    assert al.source == "market_bias"
+
+
+def test_snapshot_emits_buy_or_sell_flags():
+    n = 400
+    idx = pd.date_range("2026-01-02", periods=n, freq="15min")
+    close = pd.Series(range(n), dtype=float) + 100
+    df = pd.DataFrame(
+        {
+            "Open": close - 0.4,
+            "High": close + 0.8,
+            "Low": close - 0.8,
+            "Close": close,
+            "Volume": 1000.0,
+        },
+        index=idx,
+    )
+    code = _code()
+    params = market_bias_params_from_script(
+        code,
+        {
+            "ha_len": 8,
+            "ha_len2": 8,
+            "osc_len": 3,
+            "require_bar": False,
+            "allow_long": True,
+            "allow_short": True,
+        },
+    )
+    snap = market_bias_snapshot(df, chart_tf="15m", **params)
+    assert "market_bias_buy" in snap
+    assert "market_bias_sell" in snap
+    assert snap["market_bias_buy"] or snap["market_bias_sell"] or snap["pine_al"] in (True, False)

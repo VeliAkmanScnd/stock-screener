@@ -212,6 +212,7 @@ def _signal_direction(signals: dict | None) -> str | None:
     buy = bool(
         sig.get("bias_ts_buy")
         or sig.get("bag_buy")
+        or sig.get("market_bias_buy")
         or sig.get("guven_buy")
         or sig.get("strong_buy")
         or sig.get("buy")
@@ -219,6 +220,7 @@ def _signal_direction(signals: dict | None) -> str | None:
     sell = bool(
         sig.get("bias_ts_sell")
         or sig.get("bag_sell")
+        or sig.get("market_bias_sell")
         or sig.get("guven_sell")
         or sig.get("strong_sell")
         or sig.get("sell")
@@ -227,6 +229,7 @@ def _signal_direction(signals: dict | None) -> str | None:
         side = str(
             sig.get("bias_ts_side")
             or sig.get("bag_side")
+            or sig.get("market_bias_side")
             or sig.get("guven_side")
             or sig.get("strong_side")
             or sig.get("side")

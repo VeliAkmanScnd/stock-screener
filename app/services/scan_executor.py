@@ -11,6 +11,7 @@ from app.config import MAX_SYMBOLS_PER_SCAN
 from app.database import PineScript
 from app.services.pine_fibo import fibo_display_label
 from app.services.pine_bias_alma_guven import bag_display_label
+from app.services.pine_market_bias import market_bias_display_label
 from app.services.pine_bias_ts import bias_ts_display_label
 from app.services.pine_guven_skoru import guven_display_label
 from app.services.pine_strong_fresh import strong_fresh_display_label
@@ -81,6 +82,9 @@ def execute_scan_config(
             elif detected.source == "bias_alma_guven":
                 pine_condition = detected.condition
                 pine_label = bag_display_label(pine_code, pine_input_overrides)
+            elif detected.source == "market_bias":
+                pine_condition = detected.condition
+                pine_label = market_bias_display_label(pine_code, pine_input_overrides)
             elif detected.source == "bias_ts":
                 pine_condition = detected.condition
                 pine_label = bias_ts_display_label(pine_code, pine_input_overrides)
@@ -99,6 +103,8 @@ def execute_scan_config(
             pine_label = choch_display_label(pine_code)
         if pine_source == "bias_alma_guven" and pine_code and not pine_label:
             pine_label = bag_display_label(pine_code, pine_input_overrides)
+        if pine_source == "market_bias" and pine_code and not pine_label:
+            pine_label = market_bias_display_label(pine_code, pine_input_overrides)
         if pine_source == "bias_ts" and pine_code and not pine_label:
             pine_label = bias_ts_display_label(pine_code, pine_input_overrides)
         if pine_source == "guven_skoru" and pine_code and not pine_label:

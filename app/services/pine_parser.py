@@ -49,27 +49,132 @@ def _input_defaults(code: str) -> dict[str, str]:
     return {p.name: p.default for p in extract_pine_inputs(code)}
 
 
+_INPUT_CALL = re.compile(
+    r"(\w+)\s*=\s*(?:[A-Za-z_]\w*\(\s*)?input(?:\.(int|float|bool|string|source|timeframe|color))?\(",
+    flags=re.I,
+)
+
+
+def _extract_paren_args(src: str, open_after: int) -> str | None:
+    """Return the inside of a (...) call starting after the opening paren."""
+    i = open_after
+    depth = 1
+    quote: str | None = None
+    start = i
+    while i < len(src) and depth:
+        ch = src[i]
+        if quote:
+            if ch == "\\" and i + 1 < len(src):
+                i += 2
+                continue
+            if ch == quote:
+                quote = None
+            i += 1
+            continue
+        if ch in ("'", '"'):
+            quote = ch
+            i += 1
+            continue
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+        i += 1
+    if depth != 0:
+        return None
+    return src[start : i - 1]
+
+
+def _split_top_args(blob: str) -> list[str]:
+    args: list[str] = []
+    buf: list[str] = []
+    depth = 0
+    quote: str | None = None
+    for ch in blob:
+        if quote:
+            buf.append(ch)
+            if ch == quote:
+                quote = None
+            continue
+        if ch in ("'", '"'):
+            quote = ch
+            buf.append(ch)
+            continue
+        if ch in "([":
+            depth += 1
+            buf.append(ch)
+            continue
+        if ch in ")]":
+            depth = max(0, depth - 1)
+            buf.append(ch)
+            continue
+        if ch == "," and depth == 0:
+            args.append("".join(buf).strip())
+            buf = []
+            continue
+        buf.append(ch)
+    if buf:
+        args.append("".join(buf).strip())
+    return args
+
+
+def _strip_pine_quotes(val: str) -> str:
+    v = val.strip()
+    if len(v) >= 2 and v[0] == v[-1] and v[0] in ("'", '"'):
+        return v[1:-1]
+    return v
+
+
+def _infer_input_kind(typed: str | None, default: str) -> str:
+    if typed:
+        return typed.lower()
+    d = default.strip().lower()
+    if d in ("true", "false"):
+        return "bool"
+    if default.strip()[:1] in ("'", '"'):
+        return "string"
+    try:
+        f = float(d)
+    except ValueError:
+        return "string"
+    if "." in d or "e" in d:
+        return "float"
+    if f == int(f):
+        return "int"
+    return "float"
+
+
 def extract_pine_inputs(code: str) -> list[PineInputParam]:
-    """Parse Pine input.* declarations (defaults + labels + groups)."""
+    """Parse Pine input / input.* declarations (defaults + labels + groups)."""
     raw = _strip_comments(code)
     group_vars = {
         m.group(1): m.group(2)
-        for m in re.finditer(r'^(\w+)\s*=\s*"([^"]+)"\s*$', raw, flags=re.M)
+        for m in re.finditer(
+            r"^(\w+)\s*=\s*[\"']([^\"']+)[\"']\s*$", raw, flags=re.M
+        )
     }
     params: list[PineInputParam] = []
     seen: set[str] = set()
-    pattern = re.compile(
-        r"(\w+)\s*=\s*input\.(int|float|bool|string|source|timeframe)\(\s*"
-        r"([^,]+)\s*,\s*\"([^\"]+)\"([^)]*)\)",
-        flags=re.I,
-    )
-    for m in pattern.finditer(raw):
+    for m in _INPUT_CALL.finditer(raw):
         name = m.group(1)
         if name in seen:
             continue
-        seen.add(name)
-        tail = m.group(5) or ""
-        gm = re.search(r'group\s*=\s*"([^"]+)"', tail, flags=re.I)
+        blob = _extract_paren_args(raw, m.end())
+        if blob is None:
+            continue
+        args = _split_top_args(blob)
+        if len(args) < 2:
+            continue
+        default = args[0].strip()
+        title = _strip_pine_quotes(args[1])
+        if not title:
+            continue
+        typed = (m.group(2) or "").lower() or None
+        kind = _infer_input_kind(typed, default)
+        if kind == "color":
+            continue
+        tail = ",".join(args[2:])
+        gm = re.search(r"group\s*=\s*[\"']([^\"']+)[\"']", tail, flags=re.I)
         if gm:
             group_name = gm.group(1)
         else:
@@ -86,12 +191,13 @@ def extract_pine_inputs(code: str) -> list[PineInputParam]:
         min_m = re.search(r"minval\s*=\s*([\d.]+)", tail, flags=re.I)
         max_m = re.search(r"maxval\s*=\s*([\d.]+)", tail, flags=re.I)
         step_m = re.search(r"step\s*=\s*([\d.]+)", tail, flags=re.I)
+        seen.add(name)
         params.append(
             PineInputParam(
                 name=name,
-                kind=m.group(2).lower(),
-                default=m.group(3).strip(),
-                label=m.group(4).strip(),
+                kind=kind,
+                default=default,
+                label=title,
                 group=group_name,
                 options=options,
                 minval=float(min_m.group(1)) if min_m else None,
@@ -195,6 +301,24 @@ def _extract_bias_alma_guven(code: str) -> PineALSignal | None:
     )
 
 
+def _extract_market_bias(code: str) -> PineALSignal | None:
+    from app.services.pine_market_bias import (
+        MARKET_BIAS_MARKER,
+        is_market_bias_script,
+        market_bias_display_label,
+    )
+
+    if not is_market_bias_script(code):
+        return None
+    return PineALSignal(
+        condition=MARKET_BIAS_MARKER,
+        source="market_bias",
+        variable_name="longGo|shortGo",
+        first_bar_only=False,
+        display_condition=market_bias_display_label(code),
+    )
+
+
 def _extract_bias_ts(code: str) -> PineALSignal | None:
     from app.services.pine_bias_ts import BIAS_TS_MARKER, bias_ts_display_label, is_bias_ts_script
 
@@ -276,6 +400,10 @@ def extract_al_condition(pine_code: str) -> PineALSignal | None:
     bag = _extract_bias_alma_guven(pine_code)
     if bag:
         return bag
+
+    market_bias = _extract_market_bias(pine_code)
+    if market_bias:
+        return market_bias
 
     bias_ts = _extract_bias_ts(pine_code)
     if bias_ts:

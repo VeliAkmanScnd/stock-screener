@@ -218,18 +218,21 @@ def list_pine_scripts(db: Session = Depends(get_db)):
                 content = load_pine_content(r)
             elif al_source not in (
                 "bias_alma_guven",
+                "market_bias",
                 "bias_ts",
                 "guven_skoru",
                 "strong_fresh",
             ):
                 # Upgrade scripts that were saved as generic AL before dual engines.
                 from app.services.pine_bias_alma_guven import is_bias_alma_guven_script
+                from app.services.pine_market_bias import is_market_bias_script
                 from app.services.pine_bias_ts import is_bias_ts_script
                 from app.services.pine_guven_skoru import is_guven_skoru_script
 
                 content = load_pine_content(r)
                 if not (
                     is_bias_alma_guven_script(content)
+                    or is_market_bias_script(content)
                     or is_bias_ts_script(content)
                     or is_guven_skoru_script(content)
                 ):
@@ -243,6 +246,7 @@ def list_pine_scripts(db: Session = Depends(get_db)):
                         "merged_triple",
                         "choch_bullish",
                         "bias_alma_guven",
+                        "market_bias",
                         "bias_ts",
                         "guven_skoru",
                         "strong_fresh",
@@ -366,6 +370,7 @@ async def upload_pine(
             "merged_triple",
             "choch_bullish",
             "bias_alma_guven",
+            "market_bias",
             "bias_ts",
             "guven_skoru",
             "strong_fresh",
@@ -390,6 +395,12 @@ async def upload_pine(
             "Bias × ALMA × Güven motoru aktif. "
             "Bias rengi + fiyat tarafı + ALMA rengi + Güven eşiği birlikte aranır. "
             "VIOP için evreni VIOP seçin."
+        )
+    elif al and al.source == "market_bias":
+        msg = (
+            "Market Bias Strategy motoru aktif. "
+            "HA Market Bias, risk ve yön parametreleri taramada kullanılır. "
+            "AL ve SAT (longGo / shortGo) son kapanan barda aranır."
         )
     elif al and al.source == "bias_ts":
         msg = (

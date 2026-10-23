@@ -181,6 +181,7 @@ def evaluate_pine_al(
         BIAS_ALMA_GUVEN_MARKER,
         bag_from_script,
     )
+    from app.services.pine_market_bias import MARKET_BIAS_MARKER, market_bias_from_script
     from app.services.pine_bias_ts import BIAS_TS_MARKER, bias_ts_from_script
     from app.services.pine_choch import CHOCH_BULLISH_MARKER, choch_bullish_from_script
     from app.services.pine_guven_skoru import GUVEN_SKORU_MARKER, guven_from_script
@@ -193,6 +194,10 @@ def evaluate_pine_al(
         if not pine_code:
             raise PineEvalError("Pine script dosyası gerekli (Bias × ALMA × Güven)")
         return bag_from_script(df, pine_code, pine_input_overrides)
+    if source == "market_bias" or condition == MARKET_BIAS_MARKER:
+        if not pine_code:
+            raise PineEvalError("Pine script dosyası gerekli (Market Bias Strategy)")
+        return market_bias_from_script(df, pine_code, pine_input_overrides)
     if source == "bias_ts" or condition == BIAS_TS_MARKER:
         if not pine_code:
             raise PineEvalError("Pine script dosyası gerekli (Bias x Trend Strength)")

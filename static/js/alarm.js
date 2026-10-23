@@ -41,7 +41,9 @@ function renderAlarmPineParams(parameters, overrides) {
   const form = document.querySelector("#alarmPineForm");
   if (!box || !form) return;
   alarmPineParams = parameters || [];
-  const editable = alarmPineParams.filter((p) => p.group !== "Visual");
+  const editable = alarmPineParams.filter(
+    (p) => p.group !== "Visual" && p.group !== "Display Settings" && p.type !== "color"
+  );
   if (!editable.length) {
     box.hidden = true;
     form.innerHTML = "";

@@ -247,6 +247,8 @@ def _engine_direction_hit(signals: dict[str, Any], pine_source: str | None) -> b
     """True when a dedicated engine left an explicit AL/SAT (or known) hit flag."""
     if signals.get("bag_buy") or signals.get("bag_sell"):
         return True
+    if signals.get("market_bias_buy") or signals.get("market_bias_sell"):
+        return True
     if signals.get("bias_ts_buy") or signals.get("bias_ts_sell"):
         return True
     if signals.get("guven_buy") or signals.get("guven_sell"):
@@ -259,6 +261,7 @@ def _engine_direction_hit(signals: dict[str, Any], pine_source: str | None) -> b
         return True
     if pine_source in (
         "bias_alma_guven",
+        "market_bias",
         "bias_ts",
         "guven_skoru",
         "strong_fresh",
@@ -331,6 +334,25 @@ def scan_dataframe(
                     **bag_params_from_script(pine_code, overrides),
                 )
                 shift = int(snap.pop("bag_bar_shift", 0) or 0)
+                signals.update(snap)
+                pine_ok = bool(snap.get("pine_al"))
+                if pine_ok and shift >= 1 and len(df) > shift:
+                    bar_shift = shift
+                    signals.update(
+                        signal_bar_fields(df.iloc[:-shift], req.timeframe, universe=market)
+                    )
+            elif pine_source == "market_bias" and pine_code:
+                from app.services.pine_market_bias import (
+                    market_bias_params_from_script,
+                    market_bias_snapshot,
+                )
+
+                snap = market_bias_snapshot(
+                    df,
+                    chart_tf=req.timeframe,
+                    **market_bias_params_from_script(pine_code, overrides),
+                )
+                shift = int(snap.pop("market_bias_bar_shift", 0) or 0)
                 signals.update(snap)
                 pine_ok = bool(snap.get("pine_al"))
                 if pine_ok and shift >= 1 and len(df) > shift:
