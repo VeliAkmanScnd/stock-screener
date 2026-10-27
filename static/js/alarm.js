@@ -1,6 +1,7 @@
 let alarmContracts = [];
 let alarmPineParams = [];
 let alarmEditingId = null;
+let alarmSelected = new Set();
 
 function alarmEsc(s) {
   return String(s ?? "")
@@ -122,34 +123,40 @@ async function loadAlarmPineParams(id, overrides) {
 }
 
 function selectedAlarmContracts() {
-  return [...document.querySelectorAll("#alarmContractGrid input:checked")].map(
-    (el) => el.value
-  );
+  return [...alarmSelected];
+}
+
+function setAlarmSaveMode(editing) {
+  const btn = document.querySelector("#btnAlarmSave");
+  if (btn) btn.textContent = editing ? "Güncelle" : "Kaydet";
 }
 
 function updateAlarmContractHint() {
   const hint = document.querySelector("#alarmContractHint");
-  if (hint) hint.textContent = `Seçilen ${selectedAlarmContracts().length} / ${alarmContracts.length}`;
+  if (hint) hint.textContent = `Seçilen ${alarmSelected.size} / ${alarmContracts.length}`;
 }
 
 function renderAlarmContracts(selected) {
   const grid = document.querySelector("#alarmContractGrid");
   if (!grid) return;
+  if (Array.isArray(selected)) {
+    alarmSelected = new Set(selected);
+  }
   const q = (document.querySelector("#alarmContractFilter")?.value || "")
     .trim()
     .toLocaleLowerCase("tr");
-  const picked = new Set(selected || selectedAlarmContracts());
   const rows = alarmContracts.filter((c) => {
     if (!q) return true;
     return `${c.ticker} ${c.contract} ${c.name}`.toLocaleLowerCase("tr").includes(q);
   });
+  updateAlarmContractHint();
   if (!rows.length) {
     grid.innerHTML = '<p class="hint">Eşleşen pay yok.</p>';
     return;
   }
   grid.innerHTML = rows
     .map((c) => {
-      const on = picked.has(c.contract) ? "checked" : "";
+      const on = alarmSelected.has(c.contract) ? "checked" : "";
       return `<label class="alarm-contract">
         <input type="checkbox" value="${alarmEsc(c.contract)}" ${on} />
         <span><strong>${alarmEsc(c.ticker)}</strong> ${alarmEsc(c.name)}</span>
@@ -157,9 +164,12 @@ function renderAlarmContracts(selected) {
     })
     .join("");
   grid.querySelectorAll("input").forEach((cb) => {
-    cb.addEventListener("change", updateAlarmContractHint);
+    cb.addEventListener("change", () => {
+      if (cb.checked) alarmSelected.add(cb.value);
+      else alarmSelected.delete(cb.value);
+      updateAlarmContractHint();
+    });
   });
-  updateAlarmContractHint();
 }
 
 async function loadAlarmContracts() {
@@ -197,8 +207,25 @@ function resetAlarmForm() {
   document.querySelector("#alarmEnabled").checked = true;
   setAlarmWeekdays([0, 1, 2, 3, 4]);
   renderAlarmPineParams([], {});
+  const filter = document.querySelector("#alarmContractFilter");
+  if (filter) filter.value = "";
   renderAlarmContracts([]);
+  setAlarmSaveMode(false);
   alarmStatus("Yeni alarm.");
+}
+
+function readyForNextAlarm(savedName) {
+  alarmEditingId = null;
+  document.querySelector("#alarmId").value = "";
+  document.querySelector("#alarmName").value = "";
+  const filter = document.querySelector("#alarmContractFilter");
+  if (filter) filter.value = "";
+  renderAlarmContracts([]);
+  setAlarmSaveMode(false);
+  alarmStatus(
+    `Kaydedildi: ${savedName}. Ad ve pay seçip tekrar Kaydet — alarm sayısı sınırsız.`,
+    "ok"
+  );
 }
 
 function collectAlarmBody() {
@@ -236,6 +263,7 @@ async function fillAlarmForm(row) {
   setAlarmWeekdays(row.weekdays);
   await loadAlarmPineParams(row.pine_script_id, row.pine_input_overrides || {});
   renderAlarmContracts(row.contracts || []);
+  setAlarmSaveMode(true);
   alarmStatus(`Düzenleniyor: ${row.name}`);
 }
 
@@ -251,6 +279,10 @@ async function loadAlarmList() {
   try {
     const res = await apiFetch("/api/alarms");
     const rows = await res.json();
+    const title = document.querySelector("#alarmListTitle");
+    if (title) {
+      title.textContent = rows.length ? `Kayıtlı alarmlar (${rows.length})` : "Kayıtlı alarmlar";
+    }
     if (!rows.length) {
       body.innerHTML = '<tr class="empty"><td colspan="5">Henüz alarm yok.</td></tr>';
       return;
@@ -364,9 +396,8 @@ async function saveAlarm(e) {
       alarmStatus(data.detail || "Kayıt hatası", "error");
       return;
     }
-    await fillAlarmForm(data);
     await loadAlarmList();
-    alarmStatus("Kaydedildi. Aynı Pine ile başka pay için «Yeni alarm».", "ok");
+    readyForNextAlarm(data.name || body.name);
   } catch (err) {
     alarmStatus(err.message, "error");
   }
@@ -385,7 +416,7 @@ function initAlarmPanel() {
     loadAlarmPineParams(e.target.value, {});
   });
   document.querySelector("#alarmContractFilter")?.addEventListener("input", () => {
-    renderAlarmContracts(selectedAlarmContracts());
+    renderAlarmContracts();
   });
   document.querySelector("#btnAlarmSelectAllPay")?.addEventListener("click", () => {
     renderAlarmContracts(alarmContracts.map((c) => c.contract));

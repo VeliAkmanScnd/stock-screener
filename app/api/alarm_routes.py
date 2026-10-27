@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -35,6 +36,7 @@ from app.services.schedule_helpers import (
 from app.services.scheduler import register_job, unregister_job
 
 router = APIRouter(prefix="/api/alarms", tags=["alarms"])
+logger = logging.getLogger(__name__)
 
 
 class AlarmBody(BaseModel):
@@ -101,9 +103,12 @@ def list_alarms(
     rows = q.order_by(ScheduledScan.created_at.desc()).all()
     out = []
     for row in rows:
-        if not is_alarm_config(config_from_row(row)):
-            continue
-        out.append(alarm_view(_row_to_dict(row)))
+        try:
+            if not is_alarm_config(config_from_row(row)):
+                continue
+            out.append(alarm_view(_row_to_dict(row)))
+        except Exception:
+            logger.exception("Alarm listesi satırı atlandı id=%s", getattr(row, "id", None))
     return out
 
 
