@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 
 ProgressCallback = Callable[[str, int, int, str], None]
 StopCheck = Callable[[], bool]
+SnapshotCallback = Callable[[dict[str, Any]], None]
 
 
 class OptimizeCancelled(Exception):
@@ -653,6 +654,14 @@ def _progress_step(total: int) -> int:
     return max(20, min(500, total // 400))
 
 
+def _ranked_results(refs: list[dict[str, Any]], buf: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rest = sorted(buf, key=_result_rank_key)[:RESULT_LIMIT]
+    ranked = []
+    for idx, row in enumerate(list(refs) + rest, start=1):
+        ranked.append({"rank": idx, **row})
+    return ranked
+
+
 def search_bias_params(
     df,
     *,
@@ -663,6 +672,7 @@ def search_bias_params(
     grid_size: int | None = None,
     total: int | None = None,
     should_stop: StopCheck | None = None,
+    on_snapshot: SnapshotCallback | None = None,
 ) -> dict[str, Any]:
     frame = prepare_backtest_ohlcv(df)
     if frame is None or frame.empty:
@@ -679,6 +689,7 @@ def search_bias_params(
     attempted = 0
     cancelled = False
     started = time.monotonic()
+    last_snap = 0.0
     step = _progress_step(planned)
 
     def trim_buf() -> None:
@@ -687,11 +698,32 @@ def search_bias_params(
         buf.sort(key=_result_rank_key)
         del buf[RESULT_LIMIT:]
 
+    def emit_snapshot() -> None:
+        nonlocal last_snap
+        if not on_snapshot:
+            return
+        last_snap = time.monotonic()
+        ranked = _ranked_results(refs, buf)
+        on_snapshot(
+            {
+                "tested": attempted,
+                "passed": passed_n,
+                "errors": errors,
+                "error": first_error or None,
+                "cancelled": cancelled,
+                "partial": True,
+                "reference": next((r for r in ranked if r.get("tag") == "referans"), None),
+                "best": next((r for r in ranked if r.get("passed") and r.get("tag") != "referans"), None),
+                "results": ranked,
+            }
+        )
+
     for i, params in enumerate(combos, start=1):
         if should_stop and should_stop():
             cancelled = True
             break
         attempted = i
+        passed = False
         try:
             engine = _engine_typed(params)
             series = market_bias_series(frame, chart_tf=chart_tf, **engine)
@@ -717,8 +749,10 @@ def search_bias_params(
                 first_error = f"{type(exc).__name__}: {exc}"
             logger.warning("bias combo failed %s: %s", params, exc)
         denom = planned or attempted
-        if on_progress and (i == denom or i <= 3 or i % step == 0):
-            elapsed = time.monotonic() - started
+        tick = i == denom or i <= 3 or i % step == 0
+        now = time.monotonic()
+        if on_progress and tick:
+            elapsed = now - started
             pct = 100.0 * i / denom if denom else 0.0
             eta = ""
             if i < denom and i >= 2 and elapsed >= 1.0:
@@ -729,6 +763,8 @@ def search_bias_params(
                 denom,
                 _search_progress_label(i, denom, grid_size, pct=pct, eta=eta),
             )
+        if on_snapshot and (tick or (passed and now - last_snap >= 0.4) or now - last_snap >= 0.8):
+            emit_snapshot()
     trim_buf()
     if not refs and not buf:
         if cancelled:
@@ -738,6 +774,7 @@ def search_bias_params(
                 "errors": errors,
                 "error": first_error or None,
                 "cancelled": True,
+                "partial": False,
                 "reference": None,
                 "best": None,
                 "results": [],
@@ -745,10 +782,7 @@ def search_bias_params(
         raise RuntimeError(
             f"Hiçbir kombinasyon hesaplanamadı ({errors}/{attempted}): {first_error or 'bilinmeyen hata'}"
         )
-    buf.sort(key=_result_rank_key)
-    ranked = []
-    for idx, row in enumerate(refs + buf[:RESULT_LIMIT], start=1):
-        ranked.append({"rank": idx, **row})
+    ranked = _ranked_results(refs, buf)
     reference = next((r for r in ranked if r.get("tag") == "referans"), None)
     best = next((r for r in ranked if r.get("passed") and r.get("tag") != "referans"), None)
     return {
@@ -757,6 +791,7 @@ def search_bias_params(
         "errors": errors,
         "error": first_error or None,
         "cancelled": cancelled,
+        "partial": False,
         "reference": reference,
         "best": best,
         "results": ranked,
@@ -767,6 +802,7 @@ def run_bias_optimize(
     body: dict[str, Any],
     on_progress: ProgressCallback | None = None,
     should_stop: StopCheck | None = None,
+    on_partial: SnapshotCallback | None = None,
 ) -> dict[str, Any]:
     from app.services.borsapy_client import (
         fetch_ohlcv_one_backtest,
@@ -836,6 +872,25 @@ def run_bias_optimize(
         "min_profit": float(body.get("min_profit") or 0),
         "min_trades": float(body.get("min_trades") or 8),
     }
+    start = df.index[0]
+    end = df.index[-1]
+    meta = {
+        "symbol": symbol,
+        "timeframe": timeframe,
+        "period": period,
+        "bars": int(len(df)),
+        "from": start.isoformat() if hasattr(start, "isoformat") else str(start),
+        "to": end.isoformat() if hasattr(end, "isoformat") else str(end),
+        "filters": filters,
+        "grid_size": space,
+        "coverage_note": coverage_note(timeframe, period, (end - start).days if hasattr(end - start, "days") else 0),
+    }
+
+    def emit_partial(found: dict[str, Any]) -> None:
+        if not on_partial:
+            return
+        on_partial({**meta, "combo_count": int(found.get("tested") or planned), **found})
+
     if on_progress:
         on_progress(
             "searching",
@@ -852,9 +907,8 @@ def run_bias_optimize(
         grid_size=space,
         total=planned,
         should_stop=should_stop,
+        on_snapshot=emit_partial if on_partial else None,
     )
-    start = df.index[0]
-    end = df.index[-1]
     if on_progress:
         if found.get("cancelled"):
             on_progress("cancelled", found["tested"], planned, "Durduruldu")
@@ -965,7 +1019,17 @@ def start_optimize_job(body: dict[str, Any]) -> str:
 
     def worker() -> None:
         try:
-            result = json_safe(run_bias_optimize(body, on_progress=report, should_stop=should_stop))
+            def on_partial(snapshot: dict[str, Any]) -> None:
+                _update(result=json_safe(snapshot))
+
+            result = json_safe(
+                run_bias_optimize(
+                    body,
+                    on_progress=report,
+                    should_stop=should_stop,
+                    on_partial=on_partial,
+                )
+            )
             if result.get("cancelled") or should_stop():
                 result["cancelled"] = True
                 _update(

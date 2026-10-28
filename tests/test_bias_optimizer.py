@@ -193,6 +193,52 @@ def test_search_ranks_passing_rows_first():
     assert "params" in found["results"][0]
 
 
+def test_search_emits_partial_snapshots():
+    df = _wave_frame(360)
+    combo = {
+        "ha_len": 8,
+        "ha_len2": 8,
+        "osc_len": 3,
+        "ha_htf": "",
+        "exit_mode": "Percent",
+        "rr_mult": 1.0,
+        "swing_bars": 4,
+        "tp_pct": 2.0,
+        "sl_pct": 1.0,
+        "allow_long": True,
+        "allow_short": True,
+        "reverse_exit": True,
+        "require_bar": False,
+        "max_same": 8,
+    }
+    seen = []
+
+    def on_snapshot(payload):
+        seen.append(payload["tested"])
+        assert payload["partial"] is True
+        assert payload["results"]
+
+    found = search_bias_params(
+        df,
+        chart_tf="15m",
+        combos=[combo, dict(combo), dict(combo)],
+        filters={
+            "min_win_rate": 0,
+            "max_drawdown": 100,
+            "min_profit_factor": 0,
+            "min_profit": -100,
+            "min_trades": 1,
+        },
+        on_snapshot=on_snapshot,
+        total=3,
+    )
+    assert seen
+    assert seen[0] == 1
+    assert seen[-1] >= 1
+    assert found["tested"] == 3
+    assert found["partial"] is False
+
+
 def test_search_stops_when_requested():
     df = _wave_frame(360)
     combo = {

@@ -329,7 +329,10 @@ function paintOptTable() {
       countEl.textContent = "";
     }
     const err = optLastPayload?.error ? ` ${optLastPayload.error}` : "";
-    body.innerHTML = `<tr class="empty"><td colspan="19">Eşikleri geçen (veya yakın) set yok.${optEsc(err)}</td></tr>`;
+    const waiting = optLastPayload?.partial || !!optJobId;
+    body.innerHTML = waiting
+      ? `<tr class="empty"><td colspan="19">Sonuçlar bulundukça burada listelenir.</td></tr>`
+      : `<tr class="empty"><td colspan="19">Eşikleri geçen (veya yakın) set yok.${optEsc(err)}</td></tr>`;
     return;
   }
   const filtered = sortOptRows(filterOptRows(all));
@@ -424,20 +427,24 @@ function renderOptCompare(payload) {
   `;
 }
 
-function renderOptResults(payload) {
+function renderOptResults(payload, live) {
   optLastPayload = payload || {};
-  optSort = { key: "rank", dir: "asc" };
+  if (!live) optSort = { key: "rank", dir: "asc" };
   const title = document.querySelector("#optResultTitle");
   const hint = document.querySelector("#optResultHint");
   const passed = optLastPayload.passed ?? 0;
   const tested = optLastPayload.tested ?? 0;
   const space = optLastPayload.grid_size || 0;
-  if (title) title.textContent = `${optLastPayload.symbol || ""} sonuçları`;
+  if (title) {
+    const liveBit = optLastPayload.partial ? " · taranıyor" : "";
+    title.textContent = `${optLastPayload.symbol || ""} sonuçları${liveBit}`;
+  }
   if (hint) {
     const comboBit = space > tested
       ? `${tested} örnek / ${Number(space).toLocaleString("tr-TR")} olası`
       : `${tested} kombinasyon`;
-    hint.textContent = `${optLastPayload.bars || 0} bar · ${optLastPayload.from || ""} → ${optLastPayload.to || ""} · ${comboBit} · ${passed} eşik geçti`;
+    const liveBit = optLastPayload.partial ? " · taranıyor" : "";
+    hint.textContent = `${optLastPayload.bars || 0} bar · ${optLastPayload.from || ""} → ${optLastPayload.to || ""} · ${comboBit} · ${passed} eşik geçti${liveBit}`;
   }
   renderOptCompare(optLastPayload);
   syncOptSortHeaders();
@@ -666,7 +673,11 @@ async function pollOptJob(jobId) {
     } else if (job.phase === "downloading") {
       optStatus(job.message || "Veri indiriliyor…");
     } else {
-      optStatus("Tarama devam ediyor…");
+      const passed = job.result?.passed ?? 0;
+      optStatus(passed ? `Tarama devam ediyor… ${passed} eşik geçti.` : "Tarama devam ediyor…");
+    }
+    if (job.result?.results?.length) {
+      renderOptResults(job.result, true);
     }
     optPollTimer = setTimeout(() => {
       pollOptJob(jobId).catch((err) => {
@@ -720,6 +731,8 @@ async function startOptRun(e) {
   }
   setOptRunState(true);
   optJobId = null;
+  optLastPayload = { results: [], partial: true };
+  paintOptTable();
   optStatus("Tarama başlatılıyor…");
   setOptProgress(2, "Başlatılıyor…");
   try {
