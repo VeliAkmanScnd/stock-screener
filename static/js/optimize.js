@@ -1,6 +1,15 @@
 let optContractsLoaded = false;
 let optPollTimer = null;
 let optPresets = [];
+let optLastPayload = null;
+let optSort = { key: "rank", dir: "asc" };
+
+const OPT_SORT_DESC_DEFAULT = new Set([
+  "win_rate",
+  "profit_factor",
+  "net_profit_pct",
+  "trades",
+]);
 
 const OPT_AXIS = [
   ["ha_len", "optHaLenOn"],
@@ -123,28 +132,124 @@ function pineOverridesFromRow(params) {
   };
 }
 
-function renderOptResults(payload) {
+function optFilterNum(id) {
+  const el = document.querySelector(id);
+  if (!el || String(el.value).trim() === "") return null;
+  const v = parseFloat(el.value);
+  return Number.isFinite(v) ? v : null;
+}
+
+function optRowValue(row, key) {
+  const p = row.params || {};
+  if (key in row && key !== "params") return row[key];
+  if (key === "reverse_exit") return p.reverse_exit ? 1 : 0;
+  if (key === "require_bar") return p.require_bar ? 1 : 0;
+  if (key === "exitMode") return optExitLabel(p.exitMode);
+  if (key === "ha_htf") return p.ha_htf || "";
+  return p[key];
+}
+
+function optRowHaystack(row) {
+  const p = row.params || {};
+  return [
+    row.rank,
+    row.win_rate,
+    row.profit_factor,
+    row.net_profit_pct,
+    row.max_drawdown,
+    row.trades,
+    p.ha_len,
+    p.ha_len2,
+    p.osc_len,
+    p.ha_htf,
+    optExitLabel(p.exitMode),
+    p.rrMult,
+    p.swingBars,
+    p.tp_pct,
+    p.sl_pct,
+    optBoolLabel(p.reverse_exit),
+    optBoolLabel(p.require_bar),
+    p.maxSame,
+  ]
+    .map((v) => String(v ?? "").toLowerCase())
+    .join(" ");
+}
+
+function filterOptRows(rows) {
+  const passedOnly = !!document.querySelector("#optFilterPassed")?.checked;
+  const minWr = optFilterNum("#optFilterWr");
+  const minPf = optFilterNum("#optFilterPf");
+  const minProfit = optFilterNum("#optFilterProfit");
+  const maxDd = optFilterNum("#optFilterDd");
+  const minTrades = optFilterNum("#optFilterTrades");
+  const q = (document.querySelector("#optFilterText")?.value || "").trim().toLowerCase();
+  return rows.filter((r) => {
+    if (passedOnly && !r.passed) return false;
+    if (minWr != null && Number(r.win_rate) < minWr) return false;
+    if (minPf != null && Number(r.profit_factor) < minPf) return false;
+    if (minProfit != null && Number(r.net_profit_pct) < minProfit) return false;
+    if (maxDd != null && Number(r.max_drawdown) > maxDd) return false;
+    if (minTrades != null && Number(r.trades) < minTrades) return false;
+    if (q && !optRowHaystack(r).includes(q)) return false;
+    return true;
+  });
+}
+
+function sortOptRows(rows) {
+  const key = optSort.key || "rank";
+  const mul = optSort.dir === "desc" ? -1 : 1;
+  return [...rows].sort((a, b) => {
+    const av = optRowValue(a, key);
+    const bv = optRowValue(b, key);
+    if (typeof av === "string" || typeof bv === "string") {
+      const cmp = String(av ?? "").localeCompare(String(bv ?? ""), "tr", { numeric: true });
+      return mul * (cmp || (a.rank || 0) - (b.rank || 0));
+    }
+    const an = Number(av);
+    const bn = Number(bv);
+    if (!Number.isFinite(an) && !Number.isFinite(bn)) return (a.rank || 0) - (b.rank || 0);
+    if (!Number.isFinite(an)) return 1;
+    if (!Number.isFinite(bn)) return -1;
+    if (an === bn) return (a.rank || 0) - (b.rank || 0);
+    return mul * (an - bn);
+  });
+}
+
+function syncOptSortHeaders() {
+  document.querySelectorAll(".opt-results-table th[aria-sort]").forEach((th) => {
+    const btn = th.querySelector("[data-opt-sort]");
+    const key = btn?.getAttribute("data-opt-sort");
+    if (key && key === optSort.key) th.setAttribute("aria-sort", optSort.dir === "desc" ? "descending" : "ascending");
+    else th.setAttribute("aria-sort", "none");
+  });
+}
+
+function paintOptTable() {
   const body = document.querySelector("#optResultBody");
-  const title = document.querySelector("#optResultTitle");
-  const hint = document.querySelector("#optResultHint");
+  const countEl = document.querySelector("#optResultCount");
+  const tools = document.querySelector("#optResultTools");
   if (!body) return;
-  const rows = payload?.results || [];
-  const passed = payload?.passed ?? 0;
-  const tested = payload?.tested ?? 0;
-  const space = payload?.grid_size || 0;
-  if (title) title.textContent = `${payload.symbol || ""} sonuçları`;
-  if (hint) {
-    const comboBit = space > tested
-      ? `${tested} örnek / ${Number(space).toLocaleString("tr-TR")} olası`
-      : `${tested} kombinasyon`;
-    hint.textContent = `${payload.bars || 0} bar · ${payload.from || ""} → ${payload.to || ""} · ${comboBit} · ${passed} eşik geçti`;
-  }
-  if (!rows.length) {
-    const err = payload.error ? ` ${payload.error}` : "";
+  const all = optLastPayload?.results || [];
+  if (tools) tools.hidden = all.length === 0;
+  if (!all.length) {
+    if (countEl) {
+      countEl.hidden = true;
+      countEl.textContent = "";
+    }
+    const err = optLastPayload?.error ? ` ${optLastPayload.error}` : "";
     body.innerHTML = `<tr class="empty"><td colspan="19">Eşikleri geçen (veya yakın) set yok.${optEsc(err)}</td></tr>`;
     return;
   }
-  body.innerHTML = rows
+  const filtered = sortOptRows(filterOptRows(all));
+  if (countEl) {
+    countEl.hidden = false;
+    countEl.textContent = `${filtered.length} / ${all.length} satır gösteriliyor`;
+  }
+  if (!filtered.length) {
+    body.innerHTML = `<tr class="empty"><td colspan="19">Filtreye uyan satır yok.</td></tr>`;
+    return;
+  }
+  body.innerHTML = filtered
     .map((r) => {
       const p = r.params || {};
       const cls = r.passed ? "opt-row-pass" : "opt-row-fail";
@@ -183,6 +288,39 @@ function renderOptResults(payload) {
       }
     });
   });
+}
+
+function renderOptResults(payload) {
+  optLastPayload = payload || {};
+  optSort = { key: "rank", dir: "asc" };
+  const title = document.querySelector("#optResultTitle");
+  const hint = document.querySelector("#optResultHint");
+  const passed = optLastPayload.passed ?? 0;
+  const tested = optLastPayload.tested ?? 0;
+  const space = optLastPayload.grid_size || 0;
+  if (title) title.textContent = `${optLastPayload.symbol || ""} sonuçları`;
+  if (hint) {
+    const comboBit = space > tested
+      ? `${tested} örnek / ${Number(space).toLocaleString("tr-TR")} olası`
+      : `${tested} kombinasyon`;
+    hint.textContent = `${optLastPayload.bars || 0} bar · ${optLastPayload.from || ""} → ${optLastPayload.to || ""} · ${comboBit} · ${passed} eşik geçti`;
+  }
+  syncOptSortHeaders();
+  paintOptTable();
+}
+
+function onOptSortClick(ev) {
+  const btn = ev.target.closest("[data-opt-sort]");
+  if (!btn) return;
+  const key = btn.getAttribute("data-opt-sort");
+  if (!key) return;
+  if (optSort.key === key) {
+    optSort.dir = optSort.dir === "asc" ? "desc" : "asc";
+  } else {
+    optSort = { key, dir: OPT_SORT_DESC_DEFAULT.has(key) ? "desc" : "asc" };
+  }
+  syncOptSortHeaders();
+  paintOptTable();
 }
 
 function optRange(base, fallback) {
@@ -474,6 +612,11 @@ function initOptimize() {
   document.querySelector("#optExitMode")?.addEventListener("change", syncOptExitFields);
   document.querySelectorAll(".opt-enable").forEach((el) => {
     el.addEventListener("change", syncOptAxisUi);
+  });
+  document.querySelector(".opt-results-table thead")?.addEventListener("click", onOptSortClick);
+  ["#optFilterPassed", "#optFilterWr", "#optFilterPf", "#optFilterProfit", "#optFilterDd", "#optFilterTrades", "#optFilterText"].forEach((id) => {
+    document.querySelector(id)?.addEventListener("input", paintOptTable);
+    document.querySelector(id)?.addEventListener("change", paintOptTable);
   });
   document.querySelector("#btnOptPresetSave")?.addEventListener("click", saveOptPreset);
   document.querySelector("#btnOptPresetLoad")?.addEventListener("click", loadSelectedOptPreset);

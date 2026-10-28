@@ -6,7 +6,7 @@
   <title>TradeLABtr Stock Screener</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/css/style.css?v=51" />
+  <link rel="stylesheet" href="/static/css/style.css?v=52" />
   <link rel="stylesheet" href="/static/css/auth.css?v=7" />
 </head>
 <body>
@@ -1006,31 +1006,44 @@
         <div class="track-list-head">
           <div>
             <h2 id="optResultTitle">Sonuçlar</h2>
-            <p class="hint" id="optResultHint">Eşikleri geçen setler üstte; profit factor, net kâr ve kazanç oranına göre sıralanır.</p>
+            <p class="hint" id="optResultHint">Eşikleri geçen setler üstte; sütun başlığına tıklayarak sıralayın, aşağıdaki kutularla tabloyu daraltın.</p>
+            <p class="hint" id="optResultCount" hidden></p>
           </div>
         </div>
-        <div class="table-wrap">
+        <div class="opt-result-tools" id="optResultTools" hidden>
+          <label class="opt-filter-check">
+            <input type="checkbox" id="optFilterPassed" />
+            <span>Yalnızca geçen</span>
+          </label>
+          <label class="field"><span>Min WR %</span><input type="number" id="optFilterWr" min="0" max="100" step="any" inputmode="decimal" /></label>
+          <label class="field"><span>Min PF</span><input type="number" id="optFilterPf" min="0" max="99" step="any" inputmode="decimal" /></label>
+          <label class="field"><span>Min kâr %</span><input type="number" id="optFilterProfit" min="-100" max="500" step="any" inputmode="decimal" /></label>
+          <label class="field"><span>Maks. DD %</span><input type="number" id="optFilterDd" min="0" max="100" step="any" inputmode="decimal" /></label>
+          <label class="field"><span>Min işlem</span><input type="number" id="optFilterTrades" min="1" max="500" step="1" inputmode="numeric" /></label>
+          <label class="field opt-filter-search"><span>Ara</span><input type="search" id="optFilterText" placeholder="HA, osc, RR…" /></label>
+        </div>
+        <div class="table-wrap opt-table-wrap" id="optTableWrap" tabindex="0" role="region" aria-labelledby="optResultTitle">
           <table class="scheduled-scans-table opt-results-table">
             <thead>
               <tr>
-                <th>#</th>
-                <th>WR %</th>
-                <th>PF</th>
-                <th>Kâr %</th>
-                <th>DD %</th>
-                <th>İşlem</th>
-                <th>HA</th>
-                <th>Smooth</th>
-                <th>Osc</th>
-                <th>HTF</th>
-                <th>Çıkış</th>
-                <th>RR</th>
-                <th>Swing</th>
-                <th>TP %</th>
-                <th>SL %</th>
-                <th>Rev</th>
-                <th>Mum</th>
-                <th>Same</th>
+                <th aria-sort="none"><button type="button" class="opt-sort" data-opt-sort="rank">#</button></th>
+                <th aria-sort="none"><button type="button" class="opt-sort" data-opt-sort="win_rate">WR %</button></th>
+                <th aria-sort="none"><button type="button" class="opt-sort" data-opt-sort="profit_factor">PF</button></th>
+                <th aria-sort="none"><button type="button" class="opt-sort" data-opt-sort="net_profit_pct">Kâr %</button></th>
+                <th aria-sort="none"><button type="button" class="opt-sort" data-opt-sort="max_drawdown">DD %</button></th>
+                <th aria-sort="none"><button type="button" class="opt-sort" data-opt-sort="trades">İşlem</button></th>
+                <th aria-sort="none"><button type="button" class="opt-sort" data-opt-sort="ha_len">HA</button></th>
+                <th aria-sort="none"><button type="button" class="opt-sort" data-opt-sort="ha_len2">Smooth</button></th>
+                <th aria-sort="none"><button type="button" class="opt-sort" data-opt-sort="osc_len">Osc</button></th>
+                <th aria-sort="none"><button type="button" class="opt-sort" data-opt-sort="ha_htf">HTF</button></th>
+                <th aria-sort="none"><button type="button" class="opt-sort" data-opt-sort="exitMode">Çıkış</button></th>
+                <th aria-sort="none"><button type="button" class="opt-sort" data-opt-sort="rrMult">RR</button></th>
+                <th aria-sort="none"><button type="button" class="opt-sort" data-opt-sort="swingBars">Swing</button></th>
+                <th aria-sort="none"><button type="button" class="opt-sort" data-opt-sort="tp_pct">TP %</button></th>
+                <th aria-sort="none"><button type="button" class="opt-sort" data-opt-sort="sl_pct">SL %</button></th>
+                <th aria-sort="none"><button type="button" class="opt-sort" data-opt-sort="reverse_exit">Rev</button></th>
+                <th aria-sort="none"><button type="button" class="opt-sort" data-opt-sort="require_bar">Mum</button></th>
+                <th aria-sort="none"><button type="button" class="opt-sort" data-opt-sort="maxSame">Same</button></th>
                 <th></th>
               </tr>
             </thead>
@@ -1224,6 +1237,6 @@
   <script src="/static/js/perf.js?v=5"></script>
   <script src="/static/js/help.js?v=2"></script>
   <script src="/static/js/alarm.js?v=1"></script>
-  <script src="/static/js/optimize.js?v=5"></script>
+  <script src="/static/js/optimize.js?v=6"></script>
 </body>
 </html>
