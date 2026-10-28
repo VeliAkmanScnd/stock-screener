@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import json
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
 
 from app.api.auth_deps import get_current_user
-from app.database import User
+from app.database import OptimizePreset, User, get_db
 from app.services.alarm_service import list_viop_pay_contracts
 from app.services.borsapy_client import tradingview_auth_configured
 
@@ -39,6 +42,37 @@ class OptimizeBody(BaseModel):
     reverse_exit: Any = None
     require_bar: Any = None
     max_same: Any = None
+    optimize: dict[str, bool] | None = None
+
+
+class PresetBody(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    symbol: str = ""
+    config: dict[str, Any] = Field(default_factory=dict)
+
+
+def _preset_dict(row: OptimizePreset) -> dict[str, Any]:
+    try:
+        config = json.loads(row.config_json or "{}")
+    except json.JSONDecodeError:
+        config = {}
+    return {
+        "id": row.id,
+        "name": row.name,
+        "symbol": row.symbol or "",
+        "config": config,
+        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+    }
+
+
+def _owned_preset(db: Session, preset_id: int, user: User) -> OptimizePreset:
+    q = db.query(OptimizePreset).filter(OptimizePreset.id == preset_id)
+    if user.role != "admin":
+        q = q.filter(OptimizePreset.user_id == user.id)
+    row = q.first()
+    if not row:
+        raise HTTPException(404, "Kayıt bulunamadı")
+    return row
 
 
 @router.get("/contracts")
@@ -75,3 +109,73 @@ def optimize_job(job_id: str, _user: User = Depends(get_current_user)):
     if not job:
         raise HTTPException(404, "Test bulunamadı veya süresi doldu")
     return job
+
+
+@router.get("/presets")
+def list_presets(
+    symbol: str | None = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    q = db.query(OptimizePreset)
+    if user.role != "admin":
+        q = q.filter(OptimizePreset.user_id == user.id)
+    want = (symbol or "").strip().upper()
+    if want:
+        q = q.filter((OptimizePreset.symbol == want) | (OptimizePreset.symbol == ""))
+    rows = q.order_by(OptimizePreset.updated_at.desc()).all()
+    return {"count": len(rows), "presets": [_preset_dict(r) for r in rows]}
+
+
+@router.post("/presets")
+def create_preset(
+    body: PresetBody,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(400, "Kayıt adı gerekli")
+    row = OptimizePreset(
+        user_id=user.id,
+        name=name,
+        symbol=(body.symbol or "").strip().upper(),
+        config_json=json.dumps(body.config or {}, ensure_ascii=False),
+        updated_at=datetime.now(timezone.utc),
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return _preset_dict(row)
+
+
+@router.put("/presets/{preset_id}")
+def update_preset(
+    preset_id: int,
+    body: PresetBody,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    row = _owned_preset(db, preset_id, user)
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(400, "Kayıt adı gerekli")
+    row.name = name
+    row.symbol = (body.symbol or "").strip().upper()
+    row.config_json = json.dumps(body.config or {}, ensure_ascii=False)
+    row.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(row)
+    return _preset_dict(row)
+
+
+@router.delete("/presets/{preset_id}")
+def delete_preset(
+    preset_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    row = _owned_preset(db, preset_id, user)
+    db.delete(row)
+    db.commit()
+    return {"ok": True}

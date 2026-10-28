@@ -1,5 +1,21 @@
 let optContractsLoaded = false;
 let optPollTimer = null;
+let optPresets = [];
+
+const OPT_AXIS = [
+  ["ha_len", "optHaLenOn"],
+  ["ha_len2", "optHaLen2On"],
+  ["osc_len", "optOscLenOn"],
+  ["ha_htf", "optHaHtfOn"],
+  ["exit_mode", "optExitModeOn"],
+  ["rr_mult", "optRrOn"],
+  ["swing_bars", "optSwingOn"],
+  ["tp_pct", "optTpPctOn"],
+  ["sl_pct", "optSlPctOn"],
+  ["max_same", "optMaxSameOn"],
+  ["reverse_exit", "optReverseOn"],
+  ["require_bar", "optRequireBarOn"],
+];
 
 function optEsc(s) {
   return String(s ?? "")
@@ -49,14 +65,43 @@ function optExitLabel(mode) {
 
 function syncOptExitFields() {
   const raw = document.querySelector("#optExitMode")?.value || "Swing RR";
-  const swing = raw.includes("Swing");
-  const pct = raw.includes("Percent");
+  const both = document.querySelector("#optExitModeOn")?.checked && raw.includes(",");
+  const swing = both || raw.includes("Swing");
+  const pct = both || raw.includes("Percent");
   document.querySelectorAll(".opt-exit-swing").forEach((el) => {
     el.hidden = !swing;
   });
   document.querySelectorAll(".opt-exit-percent").forEach((el) => {
     el.hidden = !pct;
   });
+}
+
+function syncOptAxisUi() {
+  document.querySelectorAll("[data-opt-axis]").forEach((el) => {
+    const on = el.querySelector(".opt-enable")?.checked;
+    el.classList.toggle("opt-field-fixed", !on);
+    const firstSpan = el.querySelector(".opt-range-row > label:first-child > span");
+    if (firstSpan) firstSpan.textContent = on ? "Başlangıç" : "Değer";
+  });
+  syncOptExitFields();
+}
+
+function collectOptFlags() {
+  const out = {};
+  OPT_AXIS.forEach(([key, id]) => {
+    out[key] = !!document.querySelector(`#${id}`)?.checked;
+  });
+  return out;
+}
+
+function applyOptFlags(flags) {
+  const src = flags || {};
+  OPT_AXIS.forEach(([key, id]) => {
+    const el = document.querySelector(`#${id}`);
+    if (!el) return;
+    if (key in src) el.checked = !!src[key];
+  });
+  syncOptAxisUi();
 }
 
 function pineOverridesFromRow(params) {
@@ -152,6 +197,14 @@ function setOptRange(base, start, step, stop) {
   if (toEl) toEl.value = stop;
 }
 
+function applyOptRange(base, spec, fallback) {
+  if (spec && typeof spec === "object" && !Array.isArray(spec)) {
+    setOptRange(base, spec.start ?? fallback[0], spec.step ?? fallback[1], spec.stop ?? fallback[2]);
+    return;
+  }
+  setOptRange(base, fallback[0], fallback[1], fallback[2]);
+}
+
 function collectOptBody() {
   return {
     symbol: optCsv("#optSymbol"),
@@ -177,7 +230,40 @@ function collectOptBody() {
     max_same: optRange("optMaxSame", [1, 1, 2]),
     reverse_exit: document.querySelector("#optReverse")?.value || "true",
     require_bar: document.querySelector("#optRequireBar")?.value || "false",
+    optimize: collectOptFlags(),
   };
+}
+
+function applyOptConfig(cfg) {
+  if (!cfg || typeof cfg !== "object") return;
+  const set = (id, val) => {
+    const el = document.querySelector(id);
+    if (el && val !== undefined && val !== null && val !== "") el.value = val;
+  };
+  set("#optSymbol", cfg.symbol);
+  set("#optTimeframe", cfg.timeframe);
+  set("#optPeriod", cfg.period);
+  set("#optMode", cfg.mode);
+  set("#optSide", cfg.side);
+  set("#optMaxCombos", cfg.max_combos);
+  set("#optMinWinRate", cfg.min_win_rate);
+  set("#optMaxDd", cfg.max_drawdown);
+  set("#optMinPf", cfg.min_profit_factor);
+  set("#optMinProfit", cfg.min_profit);
+  set("#optMinTrades", cfg.min_trades);
+  applyOptRange("optHaLen", cfg.ha_len, [48, 16, 80]);
+  applyOptRange("optHaLen2", cfg.ha_len2, [72, 24, 96]);
+  applyOptRange("optOscLen", cfg.osc_len, [7, 4, 11]);
+  applyOptRange("optHaHtf", cfg.ha_htf, [30, 15, 30]);
+  applyOptRange("optRr", cfg.rr_mult, [1.2, 0.4, 2]);
+  applyOptRange("optSwing", cfg.swing_bars, [8, 3, 11]);
+  applyOptRange("optTpPct", cfg.tp_pct, [1.5, 0.5, 2.5]);
+  applyOptRange("optSlPct", cfg.sl_pct, [0.8, 0.35, 1.5]);
+  applyOptRange("optMaxSame", cfg.max_same, [1, 1, 2]);
+  set("#optExitMode", cfg.exit_mode);
+  set("#optReverse", cfg.reverse_exit);
+  set("#optRequireBar", cfg.require_bar);
+  applyOptFlags(cfg.optimize);
 }
 
 async function pollOptJob(jobId) {
@@ -269,14 +355,126 @@ async function loadOptContracts() {
   }
 }
 
-function onOptTabShown() {
-  loadOptContracts();
+function renderOptPresets() {
+  const sel = document.querySelector("#optPresetSelect");
+  if (!sel) return;
+  const current = sel.value;
+  sel.innerHTML = `<option value="">— Kayıt seç —</option>${optPresets
+    .map((p) => {
+      const tag = p.symbol || "genel";
+      return `<option value="${p.id}">${optEsc(p.name)} (${optEsc(tag)})</option>`;
+    })
+    .join("")}`;
+  if (current && optPresets.some((p) => String(p.id) === current)) sel.value = current;
+}
+
+async function loadOptPresets() {
+  const thisOnly = document.querySelector("#optPresetThisSymbol")?.checked;
+  const symbol = thisOnly ? optCsv("#optSymbol") : "";
+  const q = symbol ? `?symbol=${encodeURIComponent(symbol)}` : "";
+  try {
+    const res = await apiFetch(`/api/optimize/presets${q}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "Kayıtlar alınamadı");
+    optPresets = data.presets || [];
+    renderOptPresets();
+  } catch (err) {
+    optStatus(err.message || "Kayıt listesi alınamadı", "error");
+  }
+}
+
+function selectedOptPreset() {
+  const id = Number(document.querySelector("#optPresetSelect")?.value);
+  if (!id) return null;
+  return optPresets.find((p) => p.id === id) || null;
+}
+
+async function saveOptPreset() {
+  const nameEl = document.querySelector("#optPresetName");
+  const name = (nameEl?.value || "").trim();
+  if (!name) {
+    optStatus("Kayıt için bir ad yazın.", "error");
+    nameEl?.focus();
+    return;
+  }
+  const thisOnly = document.querySelector("#optPresetThisSymbol")?.checked;
+  const body = {
+    name,
+    symbol: thisOnly ? optCsv("#optSymbol") : "",
+    config: collectOptBody(),
+  };
+  const existing = selectedOptPreset();
+  const sameName = existing && existing.name === name;
+  try {
+    const res = await apiFetch(sameName ? `/api/optimize/presets/${existing.id}` : "/api/optimize/presets", {
+      method: sameName ? "PUT" : "POST",
+      body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || "Kaydedilemedi");
+    optStatus(sameName ? `"${name}" güncellendi.` : `"${name}" kaydedildi.`, "ok");
+    await loadOptPresets();
+    const sel = document.querySelector("#optPresetSelect");
+    if (sel && data.id) sel.value = String(data.id);
+  } catch (err) {
+    optStatus(err.message || "Kaydedilemedi", "error");
+  }
+}
+
+function loadSelectedOptPreset() {
+  const row = selectedOptPreset();
+  if (!row) {
+    optStatus("Yüklenecek kayıt seçin.", "error");
+    return;
+  }
+  applyOptConfig(row.config || {});
+  const nameEl = document.querySelector("#optPresetName");
+  if (nameEl) nameEl.value = row.name || "";
+  optStatus(`"${row.name}" yüklendi.`, "ok");
+}
+
+async function deleteSelectedOptPreset() {
+  const row = selectedOptPreset();
+  if (!row) {
+    optStatus("Silinecek kayıt seçin.", "error");
+    return;
+  }
+  if (!confirm(`"${row.name}" silinsin mi?`)) return;
+  try {
+    const res = await apiFetch(`/api/optimize/presets/${row.id}`, { method: "DELETE" });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.detail || "Silinemedi");
+    }
+    optStatus(`"${row.name}" silindi.`, "ok");
+    const nameEl = document.querySelector("#optPresetName");
+    if (nameEl) nameEl.value = "";
+    await loadOptPresets();
+  } catch (err) {
+    optStatus(err.message || "Silinemedi", "error");
+  }
+}
+
+async function onOptTabShown() {
+  await loadOptContracts();
+  await loadOptPresets();
+  syncOptAxisUi();
 }
 
 function initOptimize() {
   document.querySelector("#optForm")?.addEventListener("submit", startOptRun);
   document.querySelector("#optExitMode")?.addEventListener("change", syncOptExitFields);
-  syncOptExitFields();
+  document.querySelectorAll(".opt-enable").forEach((el) => {
+    el.addEventListener("change", syncOptAxisUi);
+  });
+  document.querySelector("#btnOptPresetSave")?.addEventListener("click", saveOptPreset);
+  document.querySelector("#btnOptPresetLoad")?.addEventListener("click", loadSelectedOptPreset);
+  document.querySelector("#btnOptPresetDelete")?.addEventListener("click", deleteSelectedOptPreset);
+  document.querySelector("#optPresetThisSymbol")?.addEventListener("change", loadOptPresets);
+  document.querySelector("#optSymbol")?.addEventListener("change", () => {
+    if (document.querySelector("#optPresetThisSymbol")?.checked) loadOptPresets();
+  });
+  syncOptAxisUi();
   document.querySelector("#optMode")?.addEventListener("change", (ev) => {
     const full = ev.target.value === "full";
     const maxEl = document.querySelector("#optMaxCombos");
@@ -298,6 +496,20 @@ function initOptimize() {
       set("#optExitMode", "Swing RR, Percent");
       set("#optReverse", "true, false");
       set("#optRequireBar", "true, false");
+      applyOptFlags({
+        ha_len: true,
+        ha_len2: true,
+        osc_len: true,
+        ha_htf: true,
+        exit_mode: true,
+        rr_mult: true,
+        swing_bars: true,
+        tp_pct: true,
+        sl_pct: true,
+        max_same: true,
+        reverse_exit: true,
+        require_bar: true,
+      });
     } else {
       setOptRange("optHaLen", 48, 16, 80);
       setOptRange("optHaLen2", 72, 24, 96);
@@ -311,8 +523,22 @@ function initOptimize() {
       set("#optExitMode", "Swing RR");
       set("#optReverse", "true");
       set("#optRequireBar", "false");
+      applyOptFlags({
+        ha_len: true,
+        ha_len2: true,
+        osc_len: true,
+        ha_htf: true,
+        exit_mode: false,
+        rr_mult: true,
+        swing_bars: true,
+        tp_pct: true,
+        sl_pct: true,
+        max_same: true,
+        reverse_exit: false,
+        require_bar: false,
+      });
     }
-    syncOptExitFields();
+    syncOptAxisUi();
   });
 }
 

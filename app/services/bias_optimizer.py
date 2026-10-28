@@ -187,6 +187,38 @@ def _parse_str_list(raw: Any, fallback: list[str], allowed: set[str] | None = No
     return out or list(fallback)
 
 
+DEFAULT_OPTIMIZE = {
+    "ha_len": True,
+    "ha_len2": True,
+    "osc_len": True,
+    "ha_htf": True,
+    "exit_mode": True,
+    "rr_mult": True,
+    "swing_bars": True,
+    "tp_pct": True,
+    "sl_pct": True,
+    "max_same": True,
+    "reverse_exit": False,
+    "require_bar": False,
+}
+
+
+def optimize_flags(body: dict[str, Any] | None) -> dict[str, bool]:
+    raw = (body or {}).get("optimize")
+    flags = dict(DEFAULT_OPTIMIZE)
+    if isinstance(raw, dict):
+        for key in flags:
+            if key in raw:
+                flags[key] = bool(raw[key])
+    return flags
+
+
+def _pin_list(vals: list, fallback: list) -> list:
+    if vals:
+        return [vals[0]]
+    return list(fallback[:1] or fallback)
+
+
 def _collapse_unused_exit_params(grid: dict[str, list]) -> None:
     """Percent ignores RR/swing; Swing RR ignores TP/SL — don't multiply the grid."""
     modes = set(grid.get("exit_mode") or [])
@@ -201,6 +233,7 @@ def _collapse_unused_exit_params(grid: dict[str, list]) -> None:
 def build_grid(body: dict[str, Any]) -> dict[str, list]:
     mode = str(body.get("mode") or "quick").strip().lower()
     base = dict(FULL_GRID if mode == "full" else QUICK_GRID)
+    flags = optimize_flags(body)
     base["ha_len"] = _values_from_spec(body.get("ha_len"), integer=True, fallback=base["ha_len"])
     base["ha_len2"] = _values_from_spec(body.get("ha_len2"), integer=True, fallback=base["ha_len2"])
     base["osc_len"] = _values_from_spec(body.get("osc_len"), integer=True, fallback=base["osc_len"])
@@ -218,9 +251,33 @@ def build_grid(body: dict[str, Any]) -> dict[str, list]:
         base["exit_mode"],
         allowed={"Swing RR", "Percent"},
     )
-    _collapse_unused_exit_params(base)
     base["reverse_exit"] = _parse_bool_list(body.get("reverse_exit"), base["reverse_exit"])
     base["require_bar"] = _parse_bool_list(body.get("require_bar"), base["require_bar"])
+    if not flags["ha_len"]:
+        base["ha_len"] = _pin_list(base["ha_len"], QUICK_GRID["ha_len"])
+    if not flags["ha_len2"]:
+        base["ha_len2"] = _pin_list(base["ha_len2"], QUICK_GRID["ha_len2"])
+    if not flags["osc_len"]:
+        base["osc_len"] = _pin_list(base["osc_len"], QUICK_GRID["osc_len"])
+    if not flags["ha_htf"]:
+        base["ha_htf"] = _pin_list(base["ha_htf"], QUICK_GRID["ha_htf"])
+    if not flags["rr_mult"]:
+        base["rr_mult"] = _pin_list(base["rr_mult"], QUICK_GRID["rr_mult"])
+    if not flags["swing_bars"]:
+        base["swing_bars"] = _pin_list(base["swing_bars"], QUICK_GRID["swing_bars"])
+    if not flags["tp_pct"]:
+        base["tp_pct"] = _pin_list(base["tp_pct"], QUICK_GRID["tp_pct"])
+    if not flags["sl_pct"]:
+        base["sl_pct"] = _pin_list(base["sl_pct"], QUICK_GRID["sl_pct"])
+    if not flags["max_same"]:
+        base["max_same"] = _pin_list(base["max_same"], QUICK_GRID["max_same"])
+    if not flags["exit_mode"]:
+        base["exit_mode"] = _pin_list(base["exit_mode"], QUICK_GRID["exit_mode"])
+    if not flags["reverse_exit"]:
+        base["reverse_exit"] = _pin_list(base["reverse_exit"], QUICK_GRID["reverse_exit"])
+    if not flags["require_bar"]:
+        base["require_bar"] = _pin_list(base["require_bar"], QUICK_GRID["require_bar"])
+    _collapse_unused_exit_params(base)
     side = str(body.get("side") or "both").strip().lower()
     if side == "buy":
         base["allow_long"] = [True]

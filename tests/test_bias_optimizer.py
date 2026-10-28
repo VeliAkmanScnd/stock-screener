@@ -140,6 +140,25 @@ def test_numeric_span_inclusive():
     assert numeric_span(1.2, 2.0, 0.4, integer=False) == [1.2, 1.6, 2.0]
 
 
+def test_disabled_axis_pins_to_start():
+    grid = build_grid(
+        {
+            "mode": "quick",
+            "ha_len": {"start": 48, "stop": 80, "step": 16},
+            "ha_len2": {"start": 55, "stop": 60, "step": 1},
+            "exit_mode": "Swing RR, Percent",
+            "optimize": {
+                "ha_len": False,
+                "ha_len2": True,
+                "exit_mode": False,
+            },
+        }
+    )
+    assert grid["ha_len"] == [48]
+    assert grid["ha_len2"] == [55, 56, 57, 58, 59, 60]
+    assert grid["exit_mode"] == ["Swing RR"]
+
+
 def test_build_grid_from_start_step_stop():
     grid = build_grid(
         {

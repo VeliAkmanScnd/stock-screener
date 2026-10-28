@@ -174,6 +174,20 @@ class TrackPriceLog(Base):
     recorded_at = Column(DateTime, nullable=False)
 
 
+class OptimizePreset(Base):
+    """Saved Bias tester grids, optionally bound to a contract."""
+
+    __tablename__ = "optimize_presets"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, nullable=False, index=True)
+    name = Column(String(120), nullable=False)
+    symbol = Column(String(32), nullable=False, default="")
+    config_json = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
 def _migrate_db() -> None:
     """Schema updates for existing SQLite DBs. create_all first for fresh installs."""
     Base.metadata.create_all(engine)
