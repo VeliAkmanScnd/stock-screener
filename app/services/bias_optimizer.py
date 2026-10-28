@@ -540,6 +540,12 @@ def _sanitize_metrics(metrics: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _search_progress_label(done: int, total: int, grid_size: int | None) -> str:
+    if grid_size and grid_size > total:
+        return f"{done}/{total} örnek · {grid_size} olası"
+    return f"{done}/{total} · ızgaranın tamamı"
+
+
 def search_bias_params(
     df,
     *,
@@ -547,6 +553,7 @@ def search_bias_params(
     combos: list[dict[str, Any]],
     filters: dict[str, float],
     on_progress: ProgressCallback | None = None,
+    grid_size: int | None = None,
 ) -> dict[str, Any]:
     frame = prepare_backtest_ohlcv(df)
     if frame is None or frame.empty:
@@ -575,7 +582,7 @@ def search_bias_params(
                 first_error = f"{type(exc).__name__}: {exc}"
             logger.warning("bias combo failed %s: %s", params, exc)
         if on_progress and (i == total or i % 5 == 0):
-            on_progress("searching", i, total, f"{i}/{total} kombinasyon")
+            on_progress("searching", i, total, _search_progress_label(i, total, grid_size))
     if not rows:
         raise RuntimeError(
             f"Hiçbir kombinasyon hesaplanamadı ({errors}/{total}): {first_error or 'bilinmeyen hata'}"
@@ -664,13 +671,14 @@ def run_bias_optimize(
         "min_trades": float(body.get("min_trades") or 8),
     }
     if on_progress:
-        on_progress("searching", 0, len(combos), f"{len(combos)} / {space} kombinasyon")
+        on_progress("searching", 0, len(combos), _search_progress_label(0, len(combos), space))
     found = search_bias_params(
         df,
         chart_tf=timeframe,
         combos=combos,
         filters=filters,
         on_progress=on_progress,
+        grid_size=space,
     )
     start = df.index[0]
     end = df.index[-1]

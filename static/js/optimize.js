@@ -93,6 +93,76 @@ function syncOptAxisUi() {
     if (firstSpan) firstSpan.textContent = on ? "Başlangıç" : "Değer";
   });
   syncOptExitFields();
+  syncOptGridHint();
+}
+
+function optSpanCount(start, step, stop, integer) {
+  let a = Number(start);
+  let b = Number(stop);
+  let s = Math.abs(Number(step));
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return 1;
+  if (!Number.isFinite(s) || s === 0) s = 1;
+  if (a > b) {
+    const tmp = a;
+    a = b;
+    b = tmp;
+  }
+  const out = [];
+  let x = a;
+  for (let i = 0; i < 400; i += 1) {
+    const val = integer ? Math.round(x) : x;
+    if (!out.length || out[out.length - 1] !== val) out.push(val);
+    const nxt = x + s;
+    if (nxt > b + s * 1e-9) break;
+    x = nxt;
+  }
+  return Math.max(1, out.length);
+}
+
+function optSelectValueCount(id) {
+  const raw = document.querySelector(id)?.value || "";
+  const parts = raw.split(",").map((p) => p.trim()).filter(Boolean);
+  return Math.max(1, new Set(parts).size);
+}
+
+function estimateOptGridSize() {
+  const flags = collectOptFlags();
+  const axis = (on, base, fallback, integer) => {
+    if (!on) return 1;
+    const spec = optRange(base, fallback);
+    return optSpanCount(spec.start, spec.step, spec.stop, integer);
+  };
+  const exitCount = flags.exit_mode ? optSelectValueCount("#optExitMode") : 1;
+  const exitRaw = document.querySelector("#optExitMode")?.value || "Swing RR";
+  const onlySwing = !exitRaw.includes("Percent");
+  const onlyPct = exitRaw.includes("Percent") && !exitRaw.includes("Swing");
+  let n = 1;
+  n *= axis(flags.ha_len, "optHaLen", [48, 16, 80], true);
+  n *= axis(flags.ha_len2, "optHaLen2", [72, 24, 96], true);
+  n *= axis(flags.osc_len, "optOscLen", [7, 4, 11], true);
+  n *= axis(flags.ha_htf, "optHaHtf", [30, 15, 30], true);
+  n *= exitCount;
+  n *= onlyPct ? 1 : axis(flags.rr_mult, "optRr", [1.2, 0.4, 2], false);
+  n *= onlyPct ? 1 : axis(flags.swing_bars, "optSwing", [8, 3, 11], true);
+  n *= onlySwing ? 1 : axis(flags.tp_pct, "optTpPct", [1.5, 0.5, 2.5], false);
+  n *= onlySwing ? 1 : axis(flags.sl_pct, "optSlPct", [0.8, 0.35, 1.5], false);
+  n *= axis(flags.max_same, "optMaxSame", [1, 1, 2], true);
+  n *= flags.reverse_exit ? optSelectValueCount("#optReverse") : 1;
+  n *= flags.require_bar ? optSelectValueCount("#optRequireBar") : 1;
+  return n;
+}
+
+function syncOptGridHint() {
+  const hint = document.querySelector("#optGridHint");
+  if (!hint) return;
+  const space = estimateOptGridSize();
+  const cap = Math.max(20, Math.min(5000, Math.round(optNum("#optMaxCombos", 180))));
+  const spaceTxt = Number(space).toLocaleString("tr-TR");
+  if (space <= cap) {
+    hint.textContent = `Şu anki ızgara ${spaceTxt} set. Maks. ${cap} → tamamı taranır; sayıyı artırmak yeni alternatif eklemez. Daha fazla set için eksen kutularını açın veya adımı küçültün.`;
+  } else {
+    hint.textContent = `Şu anki ızgara ${spaceTxt} olası set. Maks. ${cap} → ${cap} örnek alınır.`;
+  }
 }
 
 function collectOptFlags() {
@@ -735,7 +805,10 @@ function initOptimize() {
   document.querySelector("#btnOptRefFromGrid")?.addEventListener("click", fillOptRefFromGrid);
   document.querySelector("#optPeriod")?.addEventListener("change", syncOptPeriodHint);
   document.querySelector("#optTimeframe")?.addEventListener("change", syncOptPeriodHint);
+  document.querySelector("#optForm")?.addEventListener("input", syncOptGridHint);
+  document.querySelector("#optMaxCombos")?.addEventListener("change", syncOptGridHint);
   syncOptPeriodHint();
+  syncOptGridHint();
   ["#optFilterPassed", "#optFilterWr", "#optFilterPf", "#optFilterProfit", "#optFilterDd", "#optFilterTrades", "#optFilterText"].forEach((id) => {
     document.querySelector(id)?.addEventListener("input", paintOptTable);
     document.querySelector(id)?.addEventListener("change", paintOptTable);
