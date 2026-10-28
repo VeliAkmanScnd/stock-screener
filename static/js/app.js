@@ -1569,7 +1569,7 @@ function fillScheduleFormFromRow(row) {
   if (windowed) {
     $("#scheduleStartHour").value = row.hour ?? 10;
     $("#scheduleEndHour").value = row.end_hour ?? 18;
-    $("#scheduleWindowMinute").value = row.minute ?? 0;
+    if ($("#scheduleWindowMinute")) $("#scheduleWindowMinute").value = "1";
   } else {
     $("#scheduleHour").value = row.hour ?? 8;
     $("#scheduleMinute").value = row.minute ?? 30;
@@ -1686,7 +1686,7 @@ function formatScheduleTime(row) {
     const end =
       row.end_hour != null ? String(row.end_hour).padStart(2, "0") : "23";
     const period = SCHEDULE_TYPE_LABELS[canon] || canon;
-    let label = `${period} ${start}:${m}–${end}:${m} (${tz})`;
+    let label = `${period} ${start}:01–${end}:01 kapanış+1dk (${tz})`;
     if (row.weekdays?.length && row.weekdays.length < 7) {
       label = `${formatWeekdaysList(row.weekdays)} · ${label}`;
     }
@@ -1853,7 +1853,7 @@ function buildSchedulePreviewText() {
       ? parseInt($("#scheduleEndHour")?.value || "18", 10)
       : null,
     minute: windowed
-      ? parseInt($("#scheduleWindowMinute")?.value || "0", 10)
+      ? 1
       : parseInt($("#scheduleMinute")?.value || "30", 10),
     weekdays:
       windowed || ["1d", "1wk"].includes(canonicalScheduleType(t))
@@ -2126,7 +2126,7 @@ async function submitScheduleScan(e) {
     hour: windowed ? startHour : parseInt($("#scheduleHour").value, 10) || 0,
     end_hour: windowed ? endHour : null,
     minute: windowed
-      ? parseInt($("#scheduleWindowMinute").value, 10) || 0
+      ? 1
       : parseInt($("#scheduleMinute").value, 10) || 0,
     weekdays,
     timezone: $("#scheduleTimezone").value.trim() || "Europe/Istanbul",

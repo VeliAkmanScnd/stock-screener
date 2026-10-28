@@ -19,6 +19,7 @@ from app.services.schedule_helpers import (
     parse_weekdays_field,
     weekdays_to_cron,
     window_minute_bounds,
+    window_slot_minute,
 )
 from app.services.scheduler_lock import acquire_scheduler_lock, release_scheduler_lock
 from app.services.schedule_runner import run_scheduled_scan
@@ -76,6 +77,7 @@ def _build_trigger(sched: ScheduledScan) -> CronTrigger:
         # Bitiş boşsa seans sonu varsay (eski kayıtlarda NULL kalabiliyordu).
         if end_hour is None:
             end_hour = 18
+        minute = window_slot_minute(stype, minute)
         interval = WINDOW_INTERVAL_MINUTES[stype]
         start_mod, end_mod = window_minute_bounds(hour, minute, end_hour)
         if interval < 60:
@@ -126,6 +128,7 @@ def schedule_window_snapshot(sched: ScheduledScan) -> dict:
     )
     weekday_ok = (not days) or (now_local.weekday() in days)
     if is_window_schedule_type(stype):
+        minute = window_slot_minute(stype, minute)
         start_mod, end_mod = window_minute_bounds(hour, minute, end_hour)
         now_mod = now_local.hour * 60 + now_local.minute
         before_start = now_mod < start_mod

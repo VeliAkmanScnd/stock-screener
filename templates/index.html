@@ -719,11 +719,8 @@
               <span>Bitiş saati</span>
               <input type="number" id="alarmEndHour" min="0" max="23" value="18" />
             </label>
-            <label class="field">
-              <span>Dakika (slot)</span>
-              <input type="number" id="alarmMinute" min="0" max="59" value="35" />
-            </label>
           </div>
+          <p class="hint" id="alarmSlotHint">Tarama, bar kapanışından 1 dk sonra (10:00 → 10:01).</p>
           <div class="field" id="alarmWeekdaysWrap">
             <span>Günler</span>
             <div class="schedule-weekdays" id="alarmWeekdays">
@@ -862,10 +859,7 @@
               <span>Bitiş (dahil)</span>
               <input type="number" id="scheduleEndHour" min="0" max="23" value="18" />
             </label>
-            <label class="field">
-              <span>Dakika</span>
-              <input type="number" id="scheduleWindowMinute" min="0" max="59" value="0" />
-            </label>
+            <p class="hint">Bar kapanışından 1 dk sonra (10:00 → 10:01).</p>
           </div>
         </div>
         <div class="field" id="scheduleWeekdaysWrap">

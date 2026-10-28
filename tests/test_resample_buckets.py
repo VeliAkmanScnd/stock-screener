@@ -136,6 +136,20 @@ class BarSettleTests(unittest.TestCase):
         self.assertTrue(_started_before_current_slot("15m", started, now))
         self.assertFalse(_started_before_current_slot("15m", same, now))
 
+    def test_window_jobs_fire_one_minute_after_close(self):
+        from app.services.schedule_helpers import minute_step_cron, window_slot_minute
+
+        self.assertEqual(window_slot_minute("15m", 35), 1)
+        self.assertEqual(minute_step_cron(15, 1), "1,16,31,46")
+        self.assertEqual(minute_step_cron(5, 1), "1,6,11,16,21,26,31,36,41,46,51,56")
+        self.assertEqual(minute_step_cron(30, 1), "1,31")
+
+    def test_bar_label_uses_close_clock(self):
+        from app.services.bar_close import format_bar_label
+
+        label = format_bar_label("2026-10-28T09:45:00+03:00", "15m", universe="viop")
+        self.assertTrue(label.endswith("10:00 barı"), label)
+
 
 if __name__ == "__main__":
     unittest.main()

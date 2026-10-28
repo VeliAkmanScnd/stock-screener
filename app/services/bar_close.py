@@ -83,13 +83,15 @@ def format_bar_label(
         return None
     tf = (timeframe or "1d").strip().lower()
     secs = timeframe_seconds(tf)
-    local = ts.to_pydatetime()
     if secs < 86400:
+        close_ts = ts + pd.Timedelta(seconds=secs)
+        local = close_ts.to_pydatetime()
         now = datetime.now(tz=local.tzinfo)
         clock = local.strftime("%H:%M")
         if local.date() == now.date():
             return f"{clock} barı"
         return f"{local.strftime('%d.%m.%Y')} {clock} barı"
+    local = ts.to_pydatetime()
     if tf in ("1wk", "1w", "week", "weekly"):
         return f"{local.strftime('%d.%m.%Y')} (haftalık) barı"
     return f"{local.strftime('%d.%m.%Y')} barı"

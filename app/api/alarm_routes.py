@@ -46,7 +46,7 @@ class AlarmBody(BaseModel):
     contracts: list[str] = Field(min_length=1)
     timeframe: str = "15m"
     hour: int = Field(default=9, ge=0, le=23)
-    minute: int = Field(default=35, ge=0, le=59)
+    minute: int = Field(default=1, ge=0, le=59)
     end_hour: int = Field(default=18, ge=0, le=23)
     weekdays: list[int] | None = None
     telegram_to: str | None = None

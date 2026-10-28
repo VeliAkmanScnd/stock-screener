@@ -200,7 +200,6 @@ function resetAlarmForm() {
   document.querySelector("#alarmTimeframe").value = "15m";
   document.querySelector("#alarmStartHour").value = "9";
   document.querySelector("#alarmEndHour").value = "18";
-  document.querySelector("#alarmMinute").value = "35";
   document.querySelector("#alarmTelegram").value = "";
   document.querySelector("#alarmTelegramToken").value = "";
   document.querySelector("#alarmNotifyTelegram").checked = true;
@@ -238,7 +237,7 @@ function collectAlarmBody() {
     contracts,
     timeframe: document.querySelector("#alarmTimeframe").value,
     hour: parseInt(document.querySelector("#alarmStartHour").value, 10),
-    minute: parseInt(document.querySelector("#alarmMinute").value, 10),
+    minute: 1,
     end_hour: parseInt(document.querySelector("#alarmEndHour").value, 10),
     weekdays: alarmWeekdays(),
     telegram_to: document.querySelector("#alarmTelegram").value.trim() || null,
@@ -256,7 +255,6 @@ async function fillAlarmForm(row) {
   document.querySelector("#alarmTimeframe").value = row.timeframe || "15m";
   document.querySelector("#alarmStartHour").value = row.hour ?? 9;
   document.querySelector("#alarmEndHour").value = row.end_hour ?? 18;
-  document.querySelector("#alarmMinute").value = row.minute ?? 35;
   document.querySelector("#alarmTelegram").value = row.telegram_to || "";
   document.querySelector("#alarmNotifyTelegram").checked = row.notify_telegram !== false;
   document.querySelector("#alarmEnabled").checked = row.enabled !== false;

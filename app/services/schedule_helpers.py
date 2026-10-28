@@ -23,6 +23,9 @@ SCHEDULE_TYPE_ALIASES: dict[str, str] = {
     "daily": "1d",
     "weekly": "1wk",
 }
+# Intraday scans fire this many minutes after each bar close (10:00 → 10:01).
+CLOSE_LAG_MINUTES = 1
+
 WINDOW_INTERVAL_MINUTES: dict[str, int] = {
     "3m": 3,
     "5m": 5,
@@ -45,6 +48,16 @@ def normalize_schedule_type(schedule_type: str | None) -> str:
 
 def is_window_schedule_type(schedule_type: str | None) -> bool:
     return normalize_schedule_type(schedule_type) in WINDOW_INTERVAL_MINUTES
+
+
+def window_slot_minute(schedule_type: str | None = None, stored_minute: int | None = None) -> int:
+    """Clock minute used for 3m/5m/15m/… jobs: always bar-close + CLOSE_LAG_MINUTES."""
+    if is_window_schedule_type(schedule_type):
+        return CLOSE_LAG_MINUTES
+    try:
+        return int(stored_minute or 0)
+    except (TypeError, ValueError):
+        return 0
 
 
 def minute_step_cron(interval_minutes: int, phase: int = 0) -> str:
