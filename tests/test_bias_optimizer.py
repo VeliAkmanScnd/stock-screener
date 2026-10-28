@@ -65,6 +65,61 @@ def test_wave_backtest_records_trades():
     assert metrics["max_drawdown"] >= 0
 
 
+def test_htf_30_on_15m_does_not_hit_readonly_flags():
+    df = _wave_frame(240)
+    raw = df["Close"].to_numpy()
+    raw.flags.writeable = False
+    s = market_bias_series(
+        df,
+        ha_len=8,
+        ha_len2=8,
+        osc_len=3,
+        ha_htf="30",
+        chart_tf="15m",
+        require_bar=False,
+        reverse_exit=True,
+        allow_long=True,
+        allow_short=True,
+        exit_mode="Swing RR",
+        rr_mult=1.0,
+        swing_bars=4,
+        max_same=2,
+    )
+    assert len(s["long_go"]) == len(df)
+    found = search_bias_params(
+        df,
+        chart_tf="15m",
+        combos=[
+            {
+                "ha_len": 8,
+                "ha_len2": 8,
+                "osc_len": 3,
+                "ha_htf": "30",
+                "exit_mode": "Swing RR",
+                "rr_mult": 1.0,
+                "swing_bars": 4,
+                "tp_pct": 2.0,
+                "sl_pct": 1.0,
+                "allow_long": True,
+                "allow_short": True,
+                "reverse_exit": True,
+                "require_bar": False,
+                "max_same": 2,
+            }
+        ],
+        filters={
+            "min_win_rate": 0,
+            "max_drawdown": 100,
+            "min_profit_factor": 0,
+            "min_profit": -100,
+            "min_trades": 1,
+        },
+    )
+    assert found["tested"] == 1
+    assert found["errors"] == 0
+    assert found["results"]
+
+
 def test_grid_expand_respects_cap():
     grid = build_grid(
         {

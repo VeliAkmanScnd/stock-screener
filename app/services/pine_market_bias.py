@@ -105,9 +105,10 @@ def _no_repaint_request(series: pd.Series, ha_htf: str, chart_tf: str | None) ->
         except Exception:
             return series
     bucket = pd.Series(floored, index=idx)
-    vals = series.to_numpy(dtype=float)
-    flags = bucket.ne(bucket.shift(1)).to_numpy(dtype=bool)
-    flags[0] = True
+    vals = np.array(series.to_numpy(dtype=float), copy=True)
+    flags = np.array(bucket.ne(bucket.shift(1)).to_numpy(dtype=bool), copy=True)
+    if flags.size:
+        flags[0] = True
     n = len(vals)
     out = np.full(n, np.nan)
     bucket_last = np.nan

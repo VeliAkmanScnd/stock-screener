@@ -167,6 +167,25 @@ def test_htf_waits_for_closed_30m_bar():
     assert held_close.loc["2026-01-02 10:15"] == 9.0
 
 
+def test_no_repaint_survives_readonly_numpy_views():
+    idx = pd.date_range("2026-01-02 09:00", periods=8, freq="15min")
+    spike = pd.Series([1.0, 1.0, 1.0, 9.0, 1.0, 1.0, 1.0, 1.0], index=idx)
+    orig = pd.Series.to_numpy
+
+    def readonly(self, *args, **kwargs):
+        arr = orig(self, *args, **kwargs)
+        view = np.array(arr, copy=True)
+        view.flags.writeable = False
+        return view
+
+    pd.Series.to_numpy = readonly
+    try:
+        held = _no_repaint_request(spike, "30", "15m")
+    finally:
+        pd.Series.to_numpy = orig
+    assert held.loc["2026-01-02 10:15"] == 9.0
+
+
 def test_snapshot_does_not_carry_previous_bar():
     df = _wave_frame()
     s = market_bias_series(
