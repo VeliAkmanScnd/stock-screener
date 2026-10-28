@@ -298,3 +298,72 @@ def fetch_ohlcv_batch_borsapy(
         flight["event"].set()
         with _flight_lock:
             _flights.pop(flight_key, None)
+
+
+def fetch_ohlcv_one_backtest(
+    symbol: str,
+    timeframe: str,
+    period: str = "60d",
+) -> pd.DataFrame | None:
+    """Single-symbol TradingView OHLCV for optimizer (no live settle wait)."""
+    if not is_borsapy_available():
+        raise ImportError("borsapy yüklü değil — pip install borsapy")
+
+    import borsapy as bp
+
+    from app.services.ticker_format import to_viop_continuous_symbol
+
+    ensure_tradingview_auth()
+    raw = str(symbol or "").strip()
+    if not raw:
+        return None
+
+    candidates: list[str] = []
+    cont = to_viop_continuous_symbol(raw)
+    if cont.endswith("1!"):
+        candidates.append(cont)
+    cash = clean_bist_symbol(raw)
+    if cash and cash not in candidates and not cash.endswith("1!"):
+        candidates.append(cash)
+    if not candidates:
+        candidates.append(raw.upper())
+
+    resample_rule = None
+    if timeframe == "15m":
+        interval = "5m"
+        resample_rule = "15min"
+    elif timeframe == "30m":
+        interval = "5m"
+        resample_rule = "30min"
+    else:
+        _period, interval, resample_rule = _period_interval(timeframe)
+
+    asof = pd.Timestamp.now(tz="Europe/Istanbul")
+    last_error: Exception | None = None
+    for ticker in candidates:
+        try:
+            with _TV_SLOTS:
+                raw_df = bp.download(
+                    [ticker],
+                    period=period,
+                    interval=interval,
+                    group_by="ticker",
+                    progress=False,
+                )
+            frames = _split_download(raw_df, [ticker])
+            frame = frames.get(ticker)
+            if frame is None and frames:
+                frame = next(iter(frames.values()))
+            if frame is None:
+                continue
+            if resample_rule:
+                frame = _resample_ohlcv(frame, resample_rule, asof=asof)
+            norm = _normalize_frame(frame) if frame is not None else None
+            if norm is not None and len(norm) >= 30:
+                return norm
+        except Exception as exc:
+            last_error = exc
+            logger.warning("backtest download %s %s failed: %s", ticker, timeframe, exc)
+    if last_error:
+        logger.warning("backtest OHLCV empty for %s: %s", raw, last_error)
+    return None

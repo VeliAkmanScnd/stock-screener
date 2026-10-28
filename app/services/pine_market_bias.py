@@ -205,6 +205,7 @@ def market_bias_series(
     swing_low, swing_high = _confirmed_swings(l_src, h_src, max(1, int(swing_bars)))
 
     n = len(df)
+    idx = df.index
     long_go = np.zeros(n, dtype=bool)
     short_go = np.zeros(n, dtype=bool)
     veto_long = False
@@ -215,6 +216,8 @@ def market_bias_series(
     entry = np.nan
     stop = np.nan
     target = np.nan
+    entry_i = -1
+    trades: list[dict] = []
     bs = buy_signal.to_numpy(dtype=bool)
     ss = sell_signal.to_numpy(dtype=bool)
     bsw = buy_switch.to_numpy(dtype=bool)
@@ -230,21 +233,61 @@ def market_bias_series(
     tp = max(0.0, float(tp_pct))
     sl = max(0.0, float(sl_pct))
 
+    def _iso(i: int) -> str:
+        val = idx[i]
+        try:
+            return val.isoformat()
+        except AttributeError:
+            return str(val)
+
+    def _close_trade(i: int, price: float, reason: str) -> None:
+        nonlocal pos, entry, stop, target, entry_i
+        if pos == 0 or not np.isfinite(entry) or entry == 0 or not np.isfinite(price):
+            pos = 0
+            entry = np.nan
+            stop = np.nan
+            target = np.nan
+            entry_i = -1
+            return
+        if pos == 1:
+            pnl = (price - entry) / entry * 100.0
+            side = "long"
+        else:
+            pnl = (entry - price) / entry * 100.0
+            side = "short"
+        trades.append(
+            {
+                "side": side,
+                "entry_time": _iso(entry_i if entry_i >= 0 else i),
+                "exit_time": _iso(i),
+                "entry": round(float(entry), 6),
+                "exit": round(float(price), 6),
+                "pnl_pct": round(float(pnl), 4),
+                "reason": reason,
+            }
+        )
+        pos = 0
+        entry = np.nan
+        stop = np.nan
+        target = np.nan
+        entry_i = -1
+
     for i in range(n):
         if pos == 1 and np.isfinite(stop):
             if np.isfinite(low[i]) and low[i] <= stop:
-                pos = 0
+                _close_trade(i, float(stop), "stop")
             elif np.isfinite(target) and np.isfinite(high[i]) and high[i] >= target:
-                pos = 0
+                _close_trade(i, float(target), "target")
         elif pos == -1 and np.isfinite(stop):
             if np.isfinite(high[i]) and high[i] >= stop:
-                pos = 0
+                _close_trade(i, float(stop), "stop")
             elif np.isfinite(target) and np.isfinite(low[i]) and low[i] <= target:
-                pos = 0
+                _close_trade(i, float(target), "target")
         if pos == 0:
             entry = np.nan
             stop = np.nan
             target = np.nan
+            entry_i = -1
 
         if bear_n[i]:
             veto_long = False
@@ -278,8 +321,11 @@ def market_bias_series(
         long_go[i] = bool(lg)
         short_go[i] = bool(sg)
         if lg:
+            if pos == -1:
+                _close_trade(i, float(close[i]), "reverse")
             pos = 1
             entry = close[i]
+            entry_i = i
             long_streak += 1
             short_streak = 0
             if use_swing and np.isfinite(swing_low[i]):
@@ -289,8 +335,11 @@ def market_bias_series(
                 stop = entry * (1 - sl / 100.0) if sl > 0 else np.nan
                 target = entry * (1 + tp / 100.0) if tp > 0 else np.nan
         elif sg:
+            if pos == 1:
+                _close_trade(i, float(close[i]), "reverse")
             pos = -1
             entry = close[i]
+            entry_i = i
             short_streak += 1
             long_streak = 0
             if use_swing and np.isfinite(swing_high[i]):
@@ -300,7 +349,9 @@ def market_bias_series(
                 stop = entry * (1 + sl / 100.0) if sl > 0 else np.nan
                 target = entry * (1 - tp / 100.0) if tp > 0 else np.nan
 
-    idx = df.index
+    if pos != 0 and n:
+        _close_trade(n - 1, float(close[n - 1]), "end")
+
     return {
         "osc_bias": osc_bias,
         "osc_smooth": osc_smooth,
@@ -310,6 +361,70 @@ def market_bias_series(
         "short_go": pd.Series(short_go, index=idx),
         "swing_low": pd.Series(swing_low, index=idx),
         "swing_high": pd.Series(swing_high, index=idx),
+        "trades": trades,
+    }
+
+
+def summarize_bias_trades(trades: list[dict] | None, start_equity: float = 10000.0) -> dict:
+    """Win rate, profit factor, net profit % and max DD from closed trades."""
+    closed = [t for t in (trades or []) if t.get("reason")]
+    n = len(closed)
+    empty = {
+        "trades": 0,
+        "wins": 0,
+        "losses": 0,
+        "longs": 0,
+        "shorts": 0,
+        "win_rate": 0.0,
+        "profit_factor": 0.0,
+        "net_profit": 0.0,
+        "net_profit_pct": 0.0,
+        "max_drawdown": 0.0,
+        "avg_win": 0.0,
+        "avg_loss": 0.0,
+        "gross_profit": 0.0,
+        "gross_loss": 0.0,
+    }
+    if n == 0:
+        return empty
+    pnls = [float(t.get("pnl_pct") or 0.0) for t in closed]
+    wins = [p for p in pnls if p > 0]
+    losses = [p for p in pnls if p < 0]
+    gp = float(sum(wins))
+    gl = abs(float(sum(losses)))
+    if gl > 0:
+        pf = gp / gl
+    elif gp > 0:
+        pf = 99.0
+    else:
+        pf = 0.0
+    equity = float(start_equity)
+    peak = equity
+    max_dd = 0.0
+    for p in pnls:
+        equity *= 1.0 + p / 100.0
+        if equity > peak:
+            peak = equity
+        if peak > 0:
+            dd = (peak - equity) / peak * 100.0
+            if dd > max_dd:
+                max_dd = dd
+    net_pct = (equity / start_equity - 1.0) * 100.0 if start_equity else 0.0
+    return {
+        "trades": n,
+        "wins": len(wins),
+        "losses": len(losses),
+        "longs": sum(1 for t in closed if t.get("side") == "long"),
+        "shorts": sum(1 for t in closed if t.get("side") == "short"),
+        "win_rate": round(100.0 * len(wins) / n, 2),
+        "profit_factor": round(pf, 2),
+        "net_profit": round(equity - start_equity, 2),
+        "net_profit_pct": round(net_pct, 2),
+        "max_drawdown": round(max_dd, 2),
+        "avg_win": round(sum(wins) / len(wins), 2) if wins else 0.0,
+        "avg_loss": round(sum(losses) / len(losses), 2) if losses else 0.0,
+        "gross_profit": round(gp, 2),
+        "gross_loss": round(gl, 2),
     }
 
 

@@ -1,0 +1,418 @@
+"""Market Bias parameter search — MT5-style tester on TradingView OHLCV."""
+
+from __future__ import annotations
+
+import itertools
+import logging
+import random
+import threading
+import uuid
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from typing import Any, Callable
+
+from app.services.bar_close import drop_unclosed_bar
+from app.services.pine_market_bias import market_bias_series, summarize_bias_trades
+
+logger = logging.getLogger(__name__)
+
+ProgressCallback = Callable[[str, int, int, str], None]
+
+MAX_COMBOS = 800
+RESULT_LIMIT = 80
+ENGINE_KEYS = (
+    "ha_len",
+    "ha_len2",
+    "osc_len",
+    "ha_htf",
+    "exit_mode",
+    "rr_mult",
+    "swing_bars",
+    "tp_pct",
+    "sl_pct",
+    "allow_long",
+    "allow_short",
+    "reverse_exit",
+    "require_bar",
+    "max_same",
+)
+
+QUICK_GRID: dict[str, list] = {
+    "ha_len": [48, 64, 80],
+    "ha_len2": [72, 96],
+    "osc_len": [7, 11],
+    "ha_htf": ["30"],
+    "exit_mode": ["Swing RR"],
+    "rr_mult": [1.2, 1.6, 2.0],
+    "swing_bars": [8, 11],
+    "reverse_exit": [True],
+    "require_bar": [False],
+    "max_same": [1, 2],
+    "tp_pct": [2.0],
+    "sl_pct": [1.0],
+}
+
+FULL_GRID: dict[str, list] = {
+    "ha_len": [40, 52, 64, 76, 88],
+    "ha_len2": [60, 76, 92, 108],
+    "osc_len": [5, 7, 9, 11],
+    "ha_htf": ["15", "30"],
+    "exit_mode": ["Swing RR", "Percent"],
+    "rr_mult": [1.0, 1.2, 1.6, 2.0],
+    "swing_bars": [6, 11, 13],
+    "reverse_exit": [True, False],
+    "require_bar": [False, True],
+    "max_same": [1, 2, 3],
+    "tp_pct": [1.5, 2.5],
+    "sl_pct": [1.0, 1.5],
+}
+
+
+def _parse_number_list(raw: Any, cast, fallback: list) -> list:
+    if raw is None or (isinstance(raw, str) and not raw.strip()):
+        return list(fallback)
+    if isinstance(raw, (list, tuple)):
+        parts = list(raw)
+    else:
+        parts = str(raw).replace(";", ",").split(",")
+    out: list = []
+    seen: set = set()
+    for part in parts:
+        text = str(part).strip()
+        if not text:
+            continue
+        try:
+            val = cast(text)
+        except (TypeError, ValueError):
+            continue
+        if val in seen:
+            continue
+        seen.add(val)
+        out.append(val)
+    return out or list(fallback)
+
+
+def _parse_bool_list(raw: Any, fallback: list[bool]) -> list[bool]:
+    if raw is None or (isinstance(raw, str) and not str(raw).strip()):
+        return list(fallback)
+    if isinstance(raw, bool):
+        return [raw]
+    if isinstance(raw, (list, tuple)):
+        parts = list(raw)
+    else:
+        parts = str(raw).replace(";", ",").split(",")
+    out: list[bool] = []
+    for part in parts:
+        if isinstance(part, bool):
+            val = part
+        else:
+            text = str(part).strip().lower()
+            if text in ("true", "1", "evet", "on"):
+                val = True
+            elif text in ("false", "0", "hayir", "hayır", "off"):
+                val = False
+            else:
+                continue
+        if val not in out:
+            out.append(val)
+    return out or list(fallback)
+
+
+def _parse_str_list(raw: Any, fallback: list[str], allowed: set[str] | None = None) -> list[str]:
+    if raw is None or (isinstance(raw, str) and not str(raw).strip()):
+        return list(fallback)
+    if isinstance(raw, (list, tuple)):
+        parts = [str(x).strip() for x in raw]
+    else:
+        parts = [p.strip() for p in str(raw).replace(";", ",").split(",")]
+    out: list[str] = []
+    for part in parts:
+        if not part:
+            continue
+        if allowed and part not in allowed:
+            continue
+        if part not in out:
+            out.append(part)
+    return out or list(fallback)
+
+
+def build_grid(body: dict[str, Any]) -> dict[str, list]:
+    mode = str(body.get("mode") or "quick").strip().lower()
+    base = dict(FULL_GRID if mode == "full" else QUICK_GRID)
+    base["ha_len"] = [int(v) for v in _parse_number_list(body.get("ha_len"), int, base["ha_len"])]
+    base["ha_len2"] = [int(v) for v in _parse_number_list(body.get("ha_len2"), int, base["ha_len2"])]
+    base["osc_len"] = [int(v) for v in _parse_number_list(body.get("osc_len"), int, base["osc_len"])]
+    base["rr_mult"] = [float(v) for v in _parse_number_list(body.get("rr_mult"), float, base["rr_mult"])]
+    base["swing_bars"] = [int(v) for v in _parse_number_list(body.get("swing_bars"), int, base["swing_bars"])]
+    base["tp_pct"] = [float(v) for v in _parse_number_list(body.get("tp_pct"), float, base["tp_pct"])]
+    base["sl_pct"] = [float(v) for v in _parse_number_list(body.get("sl_pct"), float, base["sl_pct"])]
+    base["max_same"] = [int(v) for v in _parse_number_list(body.get("max_same"), int, base["max_same"])]
+    base["ha_htf"] = _parse_str_list(body.get("ha_htf"), base["ha_htf"])
+    base["exit_mode"] = _parse_str_list(
+        body.get("exit_mode"),
+        base["exit_mode"],
+        allowed={"Swing RR", "Percent"},
+    )
+    base["reverse_exit"] = _parse_bool_list(body.get("reverse_exit"), base["reverse_exit"])
+    base["require_bar"] = _parse_bool_list(body.get("require_bar"), base["require_bar"])
+    side = str(body.get("side") or "both").strip().lower()
+    if side == "buy":
+        base["allow_long"] = [True]
+        base["allow_short"] = [False]
+    elif side == "sell":
+        base["allow_long"] = [False]
+        base["allow_short"] = [True]
+    else:
+        base["allow_long"] = [True]
+        base["allow_short"] = [True]
+    return base
+
+
+def expand_combos(grid: dict[str, list], max_combos: int, seed: int = 42) -> list[dict[str, Any]]:
+    keys = list(ENGINE_KEYS)
+    values = [grid.get(k) or [None] for k in keys]
+    total = 1
+    for vals in values:
+        total *= max(1, len(vals))
+    cap = max(1, min(int(max_combos or 180), MAX_COMBOS))
+    if total <= cap:
+        return [dict(zip(keys, row)) for row in itertools.product(*values)]
+    rng = random.Random(seed)
+    picked: set[tuple] = set()
+    out: list[dict[str, Any]] = []
+    guard = 0
+    while len(out) < cap and guard < cap * 20:
+        guard += 1
+        row = tuple(rng.choice(vals) for vals in values)
+        if row in picked:
+            continue
+        picked.add(row)
+        out.append(dict(zip(keys, row)))
+    return out
+
+
+def _public_params(params: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "ha_len": int(params["ha_len"]),
+        "ha_len2": int(params["ha_len2"]),
+        "osc_len": int(params["osc_len"]),
+        "ha_htf": str(params.get("ha_htf") or ""),
+        "exitMode": str(params.get("exit_mode") or "Percent"),
+        "rrMult": float(params.get("rr_mult") or 0),
+        "swingBars": int(params.get("swing_bars") or 4),
+        "tp_pct": float(params.get("tp_pct") or 0),
+        "sl_pct": float(params.get("sl_pct") or 0),
+        "allow_long": bool(params.get("allow_long", True)),
+        "allow_short": bool(params.get("allow_short", True)),
+        "reverse_exit": bool(params.get("reverse_exit", True)),
+        "require_bar": bool(params.get("require_bar", False)),
+        "maxSame": int(params.get("max_same") or 1),
+    }
+
+
+def combo_passes(metrics: dict[str, Any], filters: dict[str, float]) -> bool:
+    if metrics["trades"] < filters["min_trades"]:
+        return False
+    if metrics["win_rate"] < filters["min_win_rate"]:
+        return False
+    if metrics["max_drawdown"] > filters["max_drawdown"]:
+        return False
+    if metrics["profit_factor"] < filters["min_profit_factor"]:
+        return False
+    if metrics["net_profit_pct"] < filters["min_profit"]:
+        return False
+    return True
+
+
+def search_bias_params(
+    df,
+    *,
+    chart_tf: str,
+    combos: list[dict[str, Any]],
+    filters: dict[str, float],
+    on_progress: ProgressCallback | None = None,
+) -> dict[str, Any]:
+    rows: list[dict[str, Any]] = []
+    total = len(combos)
+    for i, params in enumerate(combos, start=1):
+        engine = {k: params[k] for k in ENGINE_KEYS}
+        try:
+            series = market_bias_series(df, chart_tf=chart_tf, **engine)
+            metrics = summarize_bias_trades(series.get("trades"))
+        except Exception as exc:
+            logger.warning("bias combo failed %s: %s", engine, exc)
+            if on_progress and (i == total or i % 5 == 0):
+                on_progress("searching", i, total, f"{i}/{total} kombinasyon")
+            continue
+        passed = combo_passes(metrics, filters)
+        rows.append(
+            {
+                **metrics,
+                "passed": passed,
+                "params": _public_params(params),
+            }
+        )
+        if on_progress and (i == total or i % 5 == 0):
+            on_progress("searching", i, total, f"{i}/{total} kombinasyon")
+    rows.sort(
+        key=lambda r: (
+            not r["passed"],
+            -float(r["profit_factor"]),
+            -float(r["net_profit_pct"]),
+            -float(r["win_rate"]),
+            float(r["max_drawdown"]),
+        )
+    )
+    passed_n = sum(1 for r in rows if r["passed"])
+    ranked = []
+    for idx, row in enumerate(rows[:RESULT_LIMIT], start=1):
+        ranked.append({"rank": idx, **row})
+    return {
+        "tested": total,
+        "passed": passed_n,
+        "results": ranked,
+    }
+
+
+def run_bias_optimize(
+    body: dict[str, Any],
+    on_progress: ProgressCallback | None = None,
+) -> dict[str, Any]:
+    from app.services.borsapy_client import (
+        fetch_ohlcv_one_backtest,
+        is_borsapy_available,
+        tradingview_auth_configured,
+    )
+
+    symbol = str(body.get("symbol") or "").strip().upper()
+    timeframe = str(body.get("timeframe") or "15m").strip()
+    period = str(body.get("period") or "60d").strip() or "60d"
+    if not symbol:
+        raise ValueError("Sembol gerekli")
+    if timeframe not in ("3m", "5m", "15m", "30m", "1h", "1d"):
+        raise ValueError("Periyot 3m, 5m, 15m, 30m, 1h veya 1d olmalı")
+    if not is_borsapy_available():
+        raise RuntimeError("borsapy yüklü değil")
+    if not tradingview_auth_configured():
+        raise RuntimeError("TradingView sessionid / sessionid_sign .env içinde yok")
+
+    if on_progress:
+        on_progress("downloading", 0, 1, f"{symbol} {timeframe} indiriliyor")
+    df = fetch_ohlcv_one_backtest(symbol, timeframe, period=period)
+    if df is None or df.empty:
+        raise RuntimeError(f"{symbol} için TradingView verisi alınamadı")
+    df = drop_unclosed_bar(df, timeframe, universe="viop")
+    if df is None or len(df) < 80:
+        raise RuntimeError(f"{symbol}: yetersiz bar ({0 if df is None else len(df)})")
+
+    grid = build_grid(body)
+    max_combos = int(body.get("max_combos") or (400 if str(body.get("mode")) == "full" else 180))
+    combos = expand_combos(grid, max_combos, seed=int(body.get("seed") or 42))
+    filters = {
+        "min_win_rate": float(body.get("min_win_rate") or 0),
+        "max_drawdown": float(body.get("max_drawdown") if body.get("max_drawdown") is not None else 100),
+        "min_profit_factor": float(body.get("min_profit_factor") or 0),
+        "min_profit": float(body.get("min_profit") or 0),
+        "min_trades": float(body.get("min_trades") or 8),
+    }
+    if on_progress:
+        on_progress("searching", 0, len(combos), f"{len(combos)} kombinasyon")
+    found = search_bias_params(
+        df,
+        chart_tf=timeframe,
+        combos=combos,
+        filters=filters,
+        on_progress=on_progress,
+    )
+    start = df.index[0]
+    end = df.index[-1]
+    if on_progress:
+        on_progress("done", found["tested"], found["tested"], "Tamamlandı")
+    return {
+        "symbol": symbol,
+        "timeframe": timeframe,
+        "period": period,
+        "bars": int(len(df)),
+        "from": start.isoformat() if hasattr(start, "isoformat") else str(start),
+        "to": end.isoformat() if hasattr(end, "isoformat") else str(end),
+        "filters": filters,
+        "combo_count": len(combos),
+        **found,
+    }
+
+
+@dataclass
+class OptimizeJob:
+    id: str
+    status: str = "running"
+    progress: int = 0
+    phase: str = "starting"
+    message: str = "Başlatılıyor…"
+    result: dict[str, Any] | None = None
+    error: str | None = None
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+_jobs: dict[str, OptimizeJob] = {}
+_lock = threading.Lock()
+
+
+def job_to_dict(job: OptimizeJob) -> dict[str, Any]:
+    return {
+        "job_id": job.id,
+        "status": job.status,
+        "progress": job.progress,
+        "phase": job.phase,
+        "message": job.message,
+        "result": job.result,
+        "error": job.error,
+    }
+
+
+def get_optimize_job(job_id: str) -> dict[str, Any] | None:
+    with _lock:
+        job = _jobs.get(job_id)
+        return job_to_dict(job) if job else None
+
+
+def start_optimize_job(body: dict[str, Any]) -> str:
+    job_id = str(uuid.uuid4())
+    with _lock:
+        if any(j.status == "running" for j in _jobs.values()):
+            raise RuntimeError("Bir parametre taraması zaten çalışıyor")
+        _jobs[job_id] = OptimizeJob(id=job_id)
+        if len(_jobs) > 20:
+            oldest = sorted(_jobs.values(), key=lambda j: j.created_at)[: max(0, len(_jobs) - 20)]
+            for old in oldest:
+                if old.status != "running":
+                    _jobs.pop(old.id, None)
+
+    def _update(**kwargs: Any) -> None:
+        with _lock:
+            job = _jobs.get(job_id)
+            if not job:
+                return
+            for key, value in kwargs.items():
+                setattr(job, key, value)
+
+    def report(phase: str, done: int, total: int, detail: str = "") -> None:
+        if total <= 0:
+            pct = 5 if phase == "downloading" else 0
+        elif phase == "downloading":
+            pct = 8
+        elif phase == "searching":
+            pct = 10 + int(min(85, max(0, done / total * 85)))
+        else:
+            pct = 100
+        _update(progress=pct, phase=phase, message=detail or phase)
+
+    def worker() -> None:
+        try:
+            result = run_bias_optimize(body, on_progress=report)
+            _update(status="done", progress=100, phase="done", message="Tamamlandı", result=result)
+        except Exception as exc:
+            logger.exception("bias optimize failed")
+            _update(status="error", phase="error", message=str(exc), error=str(exc))
+
+    threading.Thread(target=worker, name=f"bias-opt-{job_id[:8]}", daemon=True).start()
+    return job_id

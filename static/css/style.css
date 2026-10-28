@@ -2254,3 +2254,28 @@ body {
   color: var(--muted);
   font-style: normal;
 }
+
+.opt-subhead {
+  margin: 0.85rem 0 0.15rem;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--silver);
+}
+
+.opt-results-table td,
+.opt-results-table th {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.opt-row-pass td {
+  color: var(--text);
+}
+
+.opt-row-fail td {
+  color: var(--muted);
+}
+
+.opt-panel .scan-progress {
+  margin-top: 0.75rem;
+}

@@ -130,6 +130,7 @@ function switchAppTab(tab) {
   const viop = qs("#viopPanel");
   const hisse = qs("#hissePanel");
   const alarm = qs("#alarmPanel");
+  const opt = qs("#optPanel");
   const tabDash = qs("#tabDash");
   const tabScan = qs("#tabScan");
   const tabPerf = qs("#tabPerf");
@@ -138,6 +139,7 @@ function switchAppTab(tab) {
   const tabViop = qs("#tabViop");
   const tabHisse = qs("#tabHisse");
   const tabAlarm = qs("#tabAlarm");
+  const tabOpt = qs("#tabOpt");
   const isDash = tab === "dash";
   const isAdmin = tab === "admin";
   const isPerf = tab === "perf";
@@ -145,7 +147,8 @@ function switchAppTab(tab) {
   const isViop = tab === "viop";
   const isHisse = tab === "hisse";
   const isAlarm = tab === "alarm";
-  const hideScan = isAdmin || isPerf || isHelp || isViop || isHisse || isDash || isAlarm;
+  const isOpt = tab === "opt";
+  const hideScan = isAdmin || isPerf || isHelp || isViop || isHisse || isDash || isAlarm || isOpt;
   if (dash) dash.classList.toggle("hidden", !isDash);
   if (scan) scan.classList.toggle("hidden", hideScan);
   if (perf) perf.classList.toggle("hidden", !isPerf);
@@ -153,6 +156,7 @@ function switchAppTab(tab) {
   if (viop) viop.classList.toggle("hidden", !isViop);
   if (hisse) hisse.classList.toggle("hidden", !isHisse);
   if (alarm) alarm.classList.toggle("hidden", !isAlarm);
+  if (opt) opt.classList.toggle("hidden", !isOpt);
   if (admin) admin.classList.toggle("active", isAdmin);
   if (tabDash) tabDash.classList.toggle("active", isDash);
   if (tabScan) tabScan.classList.toggle("active", tab === "scan");
@@ -161,6 +165,7 @@ function switchAppTab(tab) {
   if (tabViop) tabViop.classList.toggle("active", isViop);
   if (tabHisse) tabHisse.classList.toggle("active", isHisse);
   if (tabAlarm) tabAlarm.classList.toggle("active", isAlarm);
+  if (tabOpt) tabOpt.classList.toggle("active", isOpt);
   if (tabAdmin) tabAdmin.classList.toggle("active", isAdmin);
   if (isAdmin) loadAdminUsers();
   if (isDash && typeof onDashTabShown === "function") onDashTabShown();
@@ -171,6 +176,7 @@ function switchAppTab(tab) {
   if (isHelp && typeof onHelpTabShown === "function") onHelpTabShown();
   if (isViop || isHisse) loadCalcFrame(tab);
   if (isAlarm && typeof onAlarmTabShown === "function") onAlarmTabShown();
+  if (isOpt && typeof onOptTabShown === "function") onOptTabShown();
 }
 
 async function loadAdminUsers() {
@@ -265,6 +271,7 @@ function initAuth() {
   qs("#tabDash")?.addEventListener("click", () => switchAppTab("dash"));
   qs("#tabScan")?.addEventListener("click", () => switchAppTab("scan"));
   qs("#tabAlarm")?.addEventListener("click", () => switchAppTab("alarm"));
+  qs("#tabOpt")?.addEventListener("click", () => switchAppTab("opt"));
   qs("#tabViop")?.addEventListener("click", () => switchAppTab("viop"));
   qs("#tabHisse")?.addEventListener("click", () => switchAppTab("hisse"));
   qs("#tabPerf")?.addEventListener("click", () => switchAppTab("perf"));

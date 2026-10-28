@@ -117,7 +117,8 @@
 
 .scan-panel.hidden,
 .dash-panel.hidden,
-.alarm-panel.hidden {
+.alarm-panel.hidden,
+.opt-panel.hidden {
   display: none;
 }
 
@@ -125,7 +126,8 @@
 .help-panel.hidden,
 .perf-panel.hidden,
 .calc-panel.hidden,
-.alarm-panel.hidden {
+.alarm-panel.hidden,
+.opt-panel.hidden {
   display: none !important;
 }
 

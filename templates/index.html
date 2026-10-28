@@ -6,8 +6,8 @@
   <title>TradeLABtr Stock Screener</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/css/style.css?v=47" />
-  <link rel="stylesheet" href="/static/css/auth.css?v=6" />
+  <link rel="stylesheet" href="/static/css/style.css?v=48" />
+  <link rel="stylesheet" href="/static/css/auth.css?v=7" />
 </head>
 <body>
   <div class="app">
@@ -24,6 +24,7 @@
           <button type="button" class="app-tab active" id="tabDash">Özet</button>
           <button type="button" class="app-tab" id="tabScan">Tarama</button>
           <button type="button" class="app-tab" id="tabAlarm">Alarm</button>
+          <button type="button" class="app-tab" id="tabOpt">Tester</button>
           <button type="button" class="app-tab" id="tabViop">VIOP</button>
           <button type="button" class="app-tab" id="tabHisse">Hisse</button>
           <button type="button" class="app-tab" id="tabPerf">Performans</button>
@@ -794,6 +795,187 @@
       </section>
     </main>
 
+    <main class="layout opt-panel hidden" id="optPanel">
+      <section class="card">
+        <div class="track-list-head">
+          <div>
+            <h2>Market Bias tester</h2>
+            <p class="hint">TradingView oturumu ile seçilen kontratın geçmişini indirir, Bias parametre ızgarasını tarar ve verdiğiniz eşikleri geçen setleri sıralar.</p>
+          </div>
+          <div class="track-list-actions">
+            <button type="submit" class="btn primary btn-sm" form="optForm" id="btnOptRun">Taramayı başlat</button>
+          </div>
+        </div>
+        <form id="optForm" class="opt-form">
+          <div class="alarm-form-grid">
+            <label class="field">
+              <span>Sembol</span>
+              <input type="text" id="optSymbol" list="optSymbolList" required placeholder="AKBNK1!" autocomplete="off" />
+              <datalist id="optSymbolList"></datalist>
+            </label>
+            <label class="field">
+              <span>Periyot</span>
+              <select id="optTimeframe">
+                <option value="5m">5 dakika</option>
+                <option value="15m" selected>15 dakika</option>
+                <option value="30m">30 dakika</option>
+                <option value="1h">1 saat</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Veri süresi</span>
+              <select id="optPeriod">
+                <option value="40d">40 gün</option>
+                <option value="60d" selected>60 gün</option>
+                <option value="90d">90 gün</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Tarama</span>
+              <select id="optMode">
+                <option value="quick" selected>Hızlı ızgara</option>
+                <option value="full">Geniş (rastgele örnek)</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Yön</span>
+              <select id="optSide">
+                <option value="both" selected>AL ve SAT</option>
+                <option value="buy">Yalnız AL</option>
+                <option value="sell">Yalnız SAT</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Maks. kombinasyon</span>
+              <input type="number" id="optMaxCombos" min="20" max="800" value="180" />
+            </label>
+          </div>
+          <h3 class="opt-subhead">Filtreler</h3>
+          <div class="alarm-form-grid">
+            <label class="field">
+              <span>Min. kazanç oranı %</span>
+              <input type="number" id="optMinWinRate" min="0" max="100" step="1" value="45" />
+            </label>
+            <label class="field">
+              <span>Maks. DD %</span>
+              <input type="number" id="optMaxDd" min="0" max="100" step="0.5" value="18" />
+            </label>
+            <label class="field">
+              <span>Min. profit factor</span>
+              <input type="number" id="optMinPf" min="0" max="20" step="0.1" value="1.3" />
+            </label>
+            <label class="field">
+              <span>Min. net kâr %</span>
+              <input type="number" id="optMinProfit" min="-100" max="500" step="0.5" value="8" />
+            </label>
+            <label class="field">
+              <span>Min. işlem sayısı</span>
+              <input type="number" id="optMinTrades" min="1" max="200" value="10" />
+            </label>
+          </div>
+          <h3 class="opt-subhead">Parametre ızgarası</h3>
+          <div class="alarm-form-grid">
+            <label class="field">
+              <span>HA periyot</span>
+              <input type="text" id="optHaLen" value="48, 64, 80" />
+            </label>
+            <label class="field">
+              <span>HA smoothing</span>
+              <input type="text" id="optHaLen2" value="72, 96" />
+            </label>
+            <label class="field">
+              <span>Oscillator</span>
+              <input type="text" id="optOscLen" value="7, 11" />
+            </label>
+            <label class="field">
+              <span>HTF</span>
+              <input type="text" id="optHaHtf" value="30" />
+            </label>
+            <label class="field">
+              <span>Çıkış</span>
+              <select id="optExitMode">
+                <option value="Swing RR" selected>Swing RR</option>
+                <option value="Percent">Percent</option>
+                <option value="Swing RR, Percent">İkisi</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>RR</span>
+              <input type="text" id="optRr" value="1.2, 1.6, 2.0" />
+            </label>
+            <label class="field">
+              <span>Swing bars</span>
+              <input type="text" id="optSwing" value="8, 11" />
+            </label>
+            <label class="field">
+              <span>Max same</span>
+              <input type="text" id="optMaxSame" value="1, 2" />
+            </label>
+            <label class="field">
+              <span>Reverse</span>
+              <select id="optReverse">
+                <option value="true" selected>Açık</option>
+                <option value="true, false">Açık ve kapalı</option>
+                <option value="false">Kapalı</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Sinyal mumu</span>
+              <select id="optRequireBar">
+                <option value="false" selected>Kapalı</option>
+                <option value="true, false">Açık ve kapalı</option>
+                <option value="true">Açık</option>
+              </select>
+            </label>
+          </div>
+          <p class="hint" id="optTvHint">TradingView sessionid .env’de olmalı.</p>
+          <p class="auth-status" id="optFormStatus"></p>
+        </form>
+        <div class="scan-progress" id="optProgress" hidden>
+          <div class="scan-progress-track">
+            <div class="scan-progress-bar" id="optProgressBar"></div>
+          </div>
+          <span class="scan-progress-label" id="optProgressLabel">0%</span>
+        </div>
+      </section>
+      <section class="card">
+        <div class="track-list-head">
+          <div>
+            <h2 id="optResultTitle">Sonuçlar</h2>
+            <p class="hint" id="optResultHint">Eşikleri geçen setler üstte; profit factor, net kâr ve kazanç oranına göre sıralanır.</p>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="scheduled-scans-table opt-results-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>WR %</th>
+                <th>PF</th>
+                <th>Kâr %</th>
+                <th>DD %</th>
+                <th>İşlem</th>
+                <th>HA</th>
+                <th>Smooth</th>
+                <th>Osc</th>
+                <th>HTF</th>
+                <th>Çıkış</th>
+                <th>RR</th>
+                <th>Swing</th>
+                <th>Rev</th>
+                <th>Mum</th>
+                <th>Same</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="optResultBody">
+              <tr class="empty"><td colspan="17">Henüz tarama yok.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
     <main class="calc-panel hidden" id="viopPanel">
       <iframe
         id="viopFrame"
@@ -969,12 +1151,13 @@
     </div>
   </div>
 
-  <script src="/static/js/auth.js?v=11"></script>
+  <script src="/static/js/auth.js?v=12"></script>
   <script src="/static/js/dash.js?v=15"></script>
   <script src="/static/js/app.js?v=61"></script>
   <script src="/static/js/track.js?v=13"></script>
   <script src="/static/js/perf.js?v=5"></script>
   <script src="/static/js/help.js?v=2"></script>
   <script src="/static/js/alarm.js?v=1"></script>
+  <script src="/static/js/optimize.js?v=1"></script>
 </body>
 </html>
