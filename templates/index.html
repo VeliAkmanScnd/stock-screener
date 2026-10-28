@@ -879,33 +879,33 @@
             <div class="field">
               <span>HA periyot</span>
               <div class="opt-range-row" role="group" aria-label="HA periyot aralığı">
-                <label><span>Başlangıç</span><input type="number" id="optHaLenFrom" value="48" step="1" /></label>
-                <label><span>Adım</span><input type="number" id="optHaLenStep" value="16" step="1" min="0.0001" /></label>
-                <label><span>Bitiş</span><input type="number" id="optHaLenTo" value="80" step="1" /></label>
+                <label><span>Başlangıç</span><input type="number" id="optHaLenFrom" value="48" min="2" step="1" inputmode="numeric" /></label>
+                <label><span>Adım</span><input type="number" id="optHaLenStep" value="16" min="1" step="1" inputmode="numeric" /></label>
+                <label><span>Bitiş</span><input type="number" id="optHaLenTo" value="80" min="2" step="1" inputmode="numeric" /></label>
               </div>
             </div>
             <div class="field">
               <span>HA smoothing</span>
               <div class="opt-range-row" role="group" aria-label="HA smoothing aralığı">
-                <label><span>Başlangıç</span><input type="number" id="optHaLen2From" value="72" step="1" /></label>
-                <label><span>Adım</span><input type="number" id="optHaLen2Step" value="24" step="1" min="0.0001" /></label>
-                <label><span>Bitiş</span><input type="number" id="optHaLen2To" value="96" step="1" /></label>
+                <label><span>Başlangıç</span><input type="number" id="optHaLen2From" value="72" min="2" step="1" inputmode="numeric" /></label>
+                <label><span>Adım</span><input type="number" id="optHaLen2Step" value="24" min="1" step="1" inputmode="numeric" /></label>
+                <label><span>Bitiş</span><input type="number" id="optHaLen2To" value="96" min="2" step="1" inputmode="numeric" /></label>
               </div>
             </div>
             <div class="field">
               <span>Oscillator</span>
               <div class="opt-range-row" role="group" aria-label="Oscillator aralığı">
-                <label><span>Başlangıç</span><input type="number" id="optOscLenFrom" value="7" step="1" /></label>
-                <label><span>Adım</span><input type="number" id="optOscLenStep" value="4" step="1" min="0.0001" /></label>
-                <label><span>Bitiş</span><input type="number" id="optOscLenTo" value="11" step="1" /></label>
+                <label><span>Başlangıç</span><input type="number" id="optOscLenFrom" value="7" min="1" step="1" inputmode="numeric" /></label>
+                <label><span>Adım</span><input type="number" id="optOscLenStep" value="4" min="1" step="1" inputmode="numeric" /></label>
+                <label><span>Bitiş</span><input type="number" id="optOscLenTo" value="11" min="1" step="1" inputmode="numeric" /></label>
               </div>
             </div>
             <div class="field">
               <span>HTF (dakika)</span>
               <div class="opt-range-row" role="group" aria-label="HTF aralığı">
-                <label><span>Başlangıç</span><input type="number" id="optHaHtfFrom" value="30" step="1" /></label>
-                <label><span>Adım</span><input type="number" id="optHaHtfStep" value="15" step="1" min="1" /></label>
-                <label><span>Bitiş</span><input type="number" id="optHaHtfTo" value="30" step="1" /></label>
+                <label><span>Başlangıç</span><input type="number" id="optHaHtfFrom" value="30" min="1" step="1" inputmode="numeric" /></label>
+                <label><span>Adım</span><input type="number" id="optHaHtfStep" value="15" min="1" step="1" inputmode="numeric" /></label>
+                <label><span>Bitiş</span><input type="number" id="optHaHtfTo" value="30" min="1" step="1" inputmode="numeric" /></label>
               </div>
             </div>
             <label class="field">
@@ -919,41 +919,41 @@
             <div class="field opt-exit-swing">
               <span>RR</span>
               <div class="opt-range-row" role="group" aria-label="RR aralığı">
-                <label><span>Başlangıç</span><input type="number" id="optRrFrom" value="1.2" step="0.1" /></label>
-                <label><span>Adım</span><input type="number" id="optRrStep" value="0.4" step="0.1" min="0.0001" /></label>
-                <label><span>Bitiş</span><input type="number" id="optRrTo" value="2" step="0.1" /></label>
+                <label><span>Başlangıç</span><input type="number" id="optRrFrom" value="1.2" min="0.1" step="any" inputmode="decimal" /></label>
+                <label><span>Adım</span><input type="number" id="optRrStep" value="0.4" min="0.1" step="any" inputmode="decimal" /></label>
+                <label><span>Bitiş</span><input type="number" id="optRrTo" value="2" min="0.1" step="any" inputmode="decimal" /></label>
               </div>
             </div>
             <div class="field opt-exit-swing">
               <span>Swing bars</span>
               <div class="opt-range-row" role="group" aria-label="Swing bars aralığı">
-                <label><span>Başlangıç</span><input type="number" id="optSwingFrom" value="8" step="1" /></label>
-                <label><span>Adım</span><input type="number" id="optSwingStep" value="3" step="1" min="0.0001" /></label>
-                <label><span>Bitiş</span><input type="number" id="optSwingTo" value="11" step="1" /></label>
+                <label><span>Başlangıç</span><input type="number" id="optSwingFrom" value="8" min="1" max="50" step="1" inputmode="numeric" /></label>
+                <label><span>Adım</span><input type="number" id="optSwingStep" value="3" min="1" step="1" inputmode="numeric" /></label>
+                <label><span>Bitiş</span><input type="number" id="optSwingTo" value="11" min="1" max="50" step="1" inputmode="numeric" /></label>
               </div>
             </div>
             <div class="field opt-exit-percent" hidden>
               <span>TP %</span>
               <div class="opt-range-row" role="group" aria-label="TP yüzde aralığı">
-                <label><span>Başlangıç</span><input type="number" id="optTpPctFrom" value="1.5" step="0.1" /></label>
-                <label><span>Adım</span><input type="number" id="optTpPctStep" value="0.5" step="0.1" min="0.0001" /></label>
-                <label><span>Bitiş</span><input type="number" id="optTpPctTo" value="2.5" step="0.1" /></label>
+                <label><span>Başlangıç</span><input type="number" id="optTpPctFrom" value="1.5" min="0.1" step="any" inputmode="decimal" /></label>
+                <label><span>Adım</span><input type="number" id="optTpPctStep" value="0.5" min="0.1" step="any" inputmode="decimal" /></label>
+                <label><span>Bitiş</span><input type="number" id="optTpPctTo" value="2.5" min="0.1" step="any" inputmode="decimal" /></label>
               </div>
             </div>
             <div class="field opt-exit-percent" hidden>
               <span>SL %</span>
               <div class="opt-range-row" role="group" aria-label="SL yüzde aralığı">
-                <label><span>Başlangıç</span><input type="number" id="optSlPctFrom" value="0.8" step="0.1" /></label>
-                <label><span>Adım</span><input type="number" id="optSlPctStep" value="0.35" step="0.05" min="0.0001" /></label>
-                <label><span>Bitiş</span><input type="number" id="optSlPctTo" value="1.5" step="0.1" /></label>
+                <label><span>Başlangıç</span><input type="number" id="optSlPctFrom" value="0.8" min="0.1" step="any" inputmode="decimal" /></label>
+                <label><span>Adım</span><input type="number" id="optSlPctStep" value="0.35" min="0.1" step="any" inputmode="decimal" /></label>
+                <label><span>Bitiş</span><input type="number" id="optSlPctTo" value="1.5" min="0.1" step="any" inputmode="decimal" /></label>
               </div>
             </div>
             <div class="field">
               <span>Max same</span>
               <div class="opt-range-row" role="group" aria-label="Max same aralığı">
-                <label><span>Başlangıç</span><input type="number" id="optMaxSameFrom" value="1" step="1" min="1" /></label>
-                <label><span>Adım</span><input type="number" id="optMaxSameStep" value="1" step="1" min="1" /></label>
-                <label><span>Bitiş</span><input type="number" id="optMaxSameTo" value="2" step="1" min="1" /></label>
+                <label><span>Başlangıç</span><input type="number" id="optMaxSameFrom" value="1" min="1" max="20" step="1" inputmode="numeric" /></label>
+                <label><span>Adım</span><input type="number" id="optMaxSameStep" value="1" min="1" step="1" inputmode="numeric" /></label>
+                <label><span>Bitiş</span><input type="number" id="optMaxSameTo" value="2" min="1" max="20" step="1" inputmode="numeric" /></label>
               </div>
             </div>
             <label class="field">
