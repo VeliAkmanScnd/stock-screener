@@ -661,6 +661,13 @@ async function pollOptJob(jobId) {
   if (!stRes.ok) throw new Error(job.detail || "Durum alınamadı");
   setOptProgress(job.progress ?? 0, job.message || "Çalışıyor…");
   if (job.status === "running") {
+    if (job.phase === "cancelling") {
+      optStatus("Durduruluyor…");
+    } else if (job.phase === "downloading") {
+      optStatus(job.message || "Veri indiriliyor…");
+    } else {
+      optStatus("Tarama devam ediyor…");
+    }
     optPollTimer = setTimeout(() => {
       pollOptJob(jobId).catch((err) => {
         optStatus(err.message, "error");
