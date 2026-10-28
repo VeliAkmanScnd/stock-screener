@@ -6,7 +6,7 @@
   <title>TradeLABtr Stock Screener</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/css/style.css?v=49" />
+  <link rel="stylesheet" href="/static/css/style.css?v=50" />
   <link rel="stylesheet" href="/static/css/auth.css?v=7" />
 </head>
 <body>
@@ -874,23 +874,40 @@
             </label>
           </div>
           <h3 class="opt-subhead">Parametre ızgarası</h3>
-          <div class="alarm-form-grid">
-            <label class="field">
+          <p class="hint">Her parametrede başlangıç, adım ve bitiş. Örnek: smoothing 55, adım 1, bitiş 200.</p>
+          <div class="opt-range-grid">
+            <div class="field">
               <span>HA periyot</span>
-              <input type="text" id="optHaLen" value="48, 64, 80" />
-            </label>
-            <label class="field">
+              <div class="opt-range-row" role="group" aria-label="HA periyot aralığı">
+                <label><span>Başlangıç</span><input type="number" id="optHaLenFrom" value="48" step="1" /></label>
+                <label><span>Adım</span><input type="number" id="optHaLenStep" value="16" step="1" min="0.0001" /></label>
+                <label><span>Bitiş</span><input type="number" id="optHaLenTo" value="80" step="1" /></label>
+              </div>
+            </div>
+            <div class="field">
               <span>HA smoothing</span>
-              <input type="text" id="optHaLen2" value="72, 96" />
-            </label>
-            <label class="field">
+              <div class="opt-range-row" role="group" aria-label="HA smoothing aralığı">
+                <label><span>Başlangıç</span><input type="number" id="optHaLen2From" value="72" step="1" /></label>
+                <label><span>Adım</span><input type="number" id="optHaLen2Step" value="24" step="1" min="0.0001" /></label>
+                <label><span>Bitiş</span><input type="number" id="optHaLen2To" value="96" step="1" /></label>
+              </div>
+            </div>
+            <div class="field">
               <span>Oscillator</span>
-              <input type="text" id="optOscLen" value="7, 11" />
-            </label>
-            <label class="field">
-              <span>HTF</span>
-              <input type="text" id="optHaHtf" value="30" />
-            </label>
+              <div class="opt-range-row" role="group" aria-label="Oscillator aralığı">
+                <label><span>Başlangıç</span><input type="number" id="optOscLenFrom" value="7" step="1" /></label>
+                <label><span>Adım</span><input type="number" id="optOscLenStep" value="4" step="1" min="0.0001" /></label>
+                <label><span>Bitiş</span><input type="number" id="optOscLenTo" value="11" step="1" /></label>
+              </div>
+            </div>
+            <div class="field">
+              <span>HTF (dakika)</span>
+              <div class="opt-range-row" role="group" aria-label="HTF aralığı">
+                <label><span>Başlangıç</span><input type="number" id="optHaHtfFrom" value="30" step="1" /></label>
+                <label><span>Adım</span><input type="number" id="optHaHtfStep" value="15" step="1" min="1" /></label>
+                <label><span>Bitiş</span><input type="number" id="optHaHtfTo" value="30" step="1" /></label>
+              </div>
+            </div>
             <label class="field">
               <span>Çıkış</span>
               <select id="optExitMode">
@@ -899,26 +916,46 @@
                 <option value="Swing RR, Percent">İkisi</option>
               </select>
             </label>
-            <label class="field opt-exit-swing">
+            <div class="field opt-exit-swing">
               <span>RR</span>
-              <input type="text" id="optRr" value="1.2, 1.6, 2.0" />
-            </label>
-            <label class="field opt-exit-swing">
+              <div class="opt-range-row" role="group" aria-label="RR aralığı">
+                <label><span>Başlangıç</span><input type="number" id="optRrFrom" value="1.2" step="0.1" /></label>
+                <label><span>Adım</span><input type="number" id="optRrStep" value="0.4" step="0.1" min="0.0001" /></label>
+                <label><span>Bitiş</span><input type="number" id="optRrTo" value="2" step="0.1" /></label>
+              </div>
+            </div>
+            <div class="field opt-exit-swing">
               <span>Swing bars</span>
-              <input type="text" id="optSwing" value="8, 11" />
-            </label>
-            <label class="field opt-exit-percent" hidden>
+              <div class="opt-range-row" role="group" aria-label="Swing bars aralığı">
+                <label><span>Başlangıç</span><input type="number" id="optSwingFrom" value="8" step="1" /></label>
+                <label><span>Adım</span><input type="number" id="optSwingStep" value="3" step="1" min="0.0001" /></label>
+                <label><span>Bitiş</span><input type="number" id="optSwingTo" value="11" step="1" /></label>
+              </div>
+            </div>
+            <div class="field opt-exit-percent" hidden>
               <span>TP %</span>
-              <input type="text" id="optTpPct" value="1.5, 2.0, 2.5" />
-            </label>
-            <label class="field opt-exit-percent" hidden>
+              <div class="opt-range-row" role="group" aria-label="TP yüzde aralığı">
+                <label><span>Başlangıç</span><input type="number" id="optTpPctFrom" value="1.5" step="0.1" /></label>
+                <label><span>Adım</span><input type="number" id="optTpPctStep" value="0.5" step="0.1" min="0.0001" /></label>
+                <label><span>Bitiş</span><input type="number" id="optTpPctTo" value="2.5" step="0.1" /></label>
+              </div>
+            </div>
+            <div class="field opt-exit-percent" hidden>
               <span>SL %</span>
-              <input type="text" id="optSlPct" value="0.8, 1.0, 1.5" />
-            </label>
-            <label class="field">
+              <div class="opt-range-row" role="group" aria-label="SL yüzde aralığı">
+                <label><span>Başlangıç</span><input type="number" id="optSlPctFrom" value="0.8" step="0.1" /></label>
+                <label><span>Adım</span><input type="number" id="optSlPctStep" value="0.35" step="0.05" min="0.0001" /></label>
+                <label><span>Bitiş</span><input type="number" id="optSlPctTo" value="1.5" step="0.1" /></label>
+              </div>
+            </div>
+            <div class="field">
               <span>Max same</span>
-              <input type="text" id="optMaxSame" value="1, 2" />
-            </label>
+              <div class="opt-range-row" role="group" aria-label="Max same aralığı">
+                <label><span>Başlangıç</span><input type="number" id="optMaxSameFrom" value="1" step="1" min="1" /></label>
+                <label><span>Adım</span><input type="number" id="optMaxSameStep" value="1" step="1" min="1" /></label>
+                <label><span>Bitiş</span><input type="number" id="optMaxSameTo" value="2" step="1" min="1" /></label>
+              </div>
+            </div>
             <label class="field">
               <span>Reverse</span>
               <select id="optReverse">
@@ -1168,6 +1205,6 @@
   <script src="/static/js/perf.js?v=5"></script>
   <script src="/static/js/help.js?v=2"></script>
   <script src="/static/js/alarm.js?v=1"></script>
-  <script src="/static/js/optimize.js?v=2"></script>
+  <script src="/static/js/optimize.js?v=3"></script>
 </body>
 </html>

@@ -9,6 +9,7 @@ import threading
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Any, Callable
 
 from app.services.bar_close import drop_unclosed_bar
@@ -20,6 +21,7 @@ ProgressCallback = Callable[[str, int, int, str], None]
 
 MAX_COMBOS = 800
 RESULT_LIMIT = 80
+RANGE_AXIS_MAX = 400
 ENGINE_KEYS = (
     "ha_len",
     "ha_len2",
@@ -66,6 +68,55 @@ FULL_GRID: dict[str, list] = {
     "tp_pct": [1.5, 2.5],
     "sl_pct": [1.0, 1.5],
 }
+
+
+def numeric_span(
+    start: Any,
+    stop: Any,
+    step: Any,
+    *,
+    integer: bool,
+    limit: int = RANGE_AXIS_MAX,
+) -> list:
+    """Inclusive start→stop walk. 55, 200, 1 → 55…200."""
+    try:
+        a = Decimal(str(start))
+        b = Decimal(str(stop))
+        s = Decimal(str(step))
+    except Exception:
+        return []
+    if s == 0:
+        s = Decimal(1)
+    if a > b:
+        a, b = b, a
+    s = abs(s)
+    out: list = []
+    x = a
+    for _ in range(max(1, int(limit))):
+        if integer:
+            val: Any = int(x.to_integral_value(rounding=ROUND_HALF_UP))
+        else:
+            val = float(x)
+        if not out or out[-1] != val:
+            out.append(val)
+        nxt = x + s
+        if nxt > b + (s * Decimal("1e-9")):
+            break
+        x = nxt
+    return out
+
+
+def _values_from_spec(raw: Any, *, integer: bool, fallback: list) -> list:
+    if isinstance(raw, dict):
+        start = raw.get("start", raw.get("from"))
+        stop = raw.get("stop", raw.get("to", raw.get("end")))
+        step = raw.get("step", 1)
+        if start is None or stop is None:
+            return list(fallback)
+        out = numeric_span(start, stop, step, integer=integer)
+        return out or list(fallback)
+    cast = int if integer else float
+    return [cast(v) for v in _parse_number_list(raw, cast, fallback)]
 
 
 def _parse_number_list(raw: Any, cast, fallback: list) -> list:
@@ -150,15 +201,18 @@ def _collapse_unused_exit_params(grid: dict[str, list]) -> None:
 def build_grid(body: dict[str, Any]) -> dict[str, list]:
     mode = str(body.get("mode") or "quick").strip().lower()
     base = dict(FULL_GRID if mode == "full" else QUICK_GRID)
-    base["ha_len"] = [int(v) for v in _parse_number_list(body.get("ha_len"), int, base["ha_len"])]
-    base["ha_len2"] = [int(v) for v in _parse_number_list(body.get("ha_len2"), int, base["ha_len2"])]
-    base["osc_len"] = [int(v) for v in _parse_number_list(body.get("osc_len"), int, base["osc_len"])]
-    base["rr_mult"] = [float(v) for v in _parse_number_list(body.get("rr_mult"), float, base["rr_mult"])]
-    base["swing_bars"] = [int(v) for v in _parse_number_list(body.get("swing_bars"), int, base["swing_bars"])]
-    base["tp_pct"] = [float(v) for v in _parse_number_list(body.get("tp_pct"), float, base["tp_pct"])]
-    base["sl_pct"] = [float(v) for v in _parse_number_list(body.get("sl_pct"), float, base["sl_pct"])]
-    base["max_same"] = [int(v) for v in _parse_number_list(body.get("max_same"), int, base["max_same"])]
-    base["ha_htf"] = _parse_str_list(body.get("ha_htf"), base["ha_htf"])
+    base["ha_len"] = _values_from_spec(body.get("ha_len"), integer=True, fallback=base["ha_len"])
+    base["ha_len2"] = _values_from_spec(body.get("ha_len2"), integer=True, fallback=base["ha_len2"])
+    base["osc_len"] = _values_from_spec(body.get("osc_len"), integer=True, fallback=base["osc_len"])
+    base["rr_mult"] = _values_from_spec(body.get("rr_mult"), integer=False, fallback=base["rr_mult"])
+    base["swing_bars"] = _values_from_spec(body.get("swing_bars"), integer=True, fallback=base["swing_bars"])
+    base["tp_pct"] = _values_from_spec(body.get("tp_pct"), integer=False, fallback=base["tp_pct"])
+    base["sl_pct"] = _values_from_spec(body.get("sl_pct"), integer=False, fallback=base["sl_pct"])
+    base["max_same"] = _values_from_spec(body.get("max_same"), integer=True, fallback=base["max_same"])
+    if isinstance(body.get("ha_htf"), dict):
+        base["ha_htf"] = [str(v) for v in _values_from_spec(body.get("ha_htf"), integer=True, fallback=[30])]
+    else:
+        base["ha_htf"] = _parse_str_list(body.get("ha_htf"), base["ha_htf"])
     base["exit_mode"] = _parse_str_list(
         body.get("exit_mode"),
         base["exit_mode"],

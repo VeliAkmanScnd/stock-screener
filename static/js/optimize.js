@@ -135,6 +135,23 @@ function renderOptResults(payload) {
   });
 }
 
+function optRange(base, fallback) {
+  return {
+    start: optNum(`#${base}From`, fallback[0]),
+    step: optNum(`#${base}Step`, fallback[1]),
+    stop: optNum(`#${base}To`, fallback[2]),
+  };
+}
+
+function setOptRange(base, start, step, stop) {
+  const fromEl = document.querySelector(`#${base}From`);
+  const stepEl = document.querySelector(`#${base}Step`);
+  const toEl = document.querySelector(`#${base}To`);
+  if (fromEl) fromEl.value = start;
+  if (stepEl) stepEl.value = step;
+  if (toEl) toEl.value = stop;
+}
+
 function collectOptBody() {
   return {
     symbol: optCsv("#optSymbol"),
@@ -148,16 +165,16 @@ function collectOptBody() {
     min_profit_factor: optNum("#optMinPf", 1.3),
     min_profit: optNum("#optMinProfit", 8),
     min_trades: Math.round(optNum("#optMinTrades", 10)),
-    ha_len: optCsv("#optHaLen"),
-    ha_len2: optCsv("#optHaLen2"),
-    osc_len: optCsv("#optOscLen"),
-    ha_htf: optCsv("#optHaHtf"),
+    ha_len: optRange("optHaLen", [48, 16, 80]),
+    ha_len2: optRange("optHaLen2", [72, 24, 96]),
+    osc_len: optRange("optOscLen", [7, 4, 11]),
+    ha_htf: optRange("optHaHtf", [30, 15, 30]),
     exit_mode: document.querySelector("#optExitMode")?.value || "Swing RR",
-    rr_mult: optCsv("#optRr"),
-    swing_bars: optCsv("#optSwing"),
-    tp_pct: optCsv("#optTpPct"),
-    sl_pct: optCsv("#optSlPct"),
-    max_same: optCsv("#optMaxSame"),
+    rr_mult: optRange("optRr", [1.2, 0.4, 2]),
+    swing_bars: optRange("optSwing", [8, 3, 11]),
+    tp_pct: optRange("optTpPct", [1.5, 0.5, 2.5]),
+    sl_pct: optRange("optSlPct", [0.8, 0.35, 1.5]),
+    max_same: optRange("optMaxSame", [1, 1, 2]),
     reverse_exit: document.querySelector("#optReverse")?.value || "true",
     require_bar: document.querySelector("#optRequireBar")?.value || "false",
   };
@@ -269,28 +286,28 @@ function initOptimize() {
       if (el) el.value = val;
     };
     if (full) {
-      set("#optHaLen", "40, 52, 64, 76, 88");
-      set("#optHaLen2", "60, 76, 92, 108");
-      set("#optOscLen", "5, 7, 9, 11");
-      set("#optHaHtf", "15, 30");
-      set("#optRr", "1.0, 1.2, 1.6, 2.0");
-      set("#optSwing", "6, 11, 13");
-      set("#optMaxSame", "1, 2, 3");
-      set("#optTpPct", "1.5, 2.5");
-      set("#optSlPct", "1.0, 1.5");
+      setOptRange("optHaLen", 40, 12, 88);
+      setOptRange("optHaLen2", 60, 16, 108);
+      setOptRange("optOscLen", 5, 2, 11);
+      setOptRange("optHaHtf", 15, 15, 30);
+      setOptRange("optRr", 1.0, 0.2, 2.0);
+      setOptRange("optSwing", 6, 5, 16);
+      setOptRange("optMaxSame", 1, 1, 3);
+      setOptRange("optTpPct", 1.5, 1.0, 2.5);
+      setOptRange("optSlPct", 1.0, 0.5, 1.5);
       set("#optExitMode", "Swing RR, Percent");
       set("#optReverse", "true, false");
       set("#optRequireBar", "true, false");
     } else {
-      set("#optHaLen", "48, 64, 80");
-      set("#optHaLen2", "72, 96");
-      set("#optOscLen", "7, 11");
-      set("#optHaHtf", "30");
-      set("#optRr", "1.2, 1.6, 2.0");
-      set("#optSwing", "8, 11");
-      set("#optTpPct", "1.5, 2.0, 2.5");
-      set("#optSlPct", "0.8, 1.0, 1.5");
-      set("#optMaxSame", "1, 2");
+      setOptRange("optHaLen", 48, 16, 80);
+      setOptRange("optHaLen2", 72, 24, 96);
+      setOptRange("optOscLen", 7, 4, 11);
+      setOptRange("optHaHtf", 30, 15, 30);
+      setOptRange("optRr", 1.2, 0.4, 2.0);
+      setOptRange("optSwing", 8, 3, 11);
+      setOptRange("optTpPct", 1.5, 0.5, 2.5);
+      setOptRange("optSlPct", 0.8, 0.35, 1.5);
+      setOptRange("optMaxSame", 1, 1, 2);
       set("#optExitMode", "Swing RR");
       set("#optReverse", "true");
       set("#optRequireBar", "false");

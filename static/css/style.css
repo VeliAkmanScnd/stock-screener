@@ -2266,6 +2266,42 @@ body {
   color: var(--silver);
 }
 
+.opt-range-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: 0.75rem;
+  margin: 0.5rem 0 0.85rem;
+}
+
+.opt-range-grid > .field {
+  margin-bottom: 0;
+}
+
+.opt-range-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.3rem;
+}
+
+.opt-range-row > label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.opt-range-row > label > span {
+  font-size: 0.65rem;
+  color: var(--muted);
+}
+
+.opt-range-row input {
+  min-width: 0;
+  width: 100%;
+  padding: 0.4rem 0.4rem;
+  font-variant-numeric: tabular-nums;
+}
+
 .opt-results-table td,
 .opt-results-table th {
   font-variant-numeric: tabular-nums;

@@ -5,6 +5,7 @@ from app.services.bias_optimizer import (
     build_grid,
     combo_passes,
     expand_combos,
+    numeric_span,
     search_bias_params,
 )
 from app.services.pine_market_bias import market_bias_series, summarize_bias_trades
@@ -131,20 +132,39 @@ def test_search_ranks_passing_rows_first():
     assert "params" in found["results"][0]
 
 
+def test_numeric_span_inclusive():
+    vals = numeric_span(55, 200, 1, integer=True)
+    assert vals[0] == 55
+    assert vals[-1] == 200
+    assert len(vals) == 146
+    assert numeric_span(1.2, 2.0, 0.4, integer=False) == [1.2, 1.6, 2.0]
+
+
+def test_build_grid_from_start_step_stop():
+    grid = build_grid(
+        {
+            "mode": "quick",
+            "ha_len2": {"start": 55, "stop": 60, "step": 1},
+            "exit_mode": "Swing RR",
+        }
+    )
+    assert grid["ha_len2"] == [55, 56, 57, 58, 59, 60]
+
+
 def test_percent_grid_uses_tp_sl_lists():
     grid = build_grid(
         {
             "mode": "quick",
             "exit_mode": "Percent",
-            "tp_pct": "1.5, 2.5",
-            "sl_pct": "1.0, 1.5",
-            "rr_mult": "1.2, 1.6, 2.0",
-            "swing_bars": "8, 11",
-            "ha_len": "64",
-            "ha_len2": "72",
-            "osc_len": "7",
-            "ha_htf": "30",
-            "max_same": "1",
+            "tp_pct": {"start": 1.5, "stop": 2.5, "step": 1},
+            "sl_pct": {"start": 1.0, "stop": 1.5, "step": 0.5},
+            "rr_mult": {"start": 1.2, "stop": 2.0, "step": 0.4},
+            "swing_bars": {"start": 8, "stop": 11, "step": 3},
+            "ha_len": {"start": 64, "stop": 64, "step": 1},
+            "ha_len2": {"start": 72, "stop": 72, "step": 1},
+            "osc_len": {"start": 7, "stop": 7, "step": 1},
+            "ha_htf": {"start": 30, "stop": 30, "step": 15},
+            "max_same": {"start": 1, "stop": 1, "step": 1},
             "reverse_exit": "true",
             "require_bar": "false",
         }
