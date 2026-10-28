@@ -300,6 +300,73 @@ def fetch_ohlcv_batch_borsapy(
             _flights.pop(flight_key, None)
 
 
+BACKTEST_PERIODS: dict[str, tuple[int, str]] = {
+    # ui value -> (target calendar days, borsapy period)
+    "40d": (40, "90d"),
+    "60d": (60, "90d"),
+    "90d": (90, "3mo"),
+    "6mo": (183, "6mo"),
+    "8mo": (244, "1y"),
+    "13mo": (400, "2y"),
+    "2y": (730, "2y"),
+}
+
+
+def backtest_period_days(period: str) -> int:
+    if period in BACKTEST_PERIODS:
+        return BACKTEST_PERIODS[period][0]
+    return 60
+
+
+def _borsapy_backtest_period(period: str) -> str:
+    if period in BACKTEST_PERIODS:
+        return BACKTEST_PERIODS[period][1]
+    return period or "90d"
+
+
+def _frame_span_days(df: pd.DataFrame) -> int:
+    if df is None or df.empty:
+        return 0
+    start = df.index[0]
+    end = df.index[-1]
+    try:
+        return max(0, int((end - start).days))
+    except Exception:
+        return 0
+
+
+def coverage_note(timeframe: str, period: str, span_days: int) -> str:
+    want = backtest_period_days(period)
+    if span_days >= int(want * 0.7):
+        return ""
+    if timeframe == "5m":
+        return "5m TradingView indirme yaklaşık 2.5 ay ile sınırlı."
+    if timeframe == "15m":
+        return "15m TradingView indirme yaklaşık 8 ay. 13 ay için 30 dakika seçin."
+    if timeframe == "30m":
+        return "30m TradingView indirme yaklaşık 22 ay; gelen veri istenen süreden kısa."
+    return f"İstenen süre {want} gün, gelen veri {span_days} gün."
+
+
+def _backtest_attempts(timeframe: str, want_days: int) -> list[tuple[str, str | None]]:
+    """Prefer 5m→15m/30m wicks for short windows; native bars for long history."""
+    if timeframe == "15m":
+        if want_days <= 75:
+            return [("5m", "15min"), ("15m", None)]
+        return [("15m", None)]
+    if timeframe == "30m":
+        if want_days <= 75:
+            return [("5m", "30min"), ("30m", None)]
+        return [("30m", None)]
+    if timeframe == "1h":
+        return [("1h", None)]
+    if timeframe == "1d":
+        return [("1d", None)]
+    if timeframe == "5m":
+        return [("5m", None)]
+    return [(timeframe, None)]
+
+
 def fetch_ohlcv_one_backtest(
     symbol: str,
     timeframe: str,
@@ -328,42 +395,55 @@ def fetch_ohlcv_one_backtest(
     if not candidates:
         candidates.append(raw.upper())
 
-    resample_rule = None
-    if timeframe == "15m":
-        interval = "5m"
-        resample_rule = "15min"
-    elif timeframe == "30m":
-        interval = "5m"
-        resample_rule = "30min"
-    else:
-        _period, interval, resample_rule = _period_interval(timeframe)
-
+    want_days = backtest_period_days(period)
+    bp_period = _borsapy_backtest_period(period)
+    attempts = _backtest_attempts(timeframe, want_days)
     asof = pd.Timestamp.now(tz="Europe/Istanbul")
     last_error: Exception | None = None
+    best: pd.DataFrame | None = None
+    best_span = -1
     for ticker in candidates:
-        try:
-            with _TV_SLOTS:
-                raw_df = bp.download(
-                    [ticker],
-                    period=period,
-                    interval=interval,
-                    group_by="ticker",
-                    progress=False,
+        for interval, resample_rule in attempts:
+            try:
+                with _TV_SLOTS:
+                    raw_df = bp.download(
+                        [ticker],
+                        period=bp_period,
+                        interval=interval,
+                        group_by="ticker",
+                        progress=False,
+                    )
+                frames = _split_download(raw_df, [ticker])
+                frame = frames.get(ticker)
+                if frame is None and frames:
+                    frame = next(iter(frames.values()))
+                if frame is None:
+                    continue
+                if resample_rule:
+                    frame = _resample_ohlcv(frame, resample_rule, asof=asof)
+                norm = _normalize_frame(frame) if frame is not None else None
+                if norm is None or len(norm) < 30:
+                    continue
+                span = _frame_span_days(norm)
+                # Short windows: keep 5m-resampled bars when they cover the ask.
+                if resample_rule and span >= min(want_days, 35):
+                    return norm
+                if span > best_span:
+                    best = norm
+                    best_span = span
+            except Exception as exc:
+                last_error = exc
+                logger.warning(
+                    "backtest download %s %s %s failed: %s",
+                    ticker,
+                    timeframe,
+                    interval,
+                    exc,
                 )
-            frames = _split_download(raw_df, [ticker])
-            frame = frames.get(ticker)
-            if frame is None and frames:
-                frame = next(iter(frames.values()))
-            if frame is None:
-                continue
-            if resample_rule:
-                frame = _resample_ohlcv(frame, resample_rule, asof=asof)
-            norm = _normalize_frame(frame) if frame is not None else None
-            if norm is not None and len(norm) >= 30:
-                return norm
-        except Exception as exc:
-            last_error = exc
-            logger.warning("backtest download %s %s failed: %s", ticker, timeframe, exc)
+        if best is not None and best_span >= min(want_days, 35):
+            return best
+    if best is not None:
+        return best
     if last_error:
         logger.warning("backtest OHLCV empty for %s: %s", raw, last_error)
     return None

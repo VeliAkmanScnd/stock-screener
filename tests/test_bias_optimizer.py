@@ -6,8 +6,10 @@ from app.services.bias_optimizer import (
     combo_passes,
     expand_combos,
     numeric_span,
+    parse_reference,
     search_bias_params,
 )
+from app.services.borsapy_client import coverage_note
 from app.services.pine_market_bias import market_bias_series, summarize_bias_trades
 
 
@@ -317,6 +319,50 @@ def test_search_raises_when_every_combo_fails():
         assert "hesaplanamadı" in str(exc)
     else:
         raise AssertionError("expected RuntimeError")
+
+
+def test_parse_reference_and_tag_in_results():
+    ref = parse_reference(
+        {
+            "side": "both",
+            "reference": {
+                "enabled": True,
+                "ha_len": 100,
+                "ha_len2": 100,
+                "osc_len": 7,
+                "ha_htf": "30",
+                "exit_mode": "Swing RR",
+                "rr_mult": 1.5,
+                "swing_bars": 8,
+                "reverse_exit": "true",
+                "require_bar": "false",
+                "max_same": 2,
+            },
+        }
+    )
+    assert ref["ha_len"] == 100
+    assert ref["_tag"] == "referans"
+    df = _wave_frame(240)
+    found = search_bias_params(
+        df,
+        chart_tf="15m",
+        combos=[ref],
+        filters={
+            "min_win_rate": 0,
+            "max_drawdown": 100,
+            "min_profit_factor": 0,
+            "min_profit": -100,
+            "min_trades": 1,
+        },
+    )
+    assert found["reference"]
+    assert found["reference"]["tag"] == "referans"
+    assert found["results"][0]["tag"] == "referans"
+
+
+def test_coverage_note_for_short_15m():
+    assert "30 dakika" in coverage_note("15m", "13mo", 240)
+    assert coverage_note("30m", "13mo", 400) == ""
 
 
 def test_filters_reject_low_win_rate():

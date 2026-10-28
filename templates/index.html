@@ -6,7 +6,7 @@
   <title>TradeLABtr Stock Screener</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/css/style.css?v=52" />
+  <link rel="stylesheet" href="/static/css/style.css?v=53" />
   <link rel="stylesheet" href="/static/css/auth.css?v=7" />
 </head>
 <body>
@@ -839,6 +839,7 @@
                 <option value="15m" selected>15 dakika</option>
                 <option value="30m">30 dakika</option>
                 <option value="1h">1 saat</option>
+                <option value="1d">1 gün</option>
               </select>
             </label>
             <label class="field">
@@ -847,6 +848,10 @@
                 <option value="40d">40 gün</option>
                 <option value="60d" selected>60 gün</option>
                 <option value="90d">90 gün</option>
+                <option value="6mo">6 ay</option>
+                <option value="8mo">8 ay</option>
+                <option value="13mo">13 ay</option>
+                <option value="2y">2 yıl</option>
               </select>
             </label>
             <label class="field">
@@ -890,6 +895,47 @@
             <label class="field">
               <span>Min. işlem sayısı</span>
               <input type="number" id="optMinTrades" min="1" max="200" value="10" />
+            </label>
+          </div>
+          <h3 class="opt-subhead">Manuel referans</h3>
+          <p class="hint" id="optPeriodHint">TradingView’deki kendi setinizi yazın; tarama onu her zaman dener ve tabloda Ref olarak işaretler. 13 ay için 30 dakika seçin — 15m indirme yaklaşık 8 ay.</p>
+          <div class="opt-ref-bar">
+            <label class="opt-filter-check">
+              <input type="checkbox" id="optRefOn" checked />
+              <span>Taramaya dahil et</span>
+            </label>
+            <button type="button" class="btn secondary btn-sm" id="btnOptRefFromGrid">Izgara başlangıcını al</button>
+          </div>
+          <div class="opt-ref-grid">
+            <label class="field"><span>HA</span><input type="number" id="optRefHaLen" value="100" min="2" step="1" inputmode="numeric" /></label>
+            <label class="field"><span>Smooth</span><input type="number" id="optRefHaLen2" value="100" min="2" step="1" inputmode="numeric" /></label>
+            <label class="field"><span>Osc</span><input type="number" id="optRefOscLen" value="7" min="1" step="1" inputmode="numeric" /></label>
+            <label class="field"><span>HTF</span><input type="number" id="optRefHaHtf" value="30" min="0" step="1" inputmode="numeric" /></label>
+            <label class="field">
+              <span>Çıkış</span>
+              <select id="optRefExitMode">
+                <option value="Swing RR" selected>Swing R/R</option>
+                <option value="Percent">Yüzde</option>
+              </select>
+            </label>
+            <label class="field"><span>RR</span><input type="number" id="optRefRr" value="1" min="0.1" step="any" inputmode="decimal" /></label>
+            <label class="field"><span>Swing</span><input type="number" id="optRefSwing" value="4" min="1" step="1" inputmode="numeric" /></label>
+            <label class="field"><span>TP %</span><input type="number" id="optRefTpPct" value="2" min="0" step="any" inputmode="decimal" /></label>
+            <label class="field"><span>SL %</span><input type="number" id="optRefSlPct" value="1" min="0" step="any" inputmode="decimal" /></label>
+            <label class="field"><span>Max same</span><input type="number" id="optRefMaxSame" value="2" min="1" step="1" inputmode="numeric" /></label>
+            <label class="field">
+              <span>Reverse</span>
+              <select id="optRefReverse">
+                <option value="true" selected>Açık</option>
+                <option value="false">Kapalı</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Sinyal mumu</span>
+              <select id="optRefRequireBar">
+                <option value="false" selected>Kapalı</option>
+                <option value="true">Açık</option>
+              </select>
             </label>
           </div>
           <h3 class="opt-subhead">Parametre ızgarası</h3>
@@ -1010,6 +1056,7 @@
             <p class="hint" id="optResultCount" hidden></p>
           </div>
         </div>
+        <div class="opt-compare" id="optCompareCard" hidden></div>
         <div class="opt-result-tools" id="optResultTools" hidden>
           <label class="opt-filter-check">
             <input type="checkbox" id="optFilterPassed" />
@@ -1237,6 +1284,6 @@
   <script src="/static/js/perf.js?v=5"></script>
   <script src="/static/js/help.js?v=2"></script>
   <script src="/static/js/alarm.js?v=1"></script>
-  <script src="/static/js/optimize.js?v=6"></script>
+  <script src="/static/js/optimize.js?v=7"></script>
 </body>
 </html>

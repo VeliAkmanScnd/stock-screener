@@ -252,10 +252,13 @@ function paintOptTable() {
   body.innerHTML = filtered
     .map((r) => {
       const p = r.params || {};
-      const cls = r.passed ? "opt-row-pass" : "opt-row-fail";
+      const cls = [r.passed ? "opt-row-pass" : "opt-row-fail", r.tag === "referans" ? "opt-row-ref" : ""]
+        .filter(Boolean)
+        .join(" ");
       const json = optEsc(JSON.stringify(pineOverridesFromRow(p)));
+      const rankLabel = r.tag === "referans" ? `${r.rank} · Ref` : r.rank;
       return `<tr class="${cls}">
-        <td>${r.rank}</td>
+        <td>${rankLabel}</td>
         <td>${r.win_rate}</td>
         <td>${r.profit_factor}</td>
         <td>${r.net_profit_pct}</td>
@@ -290,6 +293,45 @@ function paintOptTable() {
   });
 }
 
+function optMetricLine(row) {
+  if (!row) return "—";
+  return `WR ${row.win_rate} · PF ${row.profit_factor} · Kâr ${row.net_profit_pct}% · DD ${row.max_drawdown}% · ${row.trades} işlem`;
+}
+
+function renderOptCompare(payload) {
+  const card = document.querySelector("#optCompareCard");
+  if (!card) return;
+  const ref = payload?.reference;
+  const best = payload?.best;
+  if (!ref && !best) {
+    card.hidden = true;
+    card.innerHTML = "";
+    return;
+  }
+  let note = payload?.coverage_note || "";
+  if (ref && best) {
+    if (best.profit_factor > ref.profit_factor && best.net_profit_pct > ref.net_profit_pct) {
+      note = `${note ? `${note} ` : ""}Taramada referanstan daha yüksek PF ve kâr var.`;
+    } else if (best.profit_factor > ref.profit_factor) {
+      note = `${note ? `${note} ` : ""}Taramada daha yüksek PF var; kârı da kontrol edin.`;
+    } else {
+      note = `${note ? `${note} ` : ""}Referans bu örneklemde PF açısından önde veya eşit.`;
+    }
+  }
+  card.hidden = false;
+  card.innerHTML = `
+    <div class="opt-compare-item">
+      <h3>Manuel referans</h3>
+      <p>${ref ? optEsc(optMetricLine(ref)) : "Bu taramaya referans eklenmedi."}</p>
+    </div>
+    <div class="opt-compare-item">
+      <h3>Taramanın en iyisi</h3>
+      <p>${best ? optEsc(optMetricLine(best)) : "Eşikleri geçen tarama seti yok."}</p>
+    </div>
+    ${note ? `<p class="opt-compare-note">${optEsc(note)}</p>` : ""}
+  `;
+}
+
 function renderOptResults(payload) {
   optLastPayload = payload || {};
   optSort = { key: "rank", dir: "asc" };
@@ -305,6 +347,7 @@ function renderOptResults(payload) {
       : `${tested} kombinasyon`;
     hint.textContent = `${optLastPayload.bars || 0} bar · ${optLastPayload.from || ""} → ${optLastPayload.to || ""} · ${comboBit} · ${passed} eşik geçti`;
   }
+  renderOptCompare(optLastPayload);
   syncOptSortHeaders();
   paintOptTable();
 }
@@ -374,7 +417,64 @@ function collectOptBody() {
     reverse_exit: document.querySelector("#optReverse")?.value || "true",
     require_bar: document.querySelector("#optRequireBar")?.value || "false",
     optimize: collectOptFlags(),
+    reference: collectOptReference(),
   };
+}
+
+function collectOptReference() {
+  return {
+    enabled: !!document.querySelector("#optRefOn")?.checked,
+    ha_len: Math.round(optNum("#optRefHaLen", 100)),
+    ha_len2: Math.round(optNum("#optRefHaLen2", 100)),
+    osc_len: Math.round(optNum("#optRefOscLen", 7)),
+    ha_htf: String(Math.round(optNum("#optRefHaHtf", 30))),
+    exit_mode: document.querySelector("#optRefExitMode")?.value || "Swing RR",
+    rr_mult: optNum("#optRefRr", 1),
+    swing_bars: Math.round(optNum("#optRefSwing", 4)),
+    tp_pct: optNum("#optRefTpPct", 2),
+    sl_pct: optNum("#optRefSlPct", 1),
+    max_same: Math.round(optNum("#optRefMaxSame", 2)),
+    reverse_exit: document.querySelector("#optRefReverse")?.value || "true",
+    require_bar: document.querySelector("#optRefRequireBar")?.value || "false",
+  };
+}
+
+function fillOptRefFromGrid() {
+  const set = (id, val) => {
+    const el = document.querySelector(id);
+    if (el && val !== undefined && val !== null && val !== "") el.value = val;
+  };
+  set("#optRefHaLen", document.querySelector("#optHaLenFrom")?.value);
+  set("#optRefHaLen2", document.querySelector("#optHaLen2From")?.value);
+  set("#optRefOscLen", document.querySelector("#optOscLenFrom")?.value);
+  set("#optRefHaHtf", document.querySelector("#optHaHtfFrom")?.value);
+  const exitRaw = document.querySelector("#optExitMode")?.value || "Swing RR";
+  set("#optRefExitMode", exitRaw.includes("Percent") && !exitRaw.includes("Swing") ? "Percent" : "Swing RR");
+  set("#optRefRr", document.querySelector("#optRrFrom")?.value);
+  set("#optRefSwing", document.querySelector("#optSwingFrom")?.value);
+  set("#optRefTpPct", document.querySelector("#optTpPctFrom")?.value);
+  set("#optRefSlPct", document.querySelector("#optSlPctFrom")?.value);
+  set("#optRefMaxSame", document.querySelector("#optMaxSameFrom")?.value);
+  const rev = (document.querySelector("#optReverse")?.value || "true").split(",")[0].trim();
+  const mum = (document.querySelector("#optRequireBar")?.value || "false").split(",")[0].trim();
+  set("#optRefReverse", rev);
+  set("#optRefRequireBar", mum);
+}
+
+function syncOptPeriodHint() {
+  const hint = document.querySelector("#optPeriodHint");
+  if (!hint) return;
+  const tf = document.querySelector("#optTimeframe")?.value || "15m";
+  const period = document.querySelector("#optPeriod")?.value || "60d";
+  let extra = "TradingView’deki kendi setinizi yazın; tarama onu her zaman dener ve tabloda Ref olarak işaretler.";
+  if (period === "13mo" && tf === "15m") {
+    extra += " 13 ay 15m ile inmez; 30 dakika seçin.";
+  } else if (period === "13mo") {
+    extra += " 13 ay için 30 dakika veya 1 saat uygundur.";
+  } else if (tf === "15m" && (period === "6mo" || period === "8mo" || period === "2y")) {
+    extra += " 15m indirme en fazla ~8 aydır.";
+  }
+  hint.textContent = extra;
 }
 
 function applyOptConfig(cfg) {
@@ -407,6 +507,24 @@ function applyOptConfig(cfg) {
   set("#optReverse", cfg.reverse_exit);
   set("#optRequireBar", cfg.require_bar);
   applyOptFlags(cfg.optimize);
+  if (cfg.reference && typeof cfg.reference === "object") {
+    const ref = cfg.reference;
+    const on = document.querySelector("#optRefOn");
+    if (on && "enabled" in ref) on.checked = !!ref.enabled;
+    set("#optRefHaLen", ref.ha_len);
+    set("#optRefHaLen2", ref.ha_len2);
+    set("#optRefOscLen", ref.osc_len);
+    set("#optRefHaHtf", ref.ha_htf);
+    set("#optRefExitMode", ref.exit_mode);
+    set("#optRefRr", ref.rr_mult);
+    set("#optRefSwing", ref.swing_bars);
+    set("#optRefTpPct", ref.tp_pct);
+    set("#optRefSlPct", ref.sl_pct);
+    set("#optRefMaxSame", ref.max_same);
+    set("#optRefReverse", ref.reverse_exit === false || ref.reverse_exit === "false" ? "false" : "true");
+    set("#optRefRequireBar", ref.require_bar === true || ref.require_bar === "true" ? "true" : "false");
+  }
+  syncOptPeriodHint();
 }
 
 async function pollOptJob(jobId) {
@@ -614,6 +732,10 @@ function initOptimize() {
     el.addEventListener("change", syncOptAxisUi);
   });
   document.querySelector(".opt-results-table thead")?.addEventListener("click", onOptSortClick);
+  document.querySelector("#btnOptRefFromGrid")?.addEventListener("click", fillOptRefFromGrid);
+  document.querySelector("#optPeriod")?.addEventListener("change", syncOptPeriodHint);
+  document.querySelector("#optTimeframe")?.addEventListener("change", syncOptPeriodHint);
+  syncOptPeriodHint();
   ["#optFilterPassed", "#optFilterWr", "#optFilterPf", "#optFilterProfit", "#optFilterDd", "#optFilterTrades", "#optFilterText"].forEach((id) => {
     document.querySelector(id)?.addEventListener("input", paintOptTable);
     document.querySelector(id)?.addEventListener("change", paintOptTable);

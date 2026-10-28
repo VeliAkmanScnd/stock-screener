@@ -2455,6 +2455,67 @@ body {
   color: var(--muted);
 }
 
+.opt-row-ref td {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.opt-ref-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+  margin: 0.35rem 0 0.65rem;
+}
+
+.opt-ref-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
+  gap: 0.55rem 0.7rem;
+  margin-bottom: 1rem;
+}
+
+.opt-ref-grid .field {
+  margin: 0;
+}
+
+.opt-compare {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  margin: 0.65rem 0 0.85rem;
+}
+
+.opt-compare-item {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.75rem 0.9rem;
+}
+
+.opt-compare-item h3 {
+  font-size: 0.78rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  margin-bottom: 0.35rem;
+}
+
+.opt-compare-item p {
+  font-size: 0.92rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.opt-compare-note {
+  grid-column: 1 / -1;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+@media (max-width: 800px) {
+  .opt-compare {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 1100px) {
   .opt-result-tools {
     grid-template-columns: repeat(3, minmax(0, 1fr));

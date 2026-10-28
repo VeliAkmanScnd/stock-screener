@@ -43,6 +43,7 @@ class OptimizeBody(BaseModel):
     require_bar: Any = None
     max_same: Any = None
     optimize: dict[str, bool] | None = None
+    reference: dict[str, Any] | None = None
 
 
 class PresetBody(BaseModel):

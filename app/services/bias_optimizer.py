@@ -16,6 +16,7 @@ from typing import Any, Callable
 import pandas as pd
 
 from app.services.bar_close import drop_unclosed_bar
+from app.services.borsapy_client import BACKTEST_PERIODS, backtest_period_days, coverage_note
 from app.services.pine_market_bias import market_bias_series, summarize_bias_trades
 from app.utils.json_safe import json_safe
 
@@ -407,6 +408,17 @@ def prepare_backtest_ohlcv(df: pd.DataFrame) -> pd.DataFrame:
     return work
 
 
+def _as_bool_param(value: Any, default: bool) -> bool:
+    if isinstance(value, bool):
+        return value
+    text = str(value or "").strip().lower()
+    if text in ("true", "1", "evet", "on"):
+        return True
+    if text in ("false", "0", "hayir", "hayır", "off"):
+        return False
+    return default
+
+
 def _engine_typed(params: dict[str, Any]) -> dict[str, Any]:
     return {
         "ha_len": int(params["ha_len"]),
@@ -418,12 +430,49 @@ def _engine_typed(params: dict[str, Any]) -> dict[str, Any]:
         "swing_bars": int(params.get("swing_bars") or 4),
         "tp_pct": float(params.get("tp_pct") or 0.0),
         "sl_pct": float(params.get("sl_pct") or 0.0),
-        "allow_long": bool(params.get("allow_long", True)),
-        "allow_short": bool(params.get("allow_short", True)),
-        "reverse_exit": bool(params.get("reverse_exit", True)),
-        "require_bar": bool(params.get("require_bar", False)),
+        "allow_long": _as_bool_param(params.get("allow_long", True), True),
+        "allow_short": _as_bool_param(params.get("allow_short", True), True),
+        "reverse_exit": _as_bool_param(params.get("reverse_exit", True), True),
+        "require_bar": _as_bool_param(params.get("require_bar", False), False),
         "max_same": int(params.get("max_same") or 1),
     }
+
+
+def _combo_sig(params: dict[str, Any]) -> tuple:
+    engine = _engine_typed(params)
+    return tuple(engine[k] for k in ENGINE_KEYS)
+
+
+def parse_reference(body: dict[str, Any]) -> dict[str, Any] | None:
+    raw = body.get("reference")
+    if not isinstance(raw, dict) or raw.get("enabled") is False:
+        return None
+    try:
+        side = str(body.get("side") or "both").strip().lower()
+        allow_long = side != "sell"
+        allow_short = side != "buy"
+        engine = _engine_typed(
+            {
+                "ha_len": raw.get("ha_len"),
+                "ha_len2": raw.get("ha_len2"),
+                "osc_len": raw.get("osc_len"),
+                "ha_htf": raw.get("ha_htf", "30"),
+                "exit_mode": raw.get("exit_mode") or raw.get("exitMode") or "Swing RR",
+                "rr_mult": raw.get("rr_mult", raw.get("rrMult", 1.0)),
+                "swing_bars": raw.get("swing_bars", raw.get("swingBars", 4)),
+                "tp_pct": raw.get("tp_pct", 2.0),
+                "sl_pct": raw.get("sl_pct", 1.0),
+                "allow_long": allow_long,
+                "allow_short": allow_short,
+                "reverse_exit": raw.get("reverse_exit", True),
+                "require_bar": raw.get("require_bar", False),
+                "max_same": raw.get("max_same", raw.get("maxSame", 1)),
+            }
+        )
+    except (TypeError, ValueError):
+        return None
+    engine["_tag"] = "referans"
+    return engine
 
 
 def _finite_num(value: Any, default: float = 0.0) -> float:
@@ -515,6 +564,7 @@ def search_bias_params(
                 {
                     **metrics,
                     "passed": bool(passed),
+                    "tag": str(params.get("_tag") or ""),
                     "params": _public_params(engine),
                 }
             )
@@ -539,14 +589,20 @@ def search_bias_params(
         )
     )
     passed_n = sum(1 for r in rows if r["passed"])
+    refs = [r for r in rows if r.get("tag") == "referans"]
+    rest = [r for r in rows if r.get("tag") != "referans"][:RESULT_LIMIT]
     ranked = []
-    for idx, row in enumerate(rows[:RESULT_LIMIT], start=1):
+    for idx, row in enumerate(refs + rest, start=1):
         ranked.append({"rank": idx, **row})
+    reference = next((r for r in ranked if r.get("tag") == "referans"), None)
+    best = next((r for r in ranked if r.get("passed") and r.get("tag") != "referans"), None)
     return {
         "tested": total,
         "passed": passed_n,
         "errors": errors,
         "error": first_error or None,
+        "reference": reference,
+        "best": best,
         "results": ranked,
     }
 
@@ -564,6 +620,8 @@ def run_bias_optimize(
     symbol = str(body.get("symbol") or "").strip().upper()
     timeframe = str(body.get("timeframe") or "15m").strip()
     period = str(body.get("period") or "60d").strip() or "60d"
+    if period not in BACKTEST_PERIODS:
+        raise ValueError("Veri süresi 40 gün–2 yıl aralığında olmalı")
     if not symbol:
         raise ValueError("Sembol gerekli")
     if timeframe not in ("3m", "5m", "15m", "30m", "1h", "1d"):
@@ -580,6 +638,12 @@ def run_bias_optimize(
         raise RuntimeError(f"{symbol} için TradingView verisi alınamadı")
     df = drop_unclosed_bar(df, timeframe, universe="viop")
     df = prepare_backtest_ohlcv(df)
+    want_days = backtest_period_days(period)
+    if df is not None and not df.empty:
+        cut = df.index[-1] - pd.Timedelta(days=want_days)
+        sliced = df[df.index >= cut]
+        if len(sliced) >= 80:
+            df = sliced
     if df is None or len(df) < 80:
         raise RuntimeError(f"{symbol}: yetersiz bar ({0 if df is None else len(df)})")
 
@@ -587,6 +651,10 @@ def run_bias_optimize(
     space = grid_space(grid)
     max_combos = int(body.get("max_combos") or (400 if str(body.get("mode")) == "full" else 180))
     combos = expand_combos(grid, max_combos, seed=int(body.get("seed") or 42))
+    reference = parse_reference(body)
+    if reference:
+        sig = _combo_sig(reference)
+        combos = [reference] + [c for c in combos if _combo_sig(c) != sig]
     filters = {
         "min_win_rate": float(body.get("min_win_rate") or 0),
         "max_drawdown": float(body.get("max_drawdown") if body.get("max_drawdown") is not None else 100),
@@ -617,6 +685,7 @@ def run_bias_optimize(
         "filters": filters,
         "combo_count": len(combos),
         "grid_size": space,
+        "coverage_note": coverage_note(timeframe, period, (end - start).days if hasattr(end - start, "days") else 0),
         **found,
     })
 
