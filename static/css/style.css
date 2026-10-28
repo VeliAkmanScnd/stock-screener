@@ -521,6 +521,10 @@ body {
   margin-bottom: 0.85rem;
 }
 
+.field[hidden] {
+  display: none !important;
+}
+
 .field span { font-size: 0.8rem; color: var(--muted); }
 
 .field input,

@@ -136,6 +136,17 @@ def _parse_str_list(raw: Any, fallback: list[str], allowed: set[str] | None = No
     return out or list(fallback)
 
 
+def _collapse_unused_exit_params(grid: dict[str, list]) -> None:
+    """Percent ignores RR/swing; Swing RR ignores TP/SL — don't multiply the grid."""
+    modes = set(grid.get("exit_mode") or [])
+    if modes == {"Percent"}:
+        grid["rr_mult"] = [float((grid.get("rr_mult") or [1.0])[0])]
+        grid["swing_bars"] = [int((grid.get("swing_bars") or [4])[0])]
+    elif modes == {"Swing RR"}:
+        grid["tp_pct"] = [float((grid.get("tp_pct") or [2.0])[0])]
+        grid["sl_pct"] = [float((grid.get("sl_pct") or [1.0])[0])]
+
+
 def build_grid(body: dict[str, Any]) -> dict[str, list]:
     mode = str(body.get("mode") or "quick").strip().lower()
     base = dict(FULL_GRID if mode == "full" else QUICK_GRID)
@@ -153,6 +164,7 @@ def build_grid(body: dict[str, Any]) -> dict[str, list]:
         base["exit_mode"],
         allowed={"Swing RR", "Percent"},
     )
+    _collapse_unused_exit_params(base)
     base["reverse_exit"] = _parse_bool_list(body.get("reverse_exit"), base["reverse_exit"])
     base["require_bar"] = _parse_bool_list(body.get("require_bar"), base["require_bar"])
     side = str(body.get("side") or "both").strip().lower()

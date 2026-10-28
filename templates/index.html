@@ -6,7 +6,7 @@
   <title>TradeLABtr Stock Screener</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/css/style.css?v=48" />
+  <link rel="stylesheet" href="/static/css/style.css?v=49" />
   <link rel="stylesheet" href="/static/css/auth.css?v=7" />
 </head>
 <body>
@@ -894,18 +894,26 @@
             <label class="field">
               <span>Çıkış</span>
               <select id="optExitMode">
-                <option value="Swing RR" selected>Swing RR</option>
-                <option value="Percent">Percent</option>
+                <option value="Swing RR" selected>Swing R/R</option>
+                <option value="Percent">Yüzde (TP/SL)</option>
                 <option value="Swing RR, Percent">İkisi</option>
               </select>
             </label>
-            <label class="field">
+            <label class="field opt-exit-swing">
               <span>RR</span>
               <input type="text" id="optRr" value="1.2, 1.6, 2.0" />
             </label>
-            <label class="field">
+            <label class="field opt-exit-swing">
               <span>Swing bars</span>
               <input type="text" id="optSwing" value="8, 11" />
+            </label>
+            <label class="field opt-exit-percent" hidden>
+              <span>TP %</span>
+              <input type="text" id="optTpPct" value="1.5, 2.0, 2.5" />
+            </label>
+            <label class="field opt-exit-percent" hidden>
+              <span>SL %</span>
+              <input type="text" id="optSlPct" value="0.8, 1.0, 1.5" />
             </label>
             <label class="field">
               <span>Max same</span>
@@ -962,6 +970,8 @@
                 <th>Çıkış</th>
                 <th>RR</th>
                 <th>Swing</th>
+                <th>TP %</th>
+                <th>SL %</th>
                 <th>Rev</th>
                 <th>Mum</th>
                 <th>Same</th>
@@ -969,7 +979,7 @@
               </tr>
             </thead>
             <tbody id="optResultBody">
-              <tr class="empty"><td colspan="17">Henüz tarama yok.</td></tr>
+              <tr class="empty"><td colspan="19">Henüz tarama yok.</td></tr>
             </tbody>
           </table>
         </div>
@@ -1158,6 +1168,6 @@
   <script src="/static/js/perf.js?v=5"></script>
   <script src="/static/js/help.js?v=2"></script>
   <script src="/static/js/alarm.js?v=1"></script>
-  <script src="/static/js/optimize.js?v=1"></script>
+  <script src="/static/js/optimize.js?v=2"></script>
 </body>
 </html>

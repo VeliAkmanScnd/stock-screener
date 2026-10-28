@@ -43,6 +43,22 @@ function optBoolLabel(v) {
   return v ? "Açık" : "Kapalı";
 }
 
+function optExitLabel(mode) {
+  return mode === "Percent" ? "Yüzde" : mode || "";
+}
+
+function syncOptExitFields() {
+  const raw = document.querySelector("#optExitMode")?.value || "Swing RR";
+  const swing = raw.includes("Swing");
+  const pct = raw.includes("Percent");
+  document.querySelectorAll(".opt-exit-swing").forEach((el) => {
+    el.hidden = !swing;
+  });
+  document.querySelectorAll(".opt-exit-percent").forEach((el) => {
+    el.hidden = !pct;
+  });
+}
+
 function pineOverridesFromRow(params) {
   return {
     ha_len: params.ha_len,
@@ -75,7 +91,7 @@ function renderOptResults(payload) {
     hint.textContent = `${payload.bars || 0} bar · ${payload.from || ""} → ${payload.to || ""} · ${tested} kombinasyon · ${passed} eşik geçti`;
   }
   if (!rows.length) {
-    body.innerHTML = `<tr class="empty"><td colspan="17">Eşikleri geçen (veya yakın) set yok.</td></tr>`;
+    body.innerHTML = `<tr class="empty"><td colspan="19">Eşikleri geçen (veya yakın) set yok.</td></tr>`;
     return;
   }
   body.innerHTML = rows
@@ -94,9 +110,11 @@ function renderOptResults(payload) {
         <td>${p.ha_len2 ?? ""}</td>
         <td>${p.osc_len ?? ""}</td>
         <td>${optEsc(p.ha_htf || "chart")}</td>
-        <td>${optEsc(p.exitMode || "")}</td>
-        <td>${p.rrMult ?? ""}</td>
-        <td>${p.swingBars ?? ""}</td>
+        <td>${optEsc(optExitLabel(p.exitMode))}</td>
+        <td>${p.exitMode === "Percent" ? "—" : (p.rrMult ?? "")}</td>
+        <td>${p.exitMode === "Percent" ? "—" : (p.swingBars ?? "")}</td>
+        <td>${p.exitMode === "Percent" ? (p.tp_pct ?? "") : "—"}</td>
+        <td>${p.exitMode === "Percent" ? (p.sl_pct ?? "") : "—"}</td>
         <td>${optBoolLabel(p.reverse_exit)}</td>
         <td>${optBoolLabel(p.require_bar)}</td>
         <td>${p.maxSame ?? ""}</td>
@@ -137,6 +155,8 @@ function collectOptBody() {
     exit_mode: document.querySelector("#optExitMode")?.value || "Swing RR",
     rr_mult: optCsv("#optRr"),
     swing_bars: optCsv("#optSwing"),
+    tp_pct: optCsv("#optTpPct"),
+    sl_pct: optCsv("#optSlPct"),
     max_same: optCsv("#optMaxSame"),
     reverse_exit: document.querySelector("#optReverse")?.value || "true",
     require_bar: document.querySelector("#optRequireBar")?.value || "false",
@@ -238,6 +258,8 @@ function onOptTabShown() {
 
 function initOptimize() {
   document.querySelector("#optForm")?.addEventListener("submit", startOptRun);
+  document.querySelector("#optExitMode")?.addEventListener("change", syncOptExitFields);
+  syncOptExitFields();
   document.querySelector("#optMode")?.addEventListener("change", (ev) => {
     const full = ev.target.value === "full";
     const maxEl = document.querySelector("#optMaxCombos");
@@ -254,6 +276,8 @@ function initOptimize() {
       set("#optRr", "1.0, 1.2, 1.6, 2.0");
       set("#optSwing", "6, 11, 13");
       set("#optMaxSame", "1, 2, 3");
+      set("#optTpPct", "1.5, 2.5");
+      set("#optSlPct", "1.0, 1.5");
       set("#optExitMode", "Swing RR, Percent");
       set("#optReverse", "true, false");
       set("#optRequireBar", "true, false");
@@ -264,11 +288,14 @@ function initOptimize() {
       set("#optHaHtf", "30");
       set("#optRr", "1.2, 1.6, 2.0");
       set("#optSwing", "8, 11");
+      set("#optTpPct", "1.5, 2.0, 2.5");
+      set("#optSlPct", "0.8, 1.0, 1.5");
       set("#optMaxSame", "1, 2");
       set("#optExitMode", "Swing RR");
       set("#optReverse", "true");
       set("#optRequireBar", "false");
     }
+    syncOptExitFields();
   });
 }
 

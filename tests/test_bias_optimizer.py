@@ -131,6 +131,38 @@ def test_search_ranks_passing_rows_first():
     assert "params" in found["results"][0]
 
 
+def test_percent_grid_uses_tp_sl_lists():
+    grid = build_grid(
+        {
+            "mode": "quick",
+            "exit_mode": "Percent",
+            "tp_pct": "1.5, 2.5",
+            "sl_pct": "1.0, 1.5",
+            "rr_mult": "1.2, 1.6, 2.0",
+            "swing_bars": "8, 11",
+            "ha_len": "64",
+            "ha_len2": "72",
+            "osc_len": "7",
+            "ha_htf": "30",
+            "max_same": "1",
+            "reverse_exit": "true",
+            "require_bar": "false",
+        }
+    )
+    assert grid["exit_mode"] == ["Percent"]
+    assert grid["tp_pct"] == [1.5, 2.5]
+    assert grid["sl_pct"] == [1.0, 1.5]
+    assert len(grid["rr_mult"]) == 1
+    assert len(grid["swing_bars"]) == 1
+    combos = expand_combos(grid, max_combos=80, seed=1)
+    assert combos
+    assert all(c["exit_mode"] == "Percent" for c in combos)
+    tps = {c["tp_pct"] for c in combos}
+    sls = {c["sl_pct"] for c in combos}
+    assert tps == {1.5, 2.5}
+    assert sls == {1.0, 1.5}
+
+
 def test_filters_reject_low_win_rate():
     metrics = {
         "trades": 20,
