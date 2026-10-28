@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from app.services.pine_params import pine_inputs_for_api
@@ -7,6 +8,7 @@ from app.services.pine_parser import extract_al_condition, extract_pine_inputs
 from app.services.pine_market_bias import (
     is_market_bias_script,
     market_bias_params_from_script,
+    market_bias_series,
     market_bias_snapshot,
 )
 
@@ -109,4 +111,73 @@ def test_snapshot_emits_buy_or_sell_flags():
     snap = market_bias_snapshot(df, chart_tf="15m", **params)
     assert "market_bias_buy" in snap
     assert "market_bias_sell" in snap
+    assert snap["market_bias_bar_shift"] == 0
     assert snap["market_bias_buy"] or snap["market_bias_sell"] or snap["pine_al"] in (True, False)
+
+
+def _wave_frame(n: int = 480) -> pd.DataFrame:
+    idx = pd.date_range("2026-01-02", periods=n, freq="15min")
+    close = 100 + 8 * np.sin(np.arange(n) / 12.0)
+    return pd.DataFrame(
+        {
+            "Open": close - 0.2,
+            "High": close + 0.9,
+            "Low": close - 0.9,
+            "Close": close,
+            "Volume": 1000.0,
+        },
+        index=idx,
+    )
+
+
+def test_reverse_off_matches_tv_flat_only():
+    df = _wave_frame()
+    s = market_bias_series(
+        df,
+        ha_len=8,
+        ha_len2=8,
+        osc_len=3,
+        require_bar=False,
+        reverse_exit=False,
+        allow_long=True,
+        allow_short=True,
+        tp_pct=0.0,
+        sl_pct=0.0,
+        exit_mode="Percent",
+        max_same=8,
+        chart_tf="15m",
+    )
+    assert int(s["buy_signal"].sum() + s["sell_signal"].sum()) >= 2
+    assert int(s["long_go"].sum() + s["short_go"].sum()) <= 1
+
+
+def test_snapshot_does_not_carry_previous_bar():
+    df = _wave_frame()
+    s = market_bias_series(
+        df,
+        ha_len=8,
+        ha_len2=8,
+        osc_len=3,
+        require_bar=False,
+        reverse_exit=True,
+        chart_tf="15m",
+        max_same=8,
+    )
+    if not bool(s["long_go"].iloc[-2] or s["short_go"].iloc[-2]):
+        return
+    if bool(s["long_go"].iloc[-1] or s["short_go"].iloc[-1]):
+        return
+    snap = market_bias_snapshot(
+        df,
+        chart_tf="15m",
+        ha_len=8,
+        ha_len2=8,
+        osc_len=3,
+        require_bar=False,
+        reverse_exit=True,
+        max_same=8,
+        side="both",
+    )
+    assert snap["pine_al"] is False
+    assert snap["market_bias_buy"] is False
+    assert snap["market_bias_sell"] is False

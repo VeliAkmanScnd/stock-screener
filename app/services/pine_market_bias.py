@@ -14,7 +14,6 @@ from app.services.pine_bias_ts import (
     _as_int,
     _hold_on_htf,
     _tf_seconds,
-    hold_one_bar_signal,
 )
 from app.services.pine_params import merge_pine_inputs
 
@@ -76,10 +75,23 @@ def market_bias_params_from_script(pine_code: str, overrides: dict | None = None
         "sl_pct": max(0.0, _as_float(inputs.get("sl_pct"), 1.0)),
         "allow_long": _as_bool(inputs.get("allow_long"), True),
         "allow_short": _as_bool(inputs.get("allow_short"), True),
+        "reverse_exit": _as_bool(inputs.get("reverse_exit"), True),
         "require_bar": _as_bool(inputs.get("require_bar"), True),
         "max_same": max(1, _as_int(inputs.get("maxSame"), 2)),
         "side": side,
     }
+
+
+def _no_repaint_request(series: pd.Series, ha_htf: str, chart_tf: str | None) -> pd.Series:
+    """Pine f_no_repaint_request: HTF sample, then one chart-bar lag when HTF is slower."""
+    held = _hold_on_htf(series, ha_htf, chart_tf)
+    h_sec = _tf_seconds(ha_htf)
+    c_sec = _tf_seconds(chart_tf)
+    if h_sec is None:
+        return held
+    if c_sec is not None and h_sec <= c_sec:
+        return held
+    return held.shift(1)
 
 
 def _confirmed_swings(low: pd.Series, high: pd.Series, swing: int) -> tuple[np.ndarray, np.ndarray]:
@@ -116,8 +128,12 @@ def market_bias_series(
     swing_bars: int = 4,
     allow_long: bool = True,
     allow_short: bool = True,
+    reverse_exit: bool = True,
     require_bar: bool = True,
     max_same: int = 2,
+    rr_mult: float = 1.0,
+    tp_pct: float = 2.0,
+    sl_pct: float = 1.0,
     **_ignored,
 ) -> dict[str, pd.Series]:
     o_src = df["Open"].astype(float)
@@ -129,31 +145,26 @@ def market_bias_series(
     c = ind.ema(c_src, ha_len)
     h = ind.ema(h_src, ha_len)
     l = ind.ema(l_src, ha_len)
-    haclose = (o + h + l + c) / 4.0
-    xhaopen = (o + c) / 2.0
+    held_htf = _force_ctf(ha_htf, chart_tf)
+    haclose = _no_repaint_request((o + h + l + c) / 4.0, held_htf, chart_tf)
+    xhaopen = _no_repaint_request((o + c) / 2.0, held_htf, chart_tf)
+    mid_oc = ((o + c) / 2.0).to_numpy(dtype=float)
 
     haopen = np.empty(len(df), dtype=float)
     xo = xhaopen.to_numpy(dtype=float)
     hc = haclose.to_numpy(dtype=float)
-    haopen[0] = xo[0] if np.isfinite(xo[0]) else np.nan
+    haopen[0] = mid_oc[0] if np.isfinite(mid_oc[0]) else np.nan
     for i in range(1, len(df)):
         prev_x = xo[i - 1]
         prev_c = hc[i - 1]
         if np.isfinite(prev_x) and np.isfinite(prev_c):
             haopen[i] = (prev_x + prev_c) / 2.0
         else:
-            haopen[i] = xo[i]
+            haopen[i] = mid_oc[i]
     haopen_s = pd.Series(haopen, index=df.index)
-    hahigh = pd.concat([h, haopen_s, haclose], axis=1).max(axis=1)
-    halow = pd.concat([l, haopen_s, haclose], axis=1).min(axis=1)
-    o2 = ind.ema(haopen_s, ha_len2)
-    c2 = ind.ema(haclose, ha_len2)
-    h2 = ind.ema(hahigh, ha_len2)
-    l2 = ind.ema(halow, ha_len2)
-    held_htf = _force_ctf(ha_htf, chart_tf)
-    o2s = _hold_on_htf(o2, held_htf, chart_tf)
-    c2s = _hold_on_htf(c2, held_htf, chart_tf)
-    osc_bias = 100.0 * (c2s - o2s)
+    o2 = _no_repaint_request(ind.ema(haopen_s, ha_len2), held_htf, chart_tf)
+    c2 = _no_repaint_request(ind.ema(haclose, ha_len2), held_htf, chart_tf)
+    osc_bias = 100.0 * (c2 - o2)
     osc_smooth = ind.ema(osc_bias, osc_len)
 
     strong_bull = (osc_bias > 0) & (osc_bias >= osc_smooth)
@@ -181,6 +192,10 @@ def market_bias_series(
     veto_short = False
     long_streak = 0
     short_streak = 0
+    pos = 0
+    entry = np.nan
+    stop = np.nan
+    target = np.nan
     bs = buy_signal.to_numpy(dtype=bool)
     ss = sell_signal.to_numpy(dtype=bool)
     bsw = buy_switch.to_numpy(dtype=bool)
@@ -190,8 +205,28 @@ def market_bias_series(
     bull_b = bull_bar.to_numpy(dtype=bool)
     bear_b = bear_bar.to_numpy(dtype=bool)
     close = c_src.to_numpy(dtype=float)
+    high = h_src.to_numpy(dtype=float)
+    low = l_src.to_numpy(dtype=float)
+    rr = max(0.0, float(rr_mult))
+    tp = max(0.0, float(tp_pct))
+    sl = max(0.0, float(sl_pct))
 
     for i in range(n):
+        if pos == 1 and np.isfinite(stop):
+            if np.isfinite(low[i]) and low[i] <= stop:
+                pos = 0
+            elif np.isfinite(target) and np.isfinite(high[i]) and high[i] >= target:
+                pos = 0
+        elif pos == -1 and np.isfinite(stop):
+            if np.isfinite(high[i]) and high[i] >= stop:
+                pos = 0
+            elif np.isfinite(target) and np.isfinite(low[i]) and low[i] <= target:
+                pos = 0
+        if pos == 0:
+            entry = np.nan
+            stop = np.nan
+            target = np.nan
+
         if bear_n[i]:
             veto_long = False
         if bull_n[i]:
@@ -205,16 +240,18 @@ def market_bias_series(
             short_streak = 0
         swing_long_ok = np.isfinite(swing_low[i]) and swing_low[i] < close[i]
         swing_short_ok = np.isfinite(swing_high[i]) and swing_high[i] > close[i]
+        can_buy = allow_long and pos <= 0 and (pos == 0 or reverse_exit)
+        can_sell = allow_short and pos >= 0 and (pos == 0 or reverse_exit)
         lg = (
             bs[i]
-            and allow_long
+            and can_buy
             and long_streak < max_same
             and (not require_bar or (bull_b[i] and not veto_long))
             and (not use_swing or swing_long_ok)
         )
         sg = (
             ss[i]
-            and allow_short
+            and can_sell
             and short_streak < max_same
             and (not require_bar or (bear_b[i] and not veto_short))
             and (not use_swing or swing_short_ok)
@@ -222,11 +259,27 @@ def market_bias_series(
         long_go[i] = bool(lg)
         short_go[i] = bool(sg)
         if lg:
+            pos = 1
+            entry = close[i]
             long_streak += 1
             short_streak = 0
-        if sg:
+            if use_swing and np.isfinite(swing_low[i]):
+                stop = float(swing_low[i])
+                target = entry + (entry - stop) * rr
+            else:
+                stop = entry * (1 - sl / 100.0) if sl > 0 else np.nan
+                target = entry * (1 + tp / 100.0) if tp > 0 else np.nan
+        elif sg:
+            pos = -1
+            entry = close[i]
             short_streak += 1
             long_streak = 0
+            if use_swing and np.isfinite(swing_high[i]):
+                stop = float(swing_high[i])
+                target = entry - (stop - entry) * rr
+            else:
+                stop = entry * (1 + sl / 100.0) if sl > 0 else np.nan
+                target = entry * (1 - tp / 100.0) if tp > 0 else np.nan
 
     idx = df.index
     return {
@@ -269,18 +322,13 @@ def market_bias_snapshot(df: pd.DataFrame, **params) -> dict:
     s = market_bias_series(df, chart_tf=chart_tf, **params)
     buy = bool(s["long_go"].iloc[-1])
     sell = bool(s["short_go"].iloc[-1])
-    prev_buy = bool(s["long_go"].iloc[-2]) if len(s["long_go"]) >= 2 else False
-    prev_sell = bool(s["short_go"].iloc[-2]) if len(s["short_go"]) >= 2 else False
-    buy, sell, shift = hold_one_bar_signal(buy, sell, prev_buy, prev_sell, side)
     if side == "sell":
         buy = False
-        ok = sell
     elif side == "buy":
         sell = False
-        ok = buy
-    else:
-        ok = buy or sell
-    at = -1 - shift
+    ok = buy or sell
+    at = -1
+    shift = 0
     close = float(df["Close"].iloc[at])
     out = {
         "pine_al": ok,
