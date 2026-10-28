@@ -12,7 +12,6 @@ from app.services.pine_bias_ts import (
     _as_bool,
     _as_float,
     _as_int,
-    _hold_on_htf,
     _tf_seconds,
 )
 from app.services.pine_params import merge_pine_inputs
@@ -83,15 +82,35 @@ def market_bias_params_from_script(pine_code: str, overrides: dict | None = None
 
 
 def _no_repaint_request(series: pd.Series, ha_htf: str, chart_tf: str | None) -> pd.Series:
-    """Pine f_no_repaint_request: HTF sample, then one chart-bar lag when HTF is slower."""
-    held = _hold_on_htf(series, ha_htf, chart_tf)
+    """Pine f_no_repaint_request on a slower HTF.
+
+    Take the last chart value of each *completed* HTF bar (no lookahead into
+    the open 30m while the first 15m is still printing), then delay one chart
+    bar — ``request.security(..., expr)[1]`` on historical bars.
+    """
     h_sec = _tf_seconds(ha_htf)
     c_sec = _tf_seconds(chart_tf)
-    if h_sec is None:
-        return held
-    if c_sec is not None and h_sec <= c_sec:
-        return held
-    return held.shift(1)
+    if h_sec is None or (c_sec is not None and h_sec <= c_sec):
+        return series
+    idx = series.index
+    if not isinstance(idx, pd.DatetimeIndex) or len(series) == 0:
+        return series
+    freq = pd.Timedelta(seconds=h_sec)
+    bucket = pd.Series(idx.floor(freq), index=idx)
+    vals = series.to_numpy(dtype=float)
+    flags = bucket.ne(bucket.shift(1)).to_numpy(dtype=bool)
+    flags[0] = True
+    n = len(vals)
+    out = np.full(n, np.nan)
+    bucket_last = np.nan
+    finalized = np.nan
+    for i in range(n):
+        if flags[i] and i:
+            finalized = bucket_last
+        if np.isfinite(vals[i]):
+            bucket_last = vals[i]
+        out[i] = finalized
+    return pd.Series(out, index=idx).shift(1)
 
 
 def _confirmed_swings(low: pd.Series, high: pd.Series, swing: int) -> tuple[np.ndarray, np.ndarray]:
