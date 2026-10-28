@@ -12,6 +12,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
+from collections.abc import Iterable, Iterator
 from typing import Any, Callable
 
 import pandas as pd
@@ -26,6 +27,7 @@ logger = logging.getLogger(__name__)
 ProgressCallback = Callable[[str, int, int, str], None]
 
 MAX_COMBOS = 20000
+SCAN_ALL_MAX = 10_000_000
 RESULT_LIMIT = 500
 RANGE_AXIS_MAX = 400
 ENGINE_KEYS = (
@@ -333,11 +335,11 @@ def _preferred_index(key: str, vals: list) -> int:
 
 
 def combo_budget(body: dict[str, Any], space: int) -> int:
-    """How many engine combos to run. scan_all requires the full grid to fit."""
+    """How many engine combos to run. scan_all enumerates the full grid."""
     if body.get("scan_all"):
-        if space > MAX_COMBOS:
+        if space > SCAN_ALL_MAX:
             raise ValueError(
-                f"Izgara {space} set. Tamamını tara en fazla {MAX_COMBOS}. "
+                f"Izgara {space} set. Tamamını tara en fazla {SCAN_ALL_MAX}. "
                 "Adımı büyütün veya optimize etmediğiniz eksenleri kapatın."
             )
         return max(1, int(space))
@@ -353,7 +355,7 @@ def expand_combos(grid: dict[str, list], max_combos: int, seed: int = 42) -> lis
     total = 1
     for vals in values:
         total *= len(vals)
-    cap = max(1, min(int(max_combos or 180), MAX_COMBOS))
+    cap = max(1, int(max_combos or 180))
     if total <= cap:
         return [dict(zip(keys, row)) for row in itertools.product(*values)]
 
@@ -392,6 +394,34 @@ def expand_combos(grid: dict[str, list], max_combos: int, seed: int = 42) -> lis
         guard += 1
         add([rng.randrange(len(vals)) for vals in values])
     return out[:cap]
+
+
+def iter_full_grid(grid: dict[str, list]) -> Iterator[dict[str, Any]]:
+    keys = list(ENGINE_KEYS)
+    values = [list(grid.get(k) or [None]) for k in keys]
+    for i, vals in enumerate(values):
+        if not vals:
+            values[i] = [None]
+    for row in itertools.product(*values):
+        yield dict(zip(keys, row))
+
+
+def _with_reference(
+    combos: Iterable[dict[str, Any]],
+    reference: dict[str, Any] | None,
+) -> Iterator[dict[str, Any]]:
+    if not reference:
+        yield from combos
+        return
+    sig = _combo_sig(reference)
+    yield reference
+    for combo in combos:
+        try:
+            if _combo_sig(combo) == sig:
+                continue
+        except (TypeError, ValueError, KeyError):
+            pass
+        yield combo
 
 
 def prepare_backtest_ohlcv(df: pd.DataFrame) -> pd.DataFrame:
@@ -564,6 +594,13 @@ def format_eta(seconds: float | None) -> str:
     if minutes < 90:
         return f"{int(round(minutes))} dk"
     hours = minutes / 60.0
+    if hours >= 36:
+        days = hours / 24.0
+        whole_d = int(days)
+        rem_h = int(round(hours - whole_d * 24))
+        if rem_h <= 0:
+            return f"{max(1, whole_d)} gün"
+        return f"{whole_d} gün {rem_h} sa"
     whole = int(hours)
     mins = int(round((hours - whole) * 60))
     if whole < 10 and mins:
@@ -591,77 +628,110 @@ def _search_progress_label(
     return " · ".join(parts)
 
 
+def _result_rank_key(row: dict[str, Any]) -> tuple:
+    return (
+        not row["passed"],
+        -float(row["profit_factor"]),
+        -float(row["net_profit_pct"]),
+        -float(row["win_rate"]),
+        float(row["max_drawdown"]),
+    )
+
+
+def _progress_step(total: int) -> int:
+    if total <= 80:
+        return 1
+    if total <= 2000:
+        return 2
+    if total <= 20000:
+        return 8
+    return max(20, min(500, total // 400))
+
+
 def search_bias_params(
     df,
     *,
     chart_tf: str,
-    combos: list[dict[str, Any]],
+    combos: Iterable[dict[str, Any]],
     filters: dict[str, float],
     on_progress: ProgressCallback | None = None,
     grid_size: int | None = None,
+    total: int | None = None,
 ) -> dict[str, Any]:
     frame = prepare_backtest_ohlcv(df)
     if frame is None or frame.empty:
         raise RuntimeError("OHLCV hazırlanamadı")
-    rows: list[dict[str, Any]] = []
-    total = len(combos)
+    try:
+        planned = int(total) if total is not None else len(combos)  # type: ignore[arg-type]
+    except TypeError:
+        planned = 0
+    refs: list[dict[str, Any]] = []
+    buf: list[dict[str, Any]] = []
+    passed_n = 0
     errors = 0
     first_error = ""
+    attempted = 0
     started = time.monotonic()
+    step = _progress_step(planned)
+
+    def trim_buf() -> None:
+        if len(buf) <= RESULT_LIMIT:
+            return
+        buf.sort(key=_result_rank_key)
+        del buf[RESULT_LIMIT:]
+
     for i, params in enumerate(combos, start=1):
+        attempted = i
         try:
             engine = _engine_typed(params)
             series = market_bias_series(frame, chart_tf=chart_tf, **engine)
             metrics = _sanitize_metrics(summarize_bias_trades(series.get("trades")))
             passed = combo_passes(metrics, filters)
-            rows.append(
-                {
-                    **metrics,
-                    "passed": bool(passed),
-                    "tag": str(params.get("_tag") or ""),
-                    "params": _public_params(engine),
-                }
-            )
+            row = {
+                **metrics,
+                "passed": bool(passed),
+                "tag": str(params.get("_tag") or ""),
+                "params": _public_params(engine),
+            }
+            if row["tag"] == "referans":
+                refs.append(row)
+            else:
+                buf.append(row)
+                if len(buf) > RESULT_LIMIT * 4:
+                    trim_buf()
+            if passed:
+                passed_n += 1
         except Exception as exc:
             errors += 1
             if not first_error:
                 first_error = f"{type(exc).__name__}: {exc}"
             logger.warning("bias combo failed %s: %s", params, exc)
-        if on_progress and (i == total or i <= 3 or i % 2 == 0):
+        denom = planned or attempted
+        if on_progress and (i == denom or i <= 3 or i % step == 0):
             elapsed = time.monotonic() - started
-            pct = 100.0 * i / total if total else 0.0
+            pct = 100.0 * i / denom if denom else 0.0
             eta = ""
-            if i < total and i >= 2 and elapsed >= 1.0:
-                eta = format_eta(elapsed * (total - i) / i)
+            if i < denom and i >= 2 and elapsed >= 1.0:
+                eta = format_eta(elapsed * (denom - i) / i)
             on_progress(
                 "searching",
                 i,
-                total,
-                _search_progress_label(i, total, grid_size, pct=pct, eta=eta),
+                denom,
+                _search_progress_label(i, denom, grid_size, pct=pct, eta=eta),
             )
-    if not rows:
+    trim_buf()
+    if not refs and not buf:
         raise RuntimeError(
-            f"Hiçbir kombinasyon hesaplanamadı ({errors}/{total}): {first_error or 'bilinmeyen hata'}"
+            f"Hiçbir kombinasyon hesaplanamadı ({errors}/{attempted}): {first_error or 'bilinmeyen hata'}"
         )
-    rows.sort(
-        key=lambda r: (
-            not r["passed"],
-            -float(r["profit_factor"]),
-            -float(r["net_profit_pct"]),
-            -float(r["win_rate"]),
-            float(r["max_drawdown"]),
-        )
-    )
-    passed_n = sum(1 for r in rows if r["passed"])
-    refs = [r for r in rows if r.get("tag") == "referans"]
-    rest = [r for r in rows if r.get("tag") != "referans"][:RESULT_LIMIT]
+    buf.sort(key=_result_rank_key)
     ranked = []
-    for idx, row in enumerate(refs + rest, start=1):
+    for idx, row in enumerate(refs + buf[:RESULT_LIMIT], start=1):
         ranked.append({"rank": idx, **row})
     reference = next((r for r in ranked if r.get("tag") == "referans"), None)
     best = next((r for r in ranked if r.get("passed") and r.get("tag") != "referans"), None)
     return {
-        "tested": total,
+        "tested": attempted,
         "passed": passed_n,
         "errors": errors,
         "error": first_error or None,
@@ -698,7 +768,13 @@ def run_bias_optimize(
     grid = build_grid(body)
     space = grid_space(grid)
     max_combos = combo_budget(body, space)
-    combos = expand_combos(grid, max_combos, seed=int(body.get("seed") or 42))
+    if body.get("scan_all") or space <= max_combos:
+        combos: Iterable[dict[str, Any]] = iter_full_grid(grid)
+        planned = space
+    else:
+        listed = expand_combos(grid, max_combos, seed=int(body.get("seed") or 42))
+        combos = listed
+        planned = len(listed)
 
     if on_progress:
         on_progress("downloading", 0, 1, f"{symbol} {timeframe} indiriliyor")
@@ -718,8 +794,8 @@ def run_bias_optimize(
 
     reference = parse_reference(body)
     if reference:
-        sig = _combo_sig(reference)
-        combos = [reference] + [c for c in combos if _combo_sig(c) != sig]
+        combos = _with_reference(combos, reference)
+        planned += 1
     filters = {
         "min_win_rate": float(body.get("min_win_rate") or 0),
         "max_drawdown": float(body.get("max_drawdown") if body.get("max_drawdown") is not None else 100),
@@ -731,8 +807,8 @@ def run_bias_optimize(
         on_progress(
             "searching",
             0,
-            len(combos),
-            _search_progress_label(0, len(combos), space, pct=0),
+            planned,
+            _search_progress_label(0, planned, space, pct=0),
         )
     found = search_bias_params(
         df,
@@ -741,6 +817,7 @@ def run_bias_optimize(
         filters=filters,
         on_progress=on_progress,
         grid_size=space,
+        total=planned,
     )
     start = df.index[0]
     end = df.index[-1]
@@ -754,7 +831,7 @@ def run_bias_optimize(
         "from": start.isoformat() if hasattr(start, "isoformat") else str(start),
         "to": end.isoformat() if hasattr(end, "isoformat") else str(end),
         "filters": filters,
-        "combo_count": len(combos),
+        "combo_count": int(found.get("tested") or planned),
         "grid_size": space,
         "coverage_note": coverage_note(timeframe, period, (end - start).days if hasattr(end - start, "days") else 0),
         **found,

@@ -165,7 +165,7 @@ function syncOptGridHint() {
     if (space <= 20000) {
       hint.textContent = `Tamamını tara: ${spaceTxt} setin hepsi denenecek.`;
     } else {
-      hint.textContent = `Izgara ${spaceTxt} set. Tamamını tara en fazla 20.000 — adımı büyütün veya eksenleri kapatın.`;
+      hint.textContent = `Tamamını tara: ${spaceTxt} set. 20.000’i geçiyor — başlamadan teyit istenir; süre saatler veya bir gün olabilir.`;
     }
     return;
   }
@@ -659,11 +659,10 @@ async function startOptRun(e) {
   }
   const space = estimateOptGridSize();
   if (body.scan_all && space > 20000) {
-    optStatus(
-      `Izgara ${Number(space).toLocaleString("tr-TR")} set. Tamamını tara en fazla 20.000 — adımı büyütün veya eksenleri kapatın.`,
-      "error",
+    const ok = confirm(
+      `Izgara ${Number(space).toLocaleString("tr-TR")} set. Tamamını tara 20.000’den fazla — saatler veya bir gün sürebilir. Yine de başlatılsın mı?`,
     );
-    return;
+    if (!ok) return;
   }
   const btn = document.querySelector("#btnOptRun");
   if (btn) btn.disabled = true;

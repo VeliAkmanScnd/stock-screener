@@ -3,6 +3,7 @@ import pandas as pd
 
 from app.services.bias_optimizer import (
     MAX_COMBOS,
+    SCAN_ALL_MAX,
     build_grid,
     combo_budget,
     combo_passes,
@@ -288,8 +289,9 @@ def test_small_grid_enumerates_all_when_under_cap():
     assert space <= 20000
     assert len(combos) == space
     assert combo_budget({"scan_all": True}, space) == space
+    assert combo_budget({"scan_all": True}, MAX_COMBOS + 1) == MAX_COMBOS + 1
     try:
-        combo_budget({"scan_all": True}, MAX_COMBOS + 1)
+        combo_budget({"scan_all": True}, SCAN_ALL_MAX + 1)
         raise AssertionError("expected ValueError")
     except ValueError as exc:
         assert "Tamamını tara" in str(exc)
@@ -402,6 +404,7 @@ def test_format_eta_and_progress_label():
     assert format_eta(3) == "birkaç sn"
     assert format_eta(40) == "40 sn"
     assert "dk" in format_eta(120)
+    assert "gün" in format_eta(48 * 3600)
     label = _search_progress_label(80, 145, 145, pct=55.17, eta="1 dk")
     assert "80/145" in label
     assert "%55" in label
