@@ -115,6 +115,16 @@ def optimize_job(job_id: str, _user: User = Depends(get_current_user)):
     return job
 
 
+@router.post("/jobs/{job_id}/stop")
+def stop_bias_optimize(job_id: str, _user: User = Depends(get_current_user)):
+    from app.services.bias_optimizer import cancel_optimize_job
+
+    job = cancel_optimize_job(job_id)
+    if not job:
+        raise HTTPException(404, "Test bulunamadı veya süresi doldu")
+    return job
+
+
 @router.get("/presets")
 def list_presets(
     symbol: str | None = None,

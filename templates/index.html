@@ -6,7 +6,7 @@
   <title>TradeLABtr Stock Screener</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/css/style.css?v=54" />
+  <link rel="stylesheet" href="/static/css/style.css?v=55" />
   <link rel="stylesheet" href="/static/css/auth.css?v=7" />
 </head>
 <body>
@@ -805,6 +805,7 @@
           <div class="track-list-actions">
             <button type="button" class="btn secondary btn-sm" id="btnOptPresetSave">Ayarları kaydet</button>
             <button type="submit" class="btn primary btn-sm" form="optForm" id="btnOptRun">Taramayı başlat</button>
+            <button type="button" class="btn danger btn-sm btn-opt-stop" id="btnOptStop" hidden>Durdur</button>
           </div>
         </div>
         <form id="optForm" class="opt-form">
@@ -1051,6 +1052,7 @@
             <div class="scan-progress-bar" id="optProgressBar"></div>
           </div>
           <span class="scan-progress-label" id="optProgressLabel">%0</span>
+          <button type="button" class="btn danger btn-sm btn-opt-stop" id="btnOptStopBar">Durdur</button>
         </div>
       </section>
       <section class="card">
@@ -1289,6 +1291,6 @@
   <script src="/static/js/perf.js?v=5"></script>
   <script src="/static/js/help.js?v=2"></script>
   <script src="/static/js/alarm.js?v=1"></script>
-  <script src="/static/js/optimize.js?v=12"></script>
+  <script src="/static/js/optimize.js?v=13"></script>
 </body>
 </html>

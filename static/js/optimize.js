@@ -2,6 +2,7 @@ let optContractsLoaded = false;
 let optPollTimer = null;
 let optPresets = [];
 let optLastPayload = null;
+let optJobId = null;
 let optSort = { key: "rank", dir: "asc" };
 
 const OPT_SORT_DESC_DEFAULT = new Set([
@@ -62,6 +63,16 @@ function setOptProgress(pct, label) {
 function hideOptProgress() {
   const wrap = document.querySelector("#optProgress");
   if (wrap) wrap.hidden = true;
+}
+
+function setOptRunState(running) {
+  const start = document.querySelector("#btnOptRun");
+  const stops = document.querySelectorAll(".btn-opt-stop");
+  if (start) start.disabled = !!running;
+  stops.forEach((btn) => {
+    if (btn.id === "btnOptStop") btn.hidden = !running;
+    btn.disabled = !running;
+  });
 }
 
 function optBoolLabel(v) {
@@ -613,6 +624,37 @@ function applyOptConfig(cfg) {
   syncOptGridHint();
 }
 
+function finishOptJob(job) {
+  hideOptProgress();
+  setOptRunState(false);
+  optJobId = null;
+  if (job.status === "error") {
+    optStatus(job.error || job.message || "Tarama hata verdi", "error");
+    return;
+  }
+  const payload = job.result || {};
+  const tested = payload.tested ?? 0;
+  const passed = payload.passed ?? 0;
+  const space = payload.grid_size || 0;
+  if (job.status === "cancelled") {
+    if (payload.results?.length) {
+      renderOptResults(payload);
+      optStatus(`Tarama durduruldu. ${tested} set denendi.`, "ok");
+    } else {
+      optStatus("Tarama durduruldu.", "error");
+    }
+    return;
+  }
+  renderOptResults(payload);
+  let msg = passed
+    ? `${passed} set eşikleri geçti.`
+    : "Eşik geçen set yok; tabloda en yakın sonuçlar var.";
+  if (!passed && space > tested) {
+    msg = `Eşik geçen set yok. ${tested} örnek, ${Number(space).toLocaleString("tr-TR")} olası — ızgarayı daraltın veya optimize edilmeyen eksenleri kapatın.`;
+  }
+  optStatus(msg, passed ? "ok" : "error");
+}
+
 async function pollOptJob(jobId) {
   const stRes = await apiFetch(`/api/optimize/jobs/${jobId}`);
   const job = await stRes.json();
@@ -623,27 +665,32 @@ async function pollOptJob(jobId) {
       pollOptJob(jobId).catch((err) => {
         optStatus(err.message, "error");
         hideOptProgress();
+        setOptRunState(false);
+        optJobId = null;
       });
     }, 900);
     return;
   }
-  if (job.status === "error") {
-    optStatus(job.error || job.message || "Tarama hata verdi", "error");
-    hideOptProgress();
-    return;
+  finishOptJob(job);
+}
+
+async function stopOptRun() {
+  if (!optJobId) return;
+  document.querySelectorAll(".btn-opt-stop").forEach((btn) => {
+    btn.disabled = true;
+  });
+  optStatus("Durduruluyor…");
+  try {
+    const res = await apiFetch(`/api/optimize/jobs/${optJobId}/stop`, { method: "POST" });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || "Durdurulamadı");
+    setOptProgress(data.progress ?? 0, data.message || "Durduruluyor…");
+  } catch (err) {
+    optStatus(err.message || "Durdurulamadı", "error");
+    document.querySelectorAll(".btn-opt-stop").forEach((btn) => {
+      btn.disabled = false;
+    });
   }
-  hideOptProgress();
-  renderOptResults(job.result || {});
-  const passed = job.result?.passed ?? 0;
-  const tested = job.result?.tested ?? 0;
-  const space = job.result?.grid_size || 0;
-  let msg = passed
-    ? `${passed} set eşikleri geçti.`
-    : "Eşik geçen set yok; tabloda en yakın sonuçlar var.";
-  if (!passed && space > tested) {
-    msg = `Eşik geçen set yok. ${tested} örnek, ${Number(space).toLocaleString("tr-TR")} olası — ızgarayı daraltın veya optimize edilmeyen eksenleri kapatın.`;
-  }
-  optStatus(msg, passed ? "ok" : "error");
 }
 
 async function startOptRun(e) {
@@ -664,8 +711,8 @@ async function startOptRun(e) {
     );
     if (!ok) return;
   }
-  const btn = document.querySelector("#btnOptRun");
-  if (btn) btn.disabled = true;
+  setOptRunState(true);
+  optJobId = null;
   optStatus("Tarama başlatılıyor…");
   setOptProgress(2, "Başlatılıyor…");
   try {
@@ -677,12 +724,13 @@ async function startOptRun(e) {
     if (!res.ok) {
       throw new Error(data.detail || "Başlatılamadı");
     }
+    optJobId = data.job_id;
     await pollOptJob(data.job_id);
   } catch (err) {
     hideOptProgress();
+    setOptRunState(false);
+    optJobId = null;
     optStatus(err.message || "Hata", "error");
-  } finally {
-    if (btn) btn.disabled = false;
   }
 }
 
@@ -820,6 +868,9 @@ async function onOptTabShown() {
 
 function initOptimize() {
   document.querySelector("#optForm")?.addEventListener("submit", startOptRun);
+  document.querySelectorAll(".btn-opt-stop").forEach((btn) => {
+    btn.addEventListener("click", stopOptRun);
+  });
   document.querySelector("#optExitMode")?.addEventListener("change", syncOptExitFields);
   document.querySelectorAll(".opt-enable").forEach((el) => {
     el.addEventListener("change", syncOptAxisUi);

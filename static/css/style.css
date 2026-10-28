@@ -2528,3 +2528,7 @@ body {
 .opt-panel .scan-progress {
   margin-top: 0.75rem;
 }
+
+.opt-panel .scan-progress .btn-opt-stop {
+  flex-shrink: 0;
+}

@@ -193,6 +193,70 @@ def test_search_ranks_passing_rows_first():
     assert "params" in found["results"][0]
 
 
+def test_search_stops_when_requested():
+    df = _wave_frame(360)
+    combo = {
+        "ha_len": 8,
+        "ha_len2": 8,
+        "osc_len": 3,
+        "ha_htf": "",
+        "exit_mode": "Percent",
+        "rr_mult": 1.0,
+        "swing_bars": 4,
+        "tp_pct": 2.0,
+        "sl_pct": 1.0,
+        "allow_long": True,
+        "allow_short": True,
+        "reverse_exit": True,
+        "require_bar": False,
+        "max_same": 8,
+    }
+    hits = {"n": 0}
+
+    def should_stop():
+        hits["n"] += 1
+        return hits["n"] > 1
+
+    found = search_bias_params(
+        df,
+        chart_tf="15m",
+        combos=[combo, dict(combo), dict(combo)],
+        filters={
+            "min_win_rate": 0,
+            "max_drawdown": 100,
+            "min_profit_factor": 0,
+            "min_profit": -100,
+            "min_trades": 1,
+        },
+        should_stop=should_stop,
+    )
+    assert found["cancelled"] is True
+    assert found["tested"] == 1
+    assert len(found["results"]) == 1
+
+
+def test_cancel_optimize_job_flags_running():
+    from app.services.bias_optimizer import (
+        OptimizeJob,
+        _jobs,
+        _lock,
+        cancel_optimize_job,
+    )
+
+    job = OptimizeJob(id="stop-test")
+    with _lock:
+        _jobs["stop-test"] = job
+    try:
+        out = cancel_optimize_job("stop-test")
+        assert out is not None
+        assert job.cancel_requested is True
+        assert out["message"] == "Durduruluyor…"
+        assert cancel_optimize_job("missing-job") is None
+    finally:
+        with _lock:
+            _jobs.pop("stop-test", None)
+
+
 def test_numeric_span_inclusive():
     vals = numeric_span(55, 200, 1, integer=True)
     assert vals[0] == 55

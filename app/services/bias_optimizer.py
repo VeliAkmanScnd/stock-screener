@@ -25,6 +25,11 @@ from app.utils.json_safe import json_safe
 logger = logging.getLogger(__name__)
 
 ProgressCallback = Callable[[str, int, int, str], None]
+StopCheck = Callable[[], bool]
+
+
+class OptimizeCancelled(Exception):
+    """User asked to stop a running Bias tester job."""
 
 MAX_COMBOS = 20000
 SCAN_ALL_MAX = 10_000_000
@@ -657,6 +662,7 @@ def search_bias_params(
     on_progress: ProgressCallback | None = None,
     grid_size: int | None = None,
     total: int | None = None,
+    should_stop: StopCheck | None = None,
 ) -> dict[str, Any]:
     frame = prepare_backtest_ohlcv(df)
     if frame is None or frame.empty:
@@ -671,6 +677,7 @@ def search_bias_params(
     errors = 0
     first_error = ""
     attempted = 0
+    cancelled = False
     started = time.monotonic()
     step = _progress_step(planned)
 
@@ -681,6 +688,9 @@ def search_bias_params(
         del buf[RESULT_LIMIT:]
 
     for i, params in enumerate(combos, start=1):
+        if should_stop and should_stop():
+            cancelled = True
+            break
         attempted = i
         try:
             engine = _engine_typed(params)
@@ -721,6 +731,17 @@ def search_bias_params(
             )
     trim_buf()
     if not refs and not buf:
+        if cancelled:
+            return {
+                "tested": attempted,
+                "passed": 0,
+                "errors": errors,
+                "error": first_error or None,
+                "cancelled": True,
+                "reference": None,
+                "best": None,
+                "results": [],
+            }
         raise RuntimeError(
             f"Hiçbir kombinasyon hesaplanamadı ({errors}/{attempted}): {first_error or 'bilinmeyen hata'}"
         )
@@ -735,6 +756,7 @@ def search_bias_params(
         "passed": passed_n,
         "errors": errors,
         "error": first_error or None,
+        "cancelled": cancelled,
         "reference": reference,
         "best": best,
         "results": ranked,
@@ -744,6 +766,7 @@ def search_bias_params(
 def run_bias_optimize(
     body: dict[str, Any],
     on_progress: ProgressCallback | None = None,
+    should_stop: StopCheck | None = None,
 ) -> dict[str, Any]:
     from app.services.borsapy_client import (
         fetch_ohlcv_one_backtest,
@@ -765,6 +788,12 @@ def run_bias_optimize(
     if not tradingview_auth_configured():
         raise RuntimeError("TradingView sessionid / sessionid_sign .env içinde yok")
 
+    def stopped() -> bool:
+        return bool(should_stop and should_stop())
+
+    if stopped():
+        raise OptimizeCancelled("Tarama durduruldu")
+
     grid = build_grid(body)
     space = grid_space(grid)
     max_combos = combo_budget(body, space)
@@ -778,6 +807,8 @@ def run_bias_optimize(
 
     if on_progress:
         on_progress("downloading", 0, 1, f"{symbol} {timeframe} indiriliyor")
+    if stopped():
+        raise OptimizeCancelled("Tarama durduruldu")
     df = fetch_ohlcv_one_backtest(symbol, timeframe, period=period)
     if df is None or df.empty:
         raise RuntimeError(f"{symbol} için TradingView verisi alınamadı")
@@ -791,6 +822,8 @@ def run_bias_optimize(
             df = sliced
     if df is None or len(df) < 80:
         raise RuntimeError(f"{symbol}: yetersiz bar ({0 if df is None else len(df)})")
+    if stopped():
+        raise OptimizeCancelled("Tarama durduruldu")
 
     reference = parse_reference(body)
     if reference:
@@ -818,11 +851,15 @@ def run_bias_optimize(
         on_progress=on_progress,
         grid_size=space,
         total=planned,
+        should_stop=should_stop,
     )
     start = df.index[0]
     end = df.index[-1]
     if on_progress:
-        on_progress("done", found["tested"], found["tested"], "Tamamlandı")
+        if found.get("cancelled"):
+            on_progress("cancelled", found["tested"], planned, "Durduruldu")
+        else:
+            on_progress("done", found["tested"], found["tested"], "Tamamlandı")
     return json_safe({
         "symbol": symbol,
         "timeframe": timeframe,
@@ -847,6 +884,7 @@ class OptimizeJob:
     message: str = "Başlatılıyor…"
     result: dict[str, Any] | None = None
     error: str | None = None
+    cancel_requested: bool = False
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -872,6 +910,18 @@ def get_optimize_job(job_id: str) -> dict[str, Any] | None:
         return job_to_dict(job) if job else None
 
 
+def cancel_optimize_job(job_id: str) -> dict[str, Any] | None:
+    with _lock:
+        job = _jobs.get(job_id)
+        if not job:
+            return None
+        if job.status == "running":
+            job.cancel_requested = True
+            job.phase = "cancelling"
+            job.message = "Durduruluyor…"
+        return job_to_dict(job)
+
+
 def start_optimize_job(body: dict[str, Any]) -> str:
     grid = build_grid(body)
     combo_budget(body, grid_space(grid))
@@ -894,12 +944,20 @@ def start_optimize_job(body: dict[str, Any]) -> str:
             for key, value in kwargs.items():
                 setattr(job, key, value)
 
+    def should_stop() -> bool:
+        with _lock:
+            job = _jobs.get(job_id)
+            return bool(job and job.cancel_requested)
+
     def report(phase: str, done: int, total: int, detail: str = "") -> None:
+        if should_stop() and phase not in ("cancelled", "done"):
+            phase = "cancelling"
+            detail = detail or "Durduruluyor…"
         if total <= 0:
             pct = 5 if phase == "downloading" else 0
         elif phase == "downloading":
             pct = 8
-        elif phase == "searching":
+        elif phase in ("searching", "cancelling", "cancelled"):
             pct = int(min(100, max(0, done / total * 100))) if total else 0
         else:
             pct = 100
@@ -907,8 +965,19 @@ def start_optimize_job(body: dict[str, Any]) -> str:
 
     def worker() -> None:
         try:
-            result = json_safe(run_bias_optimize(body, on_progress=report))
-            _update(status="done", progress=100, phase="done", message="Tamamlandı", result=result)
+            result = json_safe(run_bias_optimize(body, on_progress=report, should_stop=should_stop))
+            if result.get("cancelled") or should_stop():
+                result["cancelled"] = True
+                _update(
+                    status="cancelled",
+                    phase="cancelled",
+                    message="Durduruldu",
+                    result=result,
+                )
+            else:
+                _update(status="done", progress=100, phase="done", message="Tamamlandı", result=result)
+        except OptimizeCancelled:
+            _update(status="cancelled", phase="cancelled", message="Durduruldu")
         except Exception as exc:
             logger.exception("bias optimize failed")
             _update(status="error", phase="error", message=str(exc), error=str(exc))
