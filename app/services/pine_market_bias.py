@@ -96,7 +96,15 @@ def _no_repaint_request(series: pd.Series, ha_htf: str, chart_tf: str | None) ->
     if not isinstance(idx, pd.DatetimeIndex) or len(series) == 0:
         return series
     freq = pd.Timedelta(seconds=h_sec)
-    bucket = pd.Series(idx.floor(freq), index=idx)
+    try:
+        floored = idx.floor(freq)
+    except Exception:
+        minutes = max(1, int(h_sec // 60))
+        try:
+            floored = idx.floor(f"{minutes}min")
+        except Exception:
+            return series
+    bucket = pd.Series(floored, index=idx)
     vals = series.to_numpy(dtype=float)
     flags = bucket.ne(bucket.shift(1)).to_numpy(dtype=bool)
     flags[0] = True

@@ -131,12 +131,17 @@ function renderOptResults(payload) {
   const rows = payload?.results || [];
   const passed = payload?.passed ?? 0;
   const tested = payload?.tested ?? 0;
+  const space = payload?.grid_size || 0;
   if (title) title.textContent = `${payload.symbol || ""} sonuçları`;
   if (hint) {
-    hint.textContent = `${payload.bars || 0} bar · ${payload.from || ""} → ${payload.to || ""} · ${tested} kombinasyon · ${passed} eşik geçti`;
+    const comboBit = space > tested
+      ? `${tested} örnek / ${Number(space).toLocaleString("tr-TR")} olası`
+      : `${tested} kombinasyon`;
+    hint.textContent = `${payload.bars || 0} bar · ${payload.from || ""} → ${payload.to || ""} · ${comboBit} · ${passed} eşik geçti`;
   }
   if (!rows.length) {
-    body.innerHTML = `<tr class="empty"><td colspan="19">Eşikleri geçen (veya yakın) set yok.</td></tr>`;
+    const err = payload.error ? ` ${payload.error}` : "";
+    body.innerHTML = `<tr class="empty"><td colspan="19">Eşikleri geçen (veya yakın) set yok.${optEsc(err)}</td></tr>`;
     return;
   }
   body.innerHTML = rows
@@ -288,12 +293,15 @@ async function pollOptJob(jobId) {
   hideOptProgress();
   renderOptResults(job.result || {});
   const passed = job.result?.passed ?? 0;
-  optStatus(
-    passed
-      ? `${passed} set eşikleri geçti.`
-      : "Eşik geçen set yok; tabloda en yakın sonuçlar var.",
-    passed ? "ok" : "error"
-  );
+  const tested = job.result?.tested ?? 0;
+  const space = job.result?.grid_size || 0;
+  let msg = passed
+    ? `${passed} set eşikleri geçti.`
+    : "Eşik geçen set yok; tabloda en yakın sonuçlar var.";
+  if (!passed && space > tested) {
+    msg = `Eşik geçen set yok. ${tested} örnek, ${Number(space).toLocaleString("tr-TR")} olası — ızgarayı daraltın veya optimize edilmeyen eksenleri kapatın.`;
+  }
+  optStatus(msg, passed ? "ok" : "error");
 }
 
 async function startOptRun(e) {

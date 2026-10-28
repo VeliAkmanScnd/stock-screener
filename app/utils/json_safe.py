@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 import numpy as np
@@ -18,9 +19,9 @@ def json_safe(value: Any) -> Any:
         return int(value)
     if isinstance(value, np.floating):
         v = float(value)
-        return None if v != v else v
+        return None if not math.isfinite(v) else v
     if isinstance(value, float):
-        return None if value != value else value
+        return None if not math.isfinite(value) else value
     if isinstance(value, (np.str_, str)):
         return str(value)
     return value

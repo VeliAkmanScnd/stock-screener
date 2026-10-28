@@ -202,6 +202,68 @@ def test_percent_grid_uses_tp_sl_lists():
     assert sls == {1.0, 1.5}
 
 
+def test_capped_grid_keeps_start_and_classic():
+    grid = build_grid(
+        {
+            "mode": "quick",
+            "ha_len": {"start": 48, "stop": 200, "step": 1},
+            "ha_len2": {"start": 55, "stop": 200, "step": 1},
+            "osc_len": {"start": 5, "stop": 20, "step": 1},
+            "rr_mult": {"start": 1, "stop": 2, "step": 0.1},
+            "swing_bars": {"start": 4, "stop": 30, "step": 1},
+            "max_same": {"start": 1, "stop": 6, "step": 1},
+            "ha_htf": {"start": 30, "stop": 30, "step": 15},
+            "exit_mode": "Swing RR",
+            "reverse_exit": "true, false",
+            "require_bar": "false",
+            "optimize": {"exit_mode": False, "require_bar": False, "ha_htf": False},
+        }
+    )
+    combos = expand_combos(grid, max_combos=180, seed=1)
+    assert len(combos) == 180
+    assert any(c["ha_len"] == 48 and c["ha_len2"] == 55 and c["osc_len"] == 5 for c in combos)
+    assert any(c["ha_len"] == 100 and c["ha_len2"] == 100 and c["osc_len"] == 7 for c in combos)
+
+
+def test_search_raises_when_every_combo_fails():
+    df = _wave_frame(120)
+    combos = [
+        {
+            "ha_len": None,
+            "ha_len2": 8,
+            "osc_len": 3,
+            "ha_htf": "",
+            "exit_mode": "Percent",
+            "rr_mult": 1.0,
+            "swing_bars": 4,
+            "tp_pct": 2.0,
+            "sl_pct": 1.0,
+            "allow_long": True,
+            "allow_short": True,
+            "reverse_exit": True,
+            "require_bar": False,
+            "max_same": 8,
+        }
+    ]
+    try:
+        search_bias_params(
+            df,
+            chart_tf="15m",
+            combos=combos,
+            filters={
+                "min_win_rate": 0,
+                "max_drawdown": 100,
+                "min_profit_factor": 0,
+                "min_profit": -100,
+                "min_trades": 1,
+            },
+        )
+    except RuntimeError as exc:
+        assert "hesaplanamadı" in str(exc)
+    else:
+        raise AssertionError("expected RuntimeError")
+
+
 def test_filters_reject_low_win_rate():
     metrics = {
         "trades": 20,

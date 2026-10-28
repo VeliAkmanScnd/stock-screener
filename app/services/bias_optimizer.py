@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import itertools
 import logging
+import math
 import random
 import threading
 import uuid
@@ -12,15 +13,18 @@ from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any, Callable
 
+import pandas as pd
+
 from app.services.bar_close import drop_unclosed_bar
 from app.services.pine_market_bias import market_bias_series, summarize_bias_trades
+from app.utils.json_safe import json_safe
 
 logger = logging.getLogger(__name__)
 
 ProgressCallback = Callable[[str, int, int, str], None]
 
 MAX_COMBOS = 800
-RESULT_LIMIT = 80
+RESULT_LIMIT = 200
 RANGE_AXIS_MAX = 400
 ENGINE_KEYS = (
     "ha_len",
@@ -291,27 +295,145 @@ def build_grid(body: dict[str, Any]) -> dict[str, list]:
     return base
 
 
+def grid_space(grid: dict[str, list]) -> int:
+    total = 1
+    for key in ENGINE_KEYS:
+        total *= max(1, len(grid.get(key) or [None]))
+        if total > 10**12:
+            return total
+    return total
+
+
+def _combo_from_indices(keys: list[str], values: list[list], idxs: list[int]) -> dict[str, Any]:
+    return {keys[i]: values[i][min(idxs[i], len(values[i]) - 1)] for i in range(len(keys))}
+
+
+PREFERRED_ENGINE = {
+    "ha_len": 100,
+    "ha_len2": 100,
+    "osc_len": 7,
+    "rr_mult": 1.0,
+    "swing_bars": 4,
+    "max_same": 1,
+}
+
+
+def _preferred_index(key: str, vals: list) -> int:
+    pref = PREFERRED_ENGINE.get(key)
+    if pref is None or not vals:
+        return 0
+    for i, val in enumerate(vals):
+        if val == pref:
+            return i
+        if isinstance(val, float) and isinstance(pref, float) and abs(val - pref) < 1e-9:
+            return i
+    return 0
+
+
 def expand_combos(grid: dict[str, list], max_combos: int, seed: int = 42) -> list[dict[str, Any]]:
     keys = list(ENGINE_KEYS)
-    values = [grid.get(k) or [None] for k in keys]
+    values = [list(grid.get(k) or [None]) for k in keys]
+    for i, vals in enumerate(values):
+        if not vals:
+            values[i] = [None]
     total = 1
     for vals in values:
-        total *= max(1, len(vals))
+        total *= len(vals)
     cap = max(1, min(int(max_combos or 180), MAX_COMBOS))
     if total <= cap:
         return [dict(zip(keys, row)) for row in itertools.product(*values)]
-    rng = random.Random(seed)
-    picked: set[tuple] = set()
+
+    n_axes = len(keys)
+    mids = [max(0, len(vals) // 2) for vals in values]
+    ends = [len(vals) - 1 for vals in values]
+    preferred = [_preferred_index(keys[j], values[j]) for j in range(n_axes)]
+    seen: set[tuple[int, ...]] = set()
     out: list[dict[str, Any]] = []
+
+    def add(idxs: list[int]) -> None:
+        clipped = [min(max(0, i), ends[j]) for j, i in enumerate(idxs)]
+        key = tuple(clipped)
+        if key in seen:
+            return
+        seen.add(key)
+        out.append(_combo_from_indices(keys, values, clipped))
+
+    add([0] * n_axes)
+    add(preferred)
+    add(mids)
+    add(ends)
+    for j, vals in enumerate(values):
+        last = len(vals) - 1
+        steps = min(len(vals), 9)
+        for s in range(steps):
+            idxs = preferred[:]
+            idxs[j] = 0 if steps == 1 else round(s * last / (steps - 1))
+            add(idxs)
+            if len(out) >= cap:
+                return out[:cap]
+    rng = random.Random(seed)
     guard = 0
-    while len(out) < cap and guard < cap * 20:
+    while len(out) < cap and guard < cap * 40:
         guard += 1
-        row = tuple(rng.choice(vals) for vals in values)
-        if row in picked:
+        add([rng.randrange(len(vals)) for vals in values])
+    return out[:cap]
+
+
+def prepare_backtest_ohlcv(df: pd.DataFrame) -> pd.DataFrame:
+    if df is None or df.empty:
+        return df
+    work = df.copy()
+    work = work.rename(columns=str.title)
+    work = work.loc[:, ~work.columns.duplicated()]
+    for col in ("Open", "High", "Low", "Close", "Volume"):
+        if col not in work.columns:
             continue
-        picked.add(row)
-        out.append(dict(zip(keys, row)))
-    return out
+        series = work[col]
+        if isinstance(series, pd.DataFrame):
+            series = series.iloc[:, 0]
+        work[col] = pd.to_numeric(series, errors="coerce")
+    needed = [c for c in ("Open", "High", "Low", "Close") if c in work.columns]
+    if len(needed) < 4:
+        return work.iloc[0:0]
+    work = work.dropna(subset=needed)
+    if not isinstance(work.index, pd.DatetimeIndex):
+        parsed = pd.to_datetime(work.index, errors="coerce")
+        mask = parsed.notna()
+        work = work.iloc[mask.to_numpy()].copy()
+        work.index = pd.DatetimeIndex(parsed[mask])
+    if getattr(work.index, "tz", None) is not None:
+        work.index = work.index.tz_convert("Europe/Istanbul").tz_localize(None)
+    work = work[~work.index.duplicated(keep="last")].sort_index()
+    return work
+
+
+def _engine_typed(params: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "ha_len": int(params["ha_len"]),
+        "ha_len2": int(params["ha_len2"]),
+        "osc_len": int(params["osc_len"]),
+        "ha_htf": str(params.get("ha_htf") or ""),
+        "exit_mode": str(params.get("exit_mode") or "Percent"),
+        "rr_mult": float(params.get("rr_mult") or 1.0),
+        "swing_bars": int(params.get("swing_bars") or 4),
+        "tp_pct": float(params.get("tp_pct") or 0.0),
+        "sl_pct": float(params.get("sl_pct") or 0.0),
+        "allow_long": bool(params.get("allow_long", True)),
+        "allow_short": bool(params.get("allow_short", True)),
+        "reverse_exit": bool(params.get("reverse_exit", True)),
+        "require_bar": bool(params.get("require_bar", False)),
+        "max_same": int(params.get("max_same") or 1),
+    }
+
+
+def _finite_num(value: Any, default: float = 0.0) -> float:
+    try:
+        num = float(value)
+    except (TypeError, ValueError):
+        return default
+    if not math.isfinite(num):
+        return default
+    return num
 
 
 def _public_params(params: dict[str, Any]) -> dict[str, Any]:
@@ -347,6 +469,27 @@ def combo_passes(metrics: dict[str, Any], filters: dict[str, float]) -> bool:
     return True
 
 
+def _sanitize_metrics(metrics: dict[str, Any]) -> dict[str, Any]:
+    out = dict(metrics or {})
+    int_keys = ("trades", "wins", "losses", "longs", "shorts")
+    float_keys = (
+        "win_rate",
+        "profit_factor",
+        "net_profit",
+        "net_profit_pct",
+        "max_drawdown",
+        "avg_win",
+        "avg_loss",
+        "gross_profit",
+        "gross_loss",
+    )
+    for key in int_keys:
+        out[key] = int(_finite_num(out.get(key), 0.0))
+    for key in float_keys:
+        out[key] = round(_finite_num(out.get(key), 0.0), 2)
+    return out
+
+
 def search_bias_params(
     df,
     *,
@@ -355,28 +498,37 @@ def search_bias_params(
     filters: dict[str, float],
     on_progress: ProgressCallback | None = None,
 ) -> dict[str, Any]:
+    frame = prepare_backtest_ohlcv(df)
+    if frame is None or frame.empty:
+        raise RuntimeError("OHLCV hazırlanamadı")
     rows: list[dict[str, Any]] = []
     total = len(combos)
+    errors = 0
+    first_error = ""
     for i, params in enumerate(combos, start=1):
-        engine = {k: params[k] for k in ENGINE_KEYS}
         try:
-            series = market_bias_series(df, chart_tf=chart_tf, **engine)
-            metrics = summarize_bias_trades(series.get("trades"))
+            engine = _engine_typed(params)
+            series = market_bias_series(frame, chart_tf=chart_tf, **engine)
+            metrics = _sanitize_metrics(summarize_bias_trades(series.get("trades")))
+            passed = combo_passes(metrics, filters)
+            rows.append(
+                {
+                    **metrics,
+                    "passed": bool(passed),
+                    "params": _public_params(engine),
+                }
+            )
         except Exception as exc:
-            logger.warning("bias combo failed %s: %s", engine, exc)
-            if on_progress and (i == total or i % 5 == 0):
-                on_progress("searching", i, total, f"{i}/{total} kombinasyon")
-            continue
-        passed = combo_passes(metrics, filters)
-        rows.append(
-            {
-                **metrics,
-                "passed": passed,
-                "params": _public_params(params),
-            }
-        )
+            errors += 1
+            if not first_error:
+                first_error = f"{type(exc).__name__}: {exc}"
+            logger.warning("bias combo failed %s: %s", params, exc)
         if on_progress and (i == total or i % 5 == 0):
             on_progress("searching", i, total, f"{i}/{total} kombinasyon")
+    if not rows:
+        raise RuntimeError(
+            f"Hiçbir kombinasyon hesaplanamadı ({errors}/{total}): {first_error or 'bilinmeyen hata'}"
+        )
     rows.sort(
         key=lambda r: (
             not r["passed"],
@@ -393,6 +545,8 @@ def search_bias_params(
     return {
         "tested": total,
         "passed": passed_n,
+        "errors": errors,
+        "error": first_error or None,
         "results": ranked,
     }
 
@@ -425,10 +579,12 @@ def run_bias_optimize(
     if df is None or df.empty:
         raise RuntimeError(f"{symbol} için TradingView verisi alınamadı")
     df = drop_unclosed_bar(df, timeframe, universe="viop")
+    df = prepare_backtest_ohlcv(df)
     if df is None or len(df) < 80:
         raise RuntimeError(f"{symbol}: yetersiz bar ({0 if df is None else len(df)})")
 
     grid = build_grid(body)
+    space = grid_space(grid)
     max_combos = int(body.get("max_combos") or (400 if str(body.get("mode")) == "full" else 180))
     combos = expand_combos(grid, max_combos, seed=int(body.get("seed") or 42))
     filters = {
@@ -439,7 +595,7 @@ def run_bias_optimize(
         "min_trades": float(body.get("min_trades") or 8),
     }
     if on_progress:
-        on_progress("searching", 0, len(combos), f"{len(combos)} kombinasyon")
+        on_progress("searching", 0, len(combos), f"{len(combos)} / {space} kombinasyon")
     found = search_bias_params(
         df,
         chart_tf=timeframe,
@@ -451,7 +607,7 @@ def run_bias_optimize(
     end = df.index[-1]
     if on_progress:
         on_progress("done", found["tested"], found["tested"], "Tamamlandı")
-    return {
+    return json_safe({
         "symbol": symbol,
         "timeframe": timeframe,
         "period": period,
@@ -460,8 +616,9 @@ def run_bias_optimize(
         "to": end.isoformat() if hasattr(end, "isoformat") else str(end),
         "filters": filters,
         "combo_count": len(combos),
+        "grid_size": space,
         **found,
-    }
+    })
 
 
 @dataclass
@@ -531,7 +688,7 @@ def start_optimize_job(body: dict[str, Any]) -> str:
 
     def worker() -> None:
         try:
-            result = run_bias_optimize(body, on_progress=report)
+            result = json_safe(run_bias_optimize(body, on_progress=report))
             _update(status="done", progress=100, phase="done", message="Tamamlandı", result=result)
         except Exception as exc:
             logger.exception("bias optimize failed")
