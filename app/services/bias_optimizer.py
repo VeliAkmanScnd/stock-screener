@@ -24,8 +24,8 @@ logger = logging.getLogger(__name__)
 
 ProgressCallback = Callable[[str, int, int, str], None]
 
-MAX_COMBOS = 800
-RESULT_LIMIT = 200
+MAX_COMBOS = 5000
+RESULT_LIMIT = 500
 RANGE_AXIS_MAX = 400
 ENGINE_KEYS = (
     "ha_len",
@@ -363,9 +363,10 @@ def expand_combos(grid: dict[str, list], max_combos: int, seed: int = 42) -> lis
     add(preferred)
     add(mids)
     add(ends)
+    sweep = max(9, min(80, cap // max(4, n_axes)))
     for j, vals in enumerate(values):
         last = len(vals) - 1
-        steps = min(len(vals), 9)
+        steps = min(len(vals), sweep)
         for s in range(steps):
             idxs = preferred[:]
             idxs[j] = 0 if steps == 1 else round(s * last / (steps - 1))
@@ -649,7 +650,7 @@ def run_bias_optimize(
 
     grid = build_grid(body)
     space = grid_space(grid)
-    max_combos = int(body.get("max_combos") or (400 if str(body.get("mode")) == "full" else 180))
+    max_combos = max(20, min(MAX_COMBOS, int(body.get("max_combos") or 180)))
     combos = expand_combos(grid, max_combos, seed=int(body.get("seed") or 42))
     reference = parse_reference(body)
     if reference:

@@ -5,6 +5,7 @@ from app.services.bias_optimizer import (
     build_grid,
     combo_passes,
     expand_combos,
+    grid_space,
     numeric_span,
     parse_reference,
     search_bias_params,
@@ -257,6 +258,33 @@ def test_percent_grid_uses_tp_sl_lists():
     sls = {c["sl_pct"] for c in combos}
     assert tps == {1.5, 2.5}
     assert sls == {1.0, 1.5}
+
+
+def test_small_grid_enumerates_all_when_under_cap():
+    grid = build_grid(
+        {
+            "mode": "quick",
+            "ha_len": {"start": 48, "stop": 80, "step": 16},
+            "ha_len2": {"start": 72, "stop": 96, "step": 24},
+            "osc_len": {"start": 7, "stop": 11, "step": 4},
+            "exit_mode": "Swing RR",
+            "optimize": {
+                "ha_htf": False,
+                "exit_mode": False,
+                "rr_mult": False,
+                "swing_bars": False,
+                "tp_pct": False,
+                "sl_pct": False,
+                "max_same": False,
+                "reverse_exit": False,
+                "require_bar": False,
+            },
+        }
+    )
+    space = grid_space(grid)
+    combos = expand_combos(grid, max_combos=5000, seed=1)
+    assert space <= 5000
+    assert len(combos) == space
 
 
 def test_capped_grid_keeps_start_and_classic():

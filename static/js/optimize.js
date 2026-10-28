@@ -398,7 +398,7 @@ function collectOptBody() {
     period: document.querySelector("#optPeriod")?.value || "60d",
     mode: document.querySelector("#optMode")?.value || "quick",
     side: document.querySelector("#optSide")?.value || "both",
-    max_combos: Math.round(optNum("#optMaxCombos", 180)),
+    max_combos: Math.max(20, Math.min(5000, Math.round(optNum("#optMaxCombos", 180)))),
     min_win_rate: optNum("#optMinWinRate", 45),
     max_drawdown: optNum("#optMaxDd", 18),
     min_profit_factor: optNum("#optMinPf", 1.3),
@@ -750,8 +750,6 @@ function initOptimize() {
   syncOptAxisUi();
   document.querySelector("#optMode")?.addEventListener("change", (ev) => {
     const full = ev.target.value === "full";
-    const maxEl = document.querySelector("#optMaxCombos");
-    if (maxEl) maxEl.value = full ? "400" : "180";
     const set = (id, val) => {
       const el = document.querySelector(id);
       if (el) el.value = val;
