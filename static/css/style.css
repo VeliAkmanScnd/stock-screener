@@ -997,9 +997,12 @@ body {
   font-size: 0.82rem;
   font-weight: 600;
   color: var(--silver);
-  min-width: 2.5rem;
+  min-width: 9rem;
+  max-width: 22rem;
   text-align: right;
   font-variant-numeric: tabular-nums;
+  white-space: normal;
+  line-height: 1.25;
 }
 
 .bist-tv-help {

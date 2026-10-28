@@ -388,6 +388,18 @@ def test_parse_reference_and_tag_in_results():
     assert found["results"][0]["tag"] == "referans"
 
 
+def test_format_eta_and_progress_label():
+    from app.services.bias_optimizer import _search_progress_label, format_eta
+
+    assert format_eta(3) == "birkaç sn"
+    assert format_eta(40) == "40 sn"
+    assert "dk" in format_eta(120)
+    label = _search_progress_label(80, 145, 145, pct=55.17, eta="1 dk")
+    assert "80/145" in label
+    assert "%55" in label
+    assert "~1 dk kaldı" in label
+
+
 def test_coverage_note_for_short_15m():
     assert "30 dakika" in coverage_note("15m", "13mo", 240)
     assert coverage_note("30m", "13mo", 400) == ""

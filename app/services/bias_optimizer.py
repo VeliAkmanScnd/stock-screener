@@ -7,6 +7,7 @@ import logging
 import math
 import random
 import threading
+import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -540,10 +541,42 @@ def _sanitize_metrics(metrics: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
-def _search_progress_label(done: int, total: int, grid_size: int | None) -> str:
+def format_eta(seconds: float | None) -> str:
+    if seconds is None or seconds < 0 or not math.isfinite(seconds):
+        return ""
+    if seconds < 5:
+        return "birkaç sn"
+    if seconds < 90:
+        return f"{int(round(seconds))} sn"
+    minutes = seconds / 60.0
+    if minutes < 90:
+        return f"{int(round(minutes))} dk"
+    hours = minutes / 60.0
+    whole = int(hours)
+    mins = int(round((hours - whole) * 60))
+    if whole < 10 and mins:
+        return f"{whole} sa {mins} dk"
+    return f"{max(1, int(round(hours)))} sa"
+
+
+def _search_progress_label(
+    done: int,
+    total: int,
+    grid_size: int | None,
+    *,
+    pct: float | None = None,
+    eta: str = "",
+) -> str:
     if grid_size and grid_size > total:
-        return f"{done}/{total} örnek · {grid_size} olası"
-    return f"{done}/{total} · ızgaranın tamamı"
+        core = f"{done}/{total} örnek"
+    else:
+        core = f"{done}/{total}"
+    parts = [core]
+    if pct is not None:
+        parts.append(f"%{pct:.0f}")
+    if eta:
+        parts.append(f"~{eta} kaldı")
+    return " · ".join(parts)
 
 
 def search_bias_params(
@@ -562,6 +595,7 @@ def search_bias_params(
     total = len(combos)
     errors = 0
     first_error = ""
+    started = time.monotonic()
     for i, params in enumerate(combos, start=1):
         try:
             engine = _engine_typed(params)
@@ -581,8 +615,18 @@ def search_bias_params(
             if not first_error:
                 first_error = f"{type(exc).__name__}: {exc}"
             logger.warning("bias combo failed %s: %s", params, exc)
-        if on_progress and (i == total or i % 5 == 0):
-            on_progress("searching", i, total, _search_progress_label(i, total, grid_size))
+        if on_progress and (i == total or i <= 3 or i % 2 == 0):
+            elapsed = time.monotonic() - started
+            pct = 100.0 * i / total if total else 0.0
+            eta = ""
+            if i < total and i >= 2 and elapsed >= 1.0:
+                eta = format_eta(elapsed * (total - i) / i)
+            on_progress(
+                "searching",
+                i,
+                total,
+                _search_progress_label(i, total, grid_size, pct=pct, eta=eta),
+            )
     if not rows:
         raise RuntimeError(
             f"Hiçbir kombinasyon hesaplanamadı ({errors}/{total}): {first_error or 'bilinmeyen hata'}"
@@ -671,7 +715,12 @@ def run_bias_optimize(
         "min_trades": float(body.get("min_trades") or 8),
     }
     if on_progress:
-        on_progress("searching", 0, len(combos), _search_progress_label(0, len(combos), space))
+        on_progress(
+            "searching",
+            0,
+            len(combos),
+            _search_progress_label(0, len(combos), space, pct=0),
+        )
     found = search_bias_params(
         df,
         chart_tf=timeframe,
@@ -759,7 +808,7 @@ def start_optimize_job(body: dict[str, Any]) -> str:
         elif phase == "downloading":
             pct = 8
         elif phase == "searching":
-            pct = 10 + int(min(85, max(0, done / total * 85)))
+            pct = int(min(100, max(0, done / total * 100))) if total else 0
         else:
             pct = 100
         _update(progress=pct, phase=phase, message=detail or phase)
