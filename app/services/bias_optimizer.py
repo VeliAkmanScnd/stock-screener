@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 ProgressCallback = Callable[[str, int, int, str], None]
 
-MAX_COMBOS = 5000
+MAX_COMBOS = 20000
 RESULT_LIMIT = 500
 RANGE_AXIS_MAX = 400
 ENGINE_KEYS = (
@@ -330,6 +330,18 @@ def _preferred_index(key: str, vals: list) -> int:
         if isinstance(val, float) and isinstance(pref, float) and abs(val - pref) < 1e-9:
             return i
     return 0
+
+
+def combo_budget(body: dict[str, Any], space: int) -> int:
+    """How many engine combos to run. scan_all requires the full grid to fit."""
+    if body.get("scan_all"):
+        if space > MAX_COMBOS:
+            raise ValueError(
+                f"Izgara {space} set. Tamamını tara en fazla {MAX_COMBOS}. "
+                "Adımı büyütün veya optimize etmediğiniz eksenleri kapatın."
+            )
+        return max(1, int(space))
+    return max(20, min(MAX_COMBOS, int(body.get("max_combos") or 180)))
 
 
 def expand_combos(grid: dict[str, list], max_combos: int, seed: int = 42) -> list[dict[str, Any]]:
@@ -683,6 +695,11 @@ def run_bias_optimize(
     if not tradingview_auth_configured():
         raise RuntimeError("TradingView sessionid / sessionid_sign .env içinde yok")
 
+    grid = build_grid(body)
+    space = grid_space(grid)
+    max_combos = combo_budget(body, space)
+    combos = expand_combos(grid, max_combos, seed=int(body.get("seed") or 42))
+
     if on_progress:
         on_progress("downloading", 0, 1, f"{symbol} {timeframe} indiriliyor")
     df = fetch_ohlcv_one_backtest(symbol, timeframe, period=period)
@@ -699,10 +716,6 @@ def run_bias_optimize(
     if df is None or len(df) < 80:
         raise RuntimeError(f"{symbol}: yetersiz bar ({0 if df is None else len(df)})")
 
-    grid = build_grid(body)
-    space = grid_space(grid)
-    max_combos = max(20, min(MAX_COMBOS, int(body.get("max_combos") or 180)))
-    combos = expand_combos(grid, max_combos, seed=int(body.get("seed") or 42))
     reference = parse_reference(body)
     if reference:
         sig = _combo_sig(reference)
@@ -783,6 +796,8 @@ def get_optimize_job(job_id: str) -> dict[str, Any] | None:
 
 
 def start_optimize_job(body: dict[str, Any]) -> str:
+    grid = build_grid(body)
+    combo_budget(body, grid_space(grid))
     job_id = str(uuid.uuid4())
     with _lock:
         if any(j.status == "running" for j in _jobs.values()):

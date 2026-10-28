@@ -871,10 +871,14 @@
             </label>
             <label class="field">
               <span>Maks. kombinasyon</span>
-              <input type="number" id="optMaxCombos" min="20" max="5000" step="1" value="180" inputmode="numeric" />
+              <input type="number" id="optMaxCombos" min="20" max="20000" step="1" value="180" inputmode="numeric" />
+            </label>
+            <label class="opt-filter-check">
+              <input type="checkbox" id="optScanAll" />
+              <span>Tamamını tara</span>
             </label>
           </div>
-          <p class="hint" id="optGridHint">Maks. kombinasyon: ızgara bu sayıdan küçükse alternatiflerin tamamı taranır. Büyükse bu kadar örnek alınır (en fazla 5000).</p>
+          <p class="hint" id="optGridHint">Maks. kombinasyon en fazla 20.000 örnek alır. Tamamını tara, ızgara 20.000’i geçmiyorsa her seti dener.</p>
           <h3 class="opt-subhead">Filtreler</h3>
           <div class="alarm-form-grid">
             <label class="field">
@@ -1285,6 +1289,6 @@
   <script src="/static/js/perf.js?v=5"></script>
   <script src="/static/js/help.js?v=2"></script>
   <script src="/static/js/alarm.js?v=1"></script>
-  <script src="/static/js/optimize.js?v=9"></script>
+  <script src="/static/js/optimize.js?v=11"></script>
 </body>
 </html>

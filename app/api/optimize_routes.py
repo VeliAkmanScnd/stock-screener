@@ -29,7 +29,8 @@ class OptimizeBody(BaseModel):
     min_profit_factor: float = 1.2
     min_profit: float = 5
     min_trades: int = Field(default=8, ge=1, le=500)
-    max_combos: int = Field(default=180, ge=20, le=5000)
+    max_combos: int = Field(default=180, ge=20, le=20000)
+    scan_all: bool = False
     ha_len: Any = None
     ha_len2: Any = None
     osc_len: Any = None
@@ -97,6 +98,8 @@ def start_bias_optimize(body: OptimizeBody, _user: User = Depends(get_current_us
         raise HTTPException(400, "TradingView sessionid / sessionid_sign .env içinde yok")
     try:
         job_id = start_optimize_job(body.model_dump())
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
     except RuntimeError as exc:
         raise HTTPException(409, str(exc)) from exc
     return {"job_id": job_id, "status": "running"}

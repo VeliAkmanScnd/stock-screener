@@ -156,10 +156,21 @@ function syncOptGridHint() {
   const hint = document.querySelector("#optGridHint");
   if (!hint) return;
   const space = estimateOptGridSize();
-  const cap = Math.max(20, Math.min(5000, Math.round(optNum("#optMaxCombos", 180))));
+  const scanAll = !!document.querySelector("#optScanAll")?.checked;
+  const maxEl = document.querySelector("#optMaxCombos");
+  if (maxEl) maxEl.disabled = scanAll;
+  const cap = Math.max(20, Math.min(20000, Math.round(optNum("#optMaxCombos", 180))));
   const spaceTxt = Number(space).toLocaleString("tr-TR");
+  if (scanAll) {
+    if (space <= 20000) {
+      hint.textContent = `Tamamını tara: ${spaceTxt} setin hepsi denenecek.`;
+    } else {
+      hint.textContent = `Izgara ${spaceTxt} set. Tamamını tara en fazla 20.000 — adımı büyütün veya eksenleri kapatın.`;
+    }
+    return;
+  }
   if (space <= cap) {
-    hint.textContent = `Şu anki ızgara ${spaceTxt} set. Maks. ${cap} → tamamı taranır; sayıyı artırmak yeni alternatif eklemez. Daha fazla set için eksen kutularını açın veya adımı küçültün.`;
+    hint.textContent = `Şu anki ızgara ${spaceTxt} set. Maks. ${cap} → tamamı taranır. Daha fazla set için eksen açın, adımı küçültün veya Tamamını tara’yı işaretleyin.`;
   } else {
     hint.textContent = `Şu anki ızgara ${spaceTxt} olası set. Maks. ${cap} → ${cap} örnek alınır.`;
   }
@@ -468,7 +479,8 @@ function collectOptBody() {
     period: document.querySelector("#optPeriod")?.value || "60d",
     mode: document.querySelector("#optMode")?.value || "quick",
     side: document.querySelector("#optSide")?.value || "both",
-    max_combos: Math.max(20, Math.min(5000, Math.round(optNum("#optMaxCombos", 180)))),
+    max_combos: Math.max(20, Math.min(20000, Math.round(optNum("#optMaxCombos", 180)))),
+    scan_all: !!document.querySelector("#optScanAll")?.checked,
     min_win_rate: optNum("#optMinWinRate", 45),
     max_drawdown: optNum("#optMaxDd", 18),
     min_profit_factor: optNum("#optMinPf", 1.3),
@@ -559,6 +571,9 @@ function applyOptConfig(cfg) {
   set("#optMode", cfg.mode);
   set("#optSide", cfg.side);
   set("#optMaxCombos", cfg.max_combos);
+  if (document.querySelector("#optScanAll") && cfg.scan_all !== undefined) {
+    document.querySelector("#optScanAll").checked = !!cfg.scan_all;
+  }
   set("#optMinWinRate", cfg.min_win_rate);
   set("#optMaxDd", cfg.max_drawdown);
   set("#optMinPf", cfg.min_profit_factor);
@@ -595,6 +610,7 @@ function applyOptConfig(cfg) {
     set("#optRefRequireBar", ref.require_bar === true || ref.require_bar === "true" ? "true" : "false");
   }
   syncOptPeriodHint();
+  syncOptGridHint();
 }
 
 async function pollOptJob(jobId) {
@@ -639,6 +655,14 @@ async function startOptRun(e) {
   const body = collectOptBody();
   if (!body.symbol) {
     optStatus("Sembol gerekli.", "error");
+    return;
+  }
+  const space = estimateOptGridSize();
+  if (body.scan_all && space > 20000) {
+    optStatus(
+      `Izgara ${Number(space).toLocaleString("tr-TR")} set. Tamamını tara en fazla 20.000 — adımı büyütün veya eksenleri kapatın.`,
+      "error",
+    );
     return;
   }
   const btn = document.querySelector("#btnOptRun");
@@ -807,6 +831,7 @@ function initOptimize() {
   document.querySelector("#optTimeframe")?.addEventListener("change", syncOptPeriodHint);
   document.querySelector("#optForm")?.addEventListener("input", syncOptGridHint);
   document.querySelector("#optMaxCombos")?.addEventListener("change", syncOptGridHint);
+  document.querySelector("#optScanAll")?.addEventListener("change", syncOptGridHint);
   syncOptPeriodHint();
   syncOptGridHint();
   ["#optFilterPassed", "#optFilterWr", "#optFilterPf", "#optFilterProfit", "#optFilterDd", "#optFilterTrades", "#optFilterText"].forEach((id) => {

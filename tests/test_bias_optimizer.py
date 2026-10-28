@@ -2,7 +2,9 @@ import numpy as np
 import pandas as pd
 
 from app.services.bias_optimizer import (
+    MAX_COMBOS,
     build_grid,
+    combo_budget,
     combo_passes,
     expand_combos,
     grid_space,
@@ -282,9 +284,15 @@ def test_small_grid_enumerates_all_when_under_cap():
         }
     )
     space = grid_space(grid)
-    combos = expand_combos(grid, max_combos=5000, seed=1)
-    assert space <= 5000
+    combos = expand_combos(grid, max_combos=20000, seed=1)
+    assert space <= 20000
     assert len(combos) == space
+    assert combo_budget({"scan_all": True}, space) == space
+    try:
+        combo_budget({"scan_all": True}, MAX_COMBOS + 1)
+        raise AssertionError("expected ValueError")
+    except ValueError as exc:
+        assert "Tamamını tara" in str(exc)
 
 
 def test_capped_grid_keeps_start_and_classic():
