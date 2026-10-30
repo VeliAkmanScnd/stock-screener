@@ -145,25 +145,15 @@ def _confirmed_swings(low: pd.Series, high: pd.Series, swing: int) -> tuple[np.n
     return last_low, last_high
 
 
-def market_bias_series(
+def bias_signal_pack(
     df: pd.DataFrame,
     ha_len: int = 100,
     ha_len2: int = 100,
     osc_len: int = 7,
     ha_htf: str = "",
     chart_tf: str | None = None,
-    exit_mode: str = "Percent",
-    swing_bars: int = 4,
-    allow_long: bool = True,
-    allow_short: bool = True,
-    reverse_exit: bool = True,
-    require_bar: bool = True,
-    max_same: int = 2,
-    rr_mult: float = 1.0,
-    tp_pct: float = 2.0,
-    sl_pct: float = 1.0,
-    **_ignored,
-) -> dict[str, pd.Series]:
+) -> dict:
+    """HA/osc signals only — cacheable across exit-parameter combos."""
     o_src = df["Open"].astype(float)
     h_src = df["High"].astype(float)
     l_src = df["Low"].astype(float)
@@ -208,13 +198,60 @@ def market_bias_series(
     sell_strength = strong_bear & weak_bear.shift(1, fill_value=False)
     sell_signal = sell_switch | sell_strength
 
-    bull_bar = c_src > o_src
-    bear_bar = c_src < o_src
-    use_swing = str(exit_mode).strip().lower() in ("swing rr", "swing_rr")
-    swing_low, swing_high = _confirmed_swings(l_src, h_src, max(1, int(swing_bars)))
+    return {
+        "osc_bias": osc_bias,
+        "osc_smooth": osc_smooth,
+        "buy_signal": buy_signal,
+        "sell_signal": sell_signal,
+        "buy_switch": buy_switch,
+        "sell_switch": sell_switch,
+        "bullish_now": bullish_now,
+        "bearish_now": bearish_now,
+        "bull_bar": c_src > o_src,
+        "bear_bar": c_src < o_src,
+        "close": c_src.to_numpy(dtype=float),
+        "high": h_src.to_numpy(dtype=float),
+        "low": l_src.to_numpy(dtype=float),
+        "h_src": h_src,
+        "l_src": l_src,
+        "idx": df.index,
+    }
 
-    n = len(df)
-    idx = df.index
+
+def market_bias_from_pack(
+    pack: dict,
+    *,
+    exit_mode: str = "Percent",
+    swing_bars: int = 4,
+    allow_long: bool = True,
+    allow_short: bool = True,
+    reverse_exit: bool = True,
+    require_bar: bool = True,
+    max_same: int = 2,
+    rr_mult: float = 1.0,
+    tp_pct: float = 2.0,
+    sl_pct: float = 1.0,
+    swing_cache: dict[int, tuple] | None = None,
+    **_ignored,
+) -> dict[str, pd.Series]:
+    osc_bias = pack["osc_bias"]
+    osc_smooth = pack["osc_smooth"]
+    buy_signal = pack["buy_signal"]
+    sell_signal = pack["sell_signal"]
+    idx = pack["idx"]
+    close = pack["close"]
+    high = pack["high"]
+    low = pack["low"]
+    use_swing = str(exit_mode).strip().lower() in ("swing rr", "swing_rr")
+    swing_n = max(1, int(swing_bars))
+    if swing_cache is not None and swing_n in swing_cache:
+        swing_low, swing_high = swing_cache[swing_n]
+    else:
+        swing_low, swing_high = _confirmed_swings(pack["l_src"], pack["h_src"], swing_n)
+        if swing_cache is not None:
+            swing_cache[swing_n] = (swing_low, swing_high)
+
+    n = len(idx)
     long_go = np.zeros(n, dtype=bool)
     short_go = np.zeros(n, dtype=bool)
     veto_long = False
@@ -229,15 +266,12 @@ def market_bias_series(
     trades: list[dict] = []
     bs = buy_signal.to_numpy(dtype=bool)
     ss = sell_signal.to_numpy(dtype=bool)
-    bsw = buy_switch.to_numpy(dtype=bool)
-    ssw = sell_switch.to_numpy(dtype=bool)
-    bull_n = bullish_now.to_numpy(dtype=bool)
-    bear_n = bearish_now.to_numpy(dtype=bool)
-    bull_b = bull_bar.to_numpy(dtype=bool)
-    bear_b = bear_bar.to_numpy(dtype=bool)
-    close = c_src.to_numpy(dtype=float)
-    high = h_src.to_numpy(dtype=float)
-    low = l_src.to_numpy(dtype=float)
+    bsw = pack["buy_switch"].to_numpy(dtype=bool)
+    ssw = pack["sell_switch"].to_numpy(dtype=bool)
+    bull_n = pack["bullish_now"].to_numpy(dtype=bool)
+    bear_n = pack["bearish_now"].to_numpy(dtype=bool)
+    bull_b = pack["bull_bar"].to_numpy(dtype=bool)
+    bear_b = pack["bear_bar"].to_numpy(dtype=bool)
     rr = max(0.0, float(rr_mult))
     tp = max(0.0, float(tp_pct))
     sl = max(0.0, float(sl_pct))
@@ -372,6 +406,48 @@ def market_bias_series(
         "swing_high": pd.Series(swing_high, index=idx),
         "trades": trades,
     }
+
+
+def market_bias_series(
+    df: pd.DataFrame,
+    ha_len: int = 100,
+    ha_len2: int = 100,
+    osc_len: int = 7,
+    ha_htf: str = "",
+    chart_tf: str | None = None,
+    exit_mode: str = "Percent",
+    swing_bars: int = 4,
+    allow_long: bool = True,
+    allow_short: bool = True,
+    reverse_exit: bool = True,
+    require_bar: bool = True,
+    max_same: int = 2,
+    rr_mult: float = 1.0,
+    tp_pct: float = 2.0,
+    sl_pct: float = 1.0,
+    **_ignored,
+) -> dict[str, pd.Series]:
+    pack = bias_signal_pack(
+        df,
+        ha_len=ha_len,
+        ha_len2=ha_len2,
+        osc_len=osc_len,
+        ha_htf=ha_htf,
+        chart_tf=chart_tf,
+    )
+    return market_bias_from_pack(
+        pack,
+        exit_mode=exit_mode,
+        swing_bars=swing_bars,
+        allow_long=allow_long,
+        allow_short=allow_short,
+        reverse_exit=reverse_exit,
+        require_bar=require_bar,
+        max_same=max_same,
+        rr_mult=rr_mult,
+        tp_pct=tp_pct,
+        sl_pct=sl_pct,
+    )
 
 
 def summarize_bias_trades(trades: list[dict] | None, start_equity: float = 10000.0) -> dict:

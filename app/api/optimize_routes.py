@@ -105,6 +105,17 @@ def optimize_contracts(_user: User = Depends(get_current_user)):
     }
 
 
+class OptimizePlanBody(OptimizeBody):
+    symbol: str = "PLAN"
+
+
+@router.post("/plan")
+def optimize_plan(body: OptimizePlanBody, _user: User = Depends(get_current_user)):
+    from app.services.bias_optimizer import describe_search_plan
+
+    return describe_search_plan(body.model_dump())
+
+
 @router.post("/bias")
 def start_bias_optimize(body: OptimizeBody, _user: User = Depends(get_current_user)):
     from app.services.bias_optimizer import start_optimize_job

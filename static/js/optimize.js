@@ -7,6 +7,9 @@ let optJobId = null;
 let optLastJobId = null;
 let optSort = { key: "rank", dir: "asc" };
 let optReviewState = null;
+let optSearchPlan = null;
+let optPlanTimer = null;
+let optPlanSeq = 0;
 
 const OPT_SORT_DESC_DEFAULT = new Set([
   "win_rate",
@@ -166,28 +169,73 @@ function estimateOptGridSize() {
   return n;
 }
 
+function fmtOptInt(n) {
+  return Number(n || 0).toLocaleString("tr-TR");
+}
+
+function formatOptSearchPlan(plan) {
+  if (!plan) return "";
+  const space = fmtOptInt(plan.space);
+  const cap = fmtOptInt(plan.cap);
+  const scanAll = !!document.querySelector("#optScanAll")?.checked;
+  if (plan.mode !== "refine") {
+    if (scanAll) {
+      if (plan.space > 20000) {
+        return `Tamamını tara: ${space} set, 1 tur. 20.000’i geçiyor — başlamadan teyit istenir; süre saatler veya bir gün olabilir.`;
+      }
+      return `Tamamını tara: ${space} set, 1 tur.`;
+    }
+    return `Izgara ${space} set. Maks. ${cap} → 1 tur, tamamı taranır.`;
+  }
+  const steps = (plan.strides || []).join(" → ");
+  const tours = plan.tours || (plan.strides || []).length;
+  const extra = plan.extra_tours ? ` (+${plan.extra_tours} kaba tur)` : "";
+  const t1 = fmtOptInt(plan.tour1_space);
+  if (plan.tour1_sampled) {
+    return `Izgara ${space} set. ${tours} tur${extra}: ${steps}. Tur 1 hâlâ ${t1} → Sobol ${cap}. Izgarayı daraltabilirsiniz.`;
+  }
+  return `Izgara ${space} set. ${tours} tur${extra}: ${steps}. Tur 1 tam ${t1} set, sonra kazanan cepler.`;
+}
+
+function scheduleOptSearchPlan() {
+  if (optPlanTimer) clearTimeout(optPlanTimer);
+  optPlanTimer = setTimeout(() => {
+    optPlanTimer = null;
+    loadOptSearchPlan();
+  }, 280);
+}
+
+async function loadOptSearchPlan() {
+  const hint = document.querySelector("#optGridHint");
+  if (!hint) return;
+  const body = collectOptBody();
+  if (!body.symbol) body.symbol = "PLAN";
+  const seq = (optPlanSeq += 1);
+  try {
+    const res = await apiFetch("/api/optimize/plan", {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+    const plan = await res.json().catch(() => ({}));
+    if (seq !== optPlanSeq) return;
+    if (!res.ok) throw new Error(plan.detail || "Plan alınamadı");
+    optSearchPlan = plan;
+    hint.textContent = formatOptSearchPlan(plan);
+  } catch (_err) {
+    if (seq !== optPlanSeq) return;
+  }
+}
+
 function syncOptGridHint() {
   const hint = document.querySelector("#optGridHint");
   if (!hint) return;
-  const space = estimateOptGridSize();
   const scanAll = !!document.querySelector("#optScanAll")?.checked;
   const maxEl = document.querySelector("#optMaxCombos");
   if (maxEl) maxEl.disabled = scanAll;
-  const cap = Math.max(20, Math.min(20000, Math.round(optNum("#optMaxCombos", 180))));
-  const spaceTxt = Number(space).toLocaleString("tr-TR");
-  if (scanAll) {
-    if (space <= 20000) {
-      hint.textContent = `Tamamını tara: ${spaceTxt} setin hepsi denenecek.`;
-    } else {
-      hint.textContent = `Tamamını tara: ${spaceTxt} set. 20.000’i geçiyor — başlamadan teyit istenir; süre saatler veya bir gün olabilir.`;
-    }
-    return;
+  if (optSearchPlan) {
+    hint.textContent = formatOptSearchPlan(optSearchPlan);
   }
-  if (space <= cap) {
-    hint.textContent = `Şu anki ızgara ${spaceTxt} set. Maks. ${cap} → tamamı taranır. Daha fazla set için eksen açın, adımı küçültün veya Tamamını tara’yı işaretleyin.`;
-  } else {
-    hint.textContent = `Şu anki ızgara ${spaceTxt} olası set. Maks. ${cap} → ${cap} örnek alınır.`;
-  }
+  scheduleOptSearchPlan();
 }
 
 function collectOptFlags() {
@@ -450,9 +498,16 @@ function renderOptResults(payload, live) {
     title.textContent = `${optLastPayload.symbol || ""} sonuçları${liveBit}`;
   }
   if (hint) {
-    const comboBit = space > tested
-      ? `${tested} örnek / ${Number(space).toLocaleString("tr-TR")} olası`
-      : `${tested} kombinasyon`;
+    const refine = optLastPayload.refine;
+    let comboBit;
+    if (refine && refine.mode === "refine") {
+      const steps = (refine.strides || []).join("→");
+      comboBit = `${refine.tours || (refine.strides || []).length} tur (${steps}) · ${tested} set / ${fmtOptInt(space)} olası`;
+    } else if (space > tested) {
+      comboBit = `${tested} ${optLastPayload.sampling === "qmc" ? "Sobol/LHS örnek" : "örnek"} / ${fmtOptInt(space)} olası`;
+    } else {
+      comboBit = `${tested} kombinasyon`;
+    }
     const liveBit = optLastPayload.partial ? " · taranıyor" : "";
     hint.textContent = `${optLastPayload.bars || 0} bar · ${optLastPayload.from || ""} → ${optLastPayload.to || ""} · ${comboBit} · ${passed} eşik geçti${liveBit}`;
   }
@@ -1081,8 +1136,13 @@ async function startOptRun(e) {
   optJobId = null;
   optLastPayload = { results: [], partial: true };
   paintOptTable();
-  optStatus("Tarama başlatılıyor…");
-  setOptProgress(2, "Başlatılıyor…");
+  const planText = formatOptSearchPlan(optSearchPlan);
+  optStatus(planText || "Tarama başlatılıyor…");
+  if (optSearchPlan?.mode === "refine") {
+    setOptProgress(2, `Tur 1/${optSearchPlan.tours} (her ${(optSearchPlan.strides || [4])[0]}. değer)`);
+  } else {
+    setOptProgress(2, "Başlatılıyor…");
+  }
   try {
     const res = await apiFetch("/api/optimize/bias", {
       method: "POST",

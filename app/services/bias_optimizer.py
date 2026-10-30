@@ -19,7 +19,12 @@ import pandas as pd
 
 from app.services.bar_close import drop_unclosed_bar
 from app.services.borsapy_client import BACKTEST_PERIODS, backtest_period_days, coverage_note
-from app.services.pine_market_bias import market_bias_series, summarize_bias_trades
+from app.services.pine_market_bias import (
+    bias_signal_pack,
+    market_bias_from_pack,
+    market_bias_series,
+    summarize_bias_trades,
+)
 from app.utils.json_safe import json_safe
 
 logger = logging.getLogger(__name__)
@@ -36,6 +41,20 @@ MAX_COMBOS = 20000
 SCAN_ALL_MAX = 10_000_000
 RESULT_LIMIT = 500
 RANGE_AXIS_MAX = 400
+REFINE_BASE_STRIDES = (4, 2, 1)
+REFINE_MAX_STRIDE = 256
+REFINE_TOP = 12
+NUMERIC_REFINE_KEYS = (
+    "ha_len",
+    "ha_len2",
+    "osc_len",
+    "ha_htf",
+    "rr_mult",
+    "swing_bars",
+    "tp_pct",
+    "sl_pct",
+    "max_same",
+)
 ENGINE_KEYS = (
     "ha_len",
     "ha_len2",
@@ -352,6 +371,68 @@ def combo_budget(body: dict[str, Any], space: int) -> int:
     return max(20, min(MAX_COMBOS, int(body.get("max_combos") or 180)))
 
 
+_HALTON_PRIMES = (
+    2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61,
+)
+
+
+def _halton_perm(base: int, rng: random.Random) -> list[int]:
+    perm = list(range(base))
+    if base > 2:
+        tail = perm[1:]
+        rng.shuffle(tail)
+        perm = [0] + tail
+    return perm
+
+
+def _radical_inverse(index: int, base: int, perm: list[int]) -> float:
+    value = 0.0
+    f = 1.0 / base
+    n = int(index)
+    while n > 0:
+        value += perm[n % base] * f
+        n //= base
+        f /= base
+    return value
+
+
+def _qmc_index_rows(axis_sizes: list[int], n: int, seed: int) -> list[list[int]]:
+    """Scrambled Halton points mapped onto a mixed discrete grid (Sobol-like)."""
+    if n <= 0:
+        return []
+    sizes = [max(1, int(L)) for L in axis_sizes]
+    active = [j for j, L in enumerate(sizes) if L > 1]
+    rng = random.Random(seed)
+    primes = _HALTON_PRIMES[: max(1, len(active))]
+    perms = [_halton_perm(p, rng) for p in primes]
+    rows: list[list[int]] = []
+    for i in range(1, n + 1):
+        idxs = [0] * len(sizes)
+        for k, j in enumerate(active):
+            u = _radical_inverse(i, primes[k], perms[k])
+            idxs[j] = min(sizes[j] - 1, int(u * sizes[j]))
+        rows.append(idxs)
+    return rows
+
+
+def _lhs_index_rows(axis_sizes: list[int], n: int, rng: random.Random) -> list[list[int]]:
+    """Latin hypercube: each axis is stratified across the n samples."""
+    if n <= 0:
+        return []
+    sizes = [max(1, int(L)) for L in axis_sizes]
+    cols: list[list[int]] = []
+    for L in sizes:
+        order = list(range(n))
+        rng.shuffle(order)
+        col = [0] * n
+        for pos, rank in enumerate(order):
+            u = (rank + rng.random()) / n
+            col[pos] = min(L - 1, int(u * L))
+        cols.append(col)
+    d = len(sizes)
+    return [[cols[j][i] for j in range(d)] for i in range(n)]
+
+
 def expand_combos(grid: dict[str, list], max_combos: int, seed: int = 42) -> list[dict[str, Any]]:
     keys = list(ENGINE_KEYS)
     values = [list(grid.get(k) or [None]) for k in keys]
@@ -366,26 +447,35 @@ def expand_combos(grid: dict[str, list], max_combos: int, seed: int = 42) -> lis
         return [dict(zip(keys, row)) for row in itertools.product(*values)]
 
     n_axes = len(keys)
+    sizes = [len(vals) for vals in values]
     mids = [max(0, len(vals) // 2) for vals in values]
     ends = [len(vals) - 1 for vals in values]
     preferred = [_preferred_index(keys[j], values[j]) for j in range(n_axes)]
     seen: set[tuple[int, ...]] = set()
     out: list[dict[str, Any]] = []
 
-    def add(idxs: list[int]) -> None:
+    def add(idxs: list[int]) -> bool:
         clipped = [min(max(0, i), ends[j]) for j, i in enumerate(idxs)]
         key = tuple(clipped)
         if key in seen:
-            return
+            return False
         seen.add(key)
         out.append(_combo_from_indices(keys, values, clipped))
+        return True
 
     add([0] * n_axes)
     add(preferred)
     add(mids)
     add(ends)
-    sweep = max(9, min(80, cap // max(4, n_axes)))
+
+    remaining = cap - len(out)
+    n_active = sum(1 for L in sizes if L > 1) or 1
+    # Keep axis walks, but leave most of the budget for interior QMC/LHS.
+    sweep_budget = max(n_active * 4, remaining // 5)
+    sweep = max(5, min(80, sweep_budget // n_active))
     for j, vals in enumerate(values):
+        if len(out) >= cap:
+            return out[:cap]
         last = len(vals) - 1
         steps = min(len(vals), sweep)
         for s in range(steps):
@@ -394,11 +484,26 @@ def expand_combos(grid: dict[str, list], max_combos: int, seed: int = 42) -> lis
             add(idxs)
             if len(out) >= cap:
                 return out[:cap]
-    rng = random.Random(seed)
-    guard = 0
-    while len(out) < cap and guard < cap * 40:
-        guard += 1
-        add([rng.randrange(len(vals)) for vals in values])
+
+    need = cap - len(out)
+    if need > 0:
+        for row in _qmc_index_rows(sizes, need * 3 + 64, seed):
+            add(row)
+            if len(out) >= cap:
+                return out[:cap]
+        rng = random.Random(seed + 17)
+        extra = 0
+        while len(out) < cap and extra < 8:
+            extra += 1
+            batch = max(need, cap - len(out))
+            for row in _lhs_index_rows(sizes, batch, rng):
+                add(row)
+                if len(out) >= cap:
+                    return out[:cap]
+        guard = 0
+        while len(out) < cap and guard < cap * 40:
+            guard += 1
+            add([rng.randrange(L) for L in sizes])
     return out[:cap]
 
 
@@ -410,6 +515,209 @@ def iter_full_grid(grid: dict[str, list]) -> Iterator[dict[str, Any]]:
             values[i] = [None]
     for row in itertools.product(*values):
         yield dict(zip(keys, row))
+
+
+def coarsen_values(vals: list, stride: int) -> list:
+    if not vals:
+        return []
+    stride = max(1, int(stride))
+    if stride <= 1 or len(vals) <= 2:
+        return list(vals)
+    idxs = list(range(0, len(vals), stride))
+    last = len(vals) - 1
+    if idxs[-1] != last:
+        idxs.append(last)
+    return [vals[i] for i in idxs]
+
+
+def coarsen_grid(grid: dict[str, list], stride: int) -> dict[str, list]:
+    out: dict[str, list] = {}
+    for key in ENGINE_KEYS:
+        vals = list(grid.get(key) or [None])
+        if key in NUMERIC_REFINE_KEYS:
+            out[key] = coarsen_values(vals, stride)
+        else:
+            out[key] = vals
+    return out
+
+
+def refine_strides(grid: dict[str, list], cap: int) -> list[int]:
+    """4→2→1, plus 8 / 16 / … while the coarsest cartesian still exceeds cap."""
+    strides = list(REFINE_BASE_STRIDES)
+    cap = max(1, int(cap))
+    for _ in range(8):
+        if grid_space(coarsen_grid(grid, strides[0])) <= cap:
+            break
+        nxt = strides[0] * 2
+        if nxt > REFINE_MAX_STRIDE:
+            break
+        strides.insert(0, nxt)
+    return strides
+
+
+def _value_index(vals: list, value: Any) -> int:
+    for i, v in enumerate(vals):
+        if v == value:
+            return i
+        try:
+            if abs(float(v) - float(value)) < 1e-9:
+                return i
+        except (TypeError, ValueError):
+            continue
+    try:
+        nums = [float(x) for x in vals]
+        target = float(value)
+        return min(range(len(vals)), key=lambda i: abs(nums[i] - target))
+    except (TypeError, ValueError):
+        return 0
+
+
+def neighborhood_values(vals: list, centers: list, prev_stride: int, next_stride: int) -> list:
+    if not vals:
+        return []
+    if not centers:
+        return coarsen_values(vals, next_stride)
+    prev_stride = max(1, int(prev_stride))
+    next_stride = max(1, int(next_stride))
+    lo = len(vals) - 1
+    hi = 0
+    center_idxs: list[int] = []
+    for c in centers:
+        i = _value_index(vals, c)
+        center_idxs.append(i)
+        lo = min(lo, max(0, i - prev_stride))
+        hi = max(hi, min(len(vals) - 1, i + prev_stride))
+    keep = set(center_idxs)
+    start = lo - (lo % next_stride)
+    for i in range(max(0, start), hi + 1, next_stride):
+        if lo <= i <= hi:
+            keep.add(i)
+    return [vals[i] for i in sorted(keep)]
+
+
+def _seed_axis_value(row: dict[str, Any], key: str) -> Any:
+    params = row.get("params") if isinstance(row.get("params"), dict) else row
+    aliases = {
+        "rr_mult": ("rr_mult", "rrMult"),
+        "swing_bars": ("swing_bars", "swingBars"),
+        "exit_mode": ("exit_mode", "exitMode"),
+        "max_same": ("max_same", "maxSame"),
+    }
+    for name in aliases.get(key, (key,)):
+        if name in params and params[name] is not None:
+            val = params[name]
+            if key == "ha_htf":
+                return str(val)
+            return val
+    return None
+
+
+def neighborhood_grid(
+    full: dict[str, list],
+    seeds: list[dict[str, Any]],
+    prev_stride: int,
+    next_stride: int,
+) -> dict[str, list]:
+    out: dict[str, list] = {}
+    for key in ENGINE_KEYS:
+        vals = list(full.get(key) or [None])
+        if key not in NUMERIC_REFINE_KEYS or len(vals) <= 1:
+            out[key] = vals
+            continue
+        centers = []
+        for seed in seeds:
+            val = _seed_axis_value(seed, key)
+            if val is not None:
+                centers.append(val)
+        out[key] = neighborhood_values(vals, centers, prev_stride, next_stride)
+    return out
+
+
+def combos_for_grid(
+    grid: dict[str, list],
+    cap: int,
+    seed: int = 42,
+) -> tuple[list[dict[str, Any]], int, bool]:
+    space = grid_space(grid)
+    if space <= cap:
+        return list(iter_full_grid(grid)), space, False
+    listed = expand_combos(grid, cap, seed=seed)
+    return listed, len(listed), True
+
+
+def describe_search_plan(body: dict[str, Any]) -> dict[str, Any]:
+    grid = build_grid(body)
+    space = grid_space(grid)
+    scan_all = bool(body.get("scan_all"))
+    cap = max(20, min(MAX_COMBOS, int(body.get("max_combos") or 180)))
+    if scan_all:
+        return {
+            "mode": "full",
+            "tours": 1,
+            "strides": [1],
+            "space": space,
+            "cap": cap,
+            "tour1_space": space,
+            "tour1_sampled": False,
+            "extra_tours": 0,
+        }
+    if space <= cap:
+        return {
+            "mode": "full",
+            "tours": 1,
+            "strides": [1],
+            "space": space,
+            "cap": cap,
+            "tour1_space": space,
+            "tour1_sampled": False,
+            "extra_tours": 0,
+        }
+    strides = refine_strides(grid, cap)
+    tour1 = grid_space(coarsen_grid(grid, strides[0]))
+    return {
+        "mode": "refine",
+        "tours": len(strides),
+        "strides": strides,
+        "space": space,
+        "cap": cap,
+        "tour1_space": tour1,
+        "tour1_sampled": tour1 > cap,
+        "extra_tours": max(0, len(strides) - len(REFINE_BASE_STRIDES)),
+    }
+
+
+def pick_refine_seeds(found: dict[str, Any], n: int = REFINE_TOP) -> list[dict[str, Any]]:
+    rows = [r for r in (found.get("results") or []) if r.get("tag") != "referans"]
+    return rows[: max(1, int(n))]
+
+
+def _strip_rank(row: dict[str, Any]) -> dict[str, Any]:
+    return {k: v for k, v in row.items() if k != "rank"}
+
+
+def _assemble_found(
+    *,
+    tested: int,
+    passed: int,
+    errors: int,
+    first_error: str,
+    cancelled: bool,
+    partial: bool,
+    refs: list[dict[str, Any]],
+    rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    ranked = _ranked_results([_strip_rank(r) for r in refs], [_strip_rank(r) for r in rows])
+    return {
+        "tested": tested,
+        "passed": passed,
+        "errors": errors,
+        "error": first_error or None,
+        "cancelled": cancelled,
+        "partial": partial,
+        "reference": next((r for r in ranked if r.get("tag") == "referans"), None),
+        "best": next((r for r in ranked if r.get("passed") and r.get("tag") != "referans"), None),
+        "results": ranked,
+    }
 
 
 def _with_reference(
@@ -812,6 +1120,27 @@ def _ranked_results(refs: list[dict[str, Any]], buf: list[dict[str, Any]]) -> li
     return ranked
 
 
+def _ha_sort_key(params: dict[str, Any]) -> tuple:
+    try:
+        return (
+            int(params.get("ha_len") or 0),
+            int(params.get("ha_len2") or 0),
+            int(params.get("osc_len") or 0),
+            str(params.get("ha_htf") or ""),
+        )
+    except (TypeError, ValueError):
+        return (0, 0, 0, "")
+
+
+def _order_combos_for_cache(combos: Iterable[dict[str, Any]]) -> Iterable[dict[str, Any]]:
+    if not isinstance(combos, (list, tuple)):
+        return combos
+    tagged = [c for c in combos if str(c.get("_tag") or "") == "referans"]
+    rest = [c for c in combos if str(c.get("_tag") or "") != "referans"]
+    rest.sort(key=_ha_sort_key)
+    return tagged + rest
+
+
 def search_bias_params(
     df,
     *,
@@ -827,8 +1156,9 @@ def search_bias_params(
     frame = prepare_backtest_ohlcv(df)
     if frame is None or frame.empty:
         raise RuntimeError("OHLCV hazırlanamadı")
+    ordered = _order_combos_for_cache(combos)
     try:
-        planned = int(total) if total is not None else len(combos)  # type: ignore[arg-type]
+        planned = int(total) if total is not None else len(ordered)  # type: ignore[arg-type]
     except TypeError:
         planned = 0
     refs: list[dict[str, Any]] = []
@@ -841,6 +1171,9 @@ def search_bias_params(
     started = time.monotonic()
     last_snap = 0.0
     step = _progress_step(planned)
+    pack = None
+    pack_key: tuple | None = None
+    swing_cache: dict[int, tuple] = {}
 
     def trim_buf() -> None:
         if len(buf) <= RESULT_LIMIT:
@@ -868,7 +1201,7 @@ def search_bias_params(
             }
         )
 
-    for i, params in enumerate(combos, start=1):
+    for i, params in enumerate(ordered, start=1):
         if should_stop and should_stop():
             cancelled = True
             break
@@ -876,7 +1209,24 @@ def search_bias_params(
         passed = False
         try:
             engine = _engine_typed(params)
-            series = market_bias_series(frame, chart_tf=chart_tf, **engine)
+            key = (
+                engine["ha_len"],
+                engine["ha_len2"],
+                engine["osc_len"],
+                engine["ha_htf"],
+                chart_tf,
+            )
+            if pack is None or key != pack_key:
+                pack = bias_signal_pack(
+                    frame,
+                    ha_len=engine["ha_len"],
+                    ha_len2=engine["ha_len2"],
+                    osc_len=engine["osc_len"],
+                    ha_htf=engine["ha_htf"],
+                    chart_tf=chart_tf,
+                )
+                pack_key = key
+            series = market_bias_from_pack(pack, swing_cache=swing_cache, **engine)
             metrics = _sanitize_metrics(summarize_bias_trades(series.get("trades")))
             passed = combo_passes(metrics, filters)
             row = {
@@ -983,13 +1333,9 @@ def run_bias_optimize(
     grid = build_grid(body)
     space = grid_space(grid)
     max_combos = combo_budget(body, space)
-    if body.get("scan_all") or space <= max_combos:
-        combos: Iterable[dict[str, Any]] = iter_full_grid(grid)
-        planned = space
-    else:
-        listed = expand_combos(grid, max_combos, seed=int(body.get("seed") or 42))
-        combos = listed
-        planned = len(listed)
+    plan = describe_search_plan(body)
+    seed = int(body.get("seed") or 42)
+    sampling = str(plan.get("mode") or "full")
 
     if on_progress:
         on_progress("downloading", 0, 1, f"{symbol} {timeframe} indiriliyor")
@@ -1002,9 +1348,6 @@ def run_bias_optimize(
         raise OptimizeCancelled("Tarama durduruldu")
 
     reference = parse_reference(body)
-    if reference:
-        combos = _with_reference(combos, reference)
-        planned += 1
     filters = {
         "min_win_rate": float(body.get("min_win_rate") or 0),
         "max_drawdown": float(body.get("max_drawdown") if body.get("max_drawdown") is not None else 100),
@@ -1014,6 +1357,7 @@ def run_bias_optimize(
     }
     start = df.index[0]
     end = df.index[-1]
+    tour_stats: list[dict[str, Any]] = []
     meta = {
         "symbol": symbol,
         "timeframe": timeframe,
@@ -1023,37 +1367,187 @@ def run_bias_optimize(
         "to": end.isoformat() if hasattr(end, "isoformat") else str(end),
         "filters": filters,
         "grid_size": space,
+        "sampling": sampling,
+        "refine": plan,
         "coverage_note": coverage_note(timeframe, period, (end - start).days if hasattr(end - start, "days") else 0),
     }
+
+    acc_tested = 0
+    acc_passed = 0
+    acc_errors = 0
+    acc_error = ""
+    acc_refs: list[dict[str, Any]] = []
+    acc_rows: list[dict[str, Any]] = []
+    seen_sigs: set[tuple] = set()
+    cancelled = False
+    planned_total = max(1, int(plan.get("tours") or 1)) * 1000
+
+    def snapshot_acc(*, partial: bool, cancelled_flag: bool = False) -> dict[str, Any]:
+        return _assemble_found(
+            tested=acc_tested,
+            passed=acc_passed,
+            errors=acc_errors,
+            first_error=acc_error,
+            cancelled=cancelled_flag,
+            partial=partial,
+            refs=acc_refs,
+            rows=acc_rows,
+        )
 
     def emit_partial(found: dict[str, Any]) -> None:
         if not on_partial:
             return
-        on_partial({**meta, "combo_count": int(found.get("tested") or planned), **found})
+        on_partial({**meta, "combo_count": int(found.get("tested") or acc_tested), "tour_stats": tour_stats, **found})
 
-    if on_progress:
-        on_progress(
-            "searching",
-            0,
-            planned,
-            _search_progress_label(0, planned, space, pct=0),
+    def run_one_pass(
+        combos: Iterable[dict[str, Any]],
+        planned: int,
+        grid_size: int,
+        progress_cb: ProgressCallback | None,
+    ) -> dict[str, Any]:
+        prev_tested = acc_tested
+        prev_passed = acc_passed
+        prev_errors = acc_errors
+        prev_rows = list(acc_rows)
+        prev_refs = list(acc_refs)
+
+        def on_snap(snap: dict[str, Any]) -> None:
+            live_rows = prev_rows + [r for r in (snap.get("results") or []) if r.get("tag") != "referans"]
+            live_refs = list(prev_refs)
+            if snap.get("reference"):
+                live_refs = [snap["reference"]]
+            emit_partial(
+                _assemble_found(
+                    tested=prev_tested + int(snap.get("tested") or 0),
+                    passed=prev_passed + int(snap.get("passed") or 0),
+                    errors=prev_errors + int(snap.get("errors") or 0),
+                    first_error=acc_error or str(snap.get("error") or ""),
+                    cancelled=bool(snap.get("cancelled")),
+                    partial=True,
+                    refs=live_refs,
+                    rows=live_rows,
+                )
+            )
+
+        return search_bias_params(
+            df,
+            chart_tf=timeframe,
+            combos=combos,
+            filters=filters,
+            on_progress=progress_cb,
+            grid_size=grid_size,
+            total=planned,
+            should_stop=should_stop,
+            on_snapshot=on_snap if on_partial else None,
         )
-    found = search_bias_params(
-        df,
-        chart_tf=timeframe,
-        combos=combos,
-        filters=filters,
-        on_progress=on_progress,
-        grid_size=space,
-        total=planned,
-        should_stop=should_stop,
-        on_snapshot=emit_partial if on_partial else None,
-    )
+
+    def absorb(found: dict[str, Any]) -> None:
+        nonlocal acc_tested, acc_passed, acc_errors, acc_error, cancelled
+        acc_tested += int(found.get("tested") or 0)
+        acc_passed += int(found.get("passed") or 0)
+        acc_errors += int(found.get("errors") or 0)
+        if not acc_error and found.get("error"):
+            acc_error = str(found.get("error"))
+        cancelled = bool(cancelled or found.get("cancelled"))
+        if found.get("reference") and not acc_refs:
+            acc_refs.append(found["reference"])
+        acc_rows.extend(r for r in (found.get("results") or []) if r.get("tag") != "referans")
+
+    if sampling != "refine":
+        combos: Iterable[dict[str, Any]] = iter_full_grid(grid)
+        planned = space
+        if reference:
+            combos = _with_reference(combos, reference)
+            planned += 1
+        if on_progress:
+            on_progress("searching", 0, planned, _search_progress_label(0, planned, space, pct=0))
+        found = run_one_pass(combos, planned, space, on_progress)
+        absorb(found)
+    else:
+        strides = [int(s) for s in (plan.get("strides") or REFINE_BASE_STRIDES)]
+        n_tours = max(1, len(strides))
+        current_grid = coarsen_grid(grid, strides[0])
+        acc_state = {"results": []}
+        for t, stride in enumerate(strides):
+            if stopped():
+                cancelled = True
+                break
+            if t > 0:
+                seeds = pick_refine_seeds(acc_state)
+                if not seeds:
+                    break
+                current_grid = neighborhood_grid(grid, seeds, strides[t - 1], stride)
+            listed, planned, sampled = combos_for_grid(current_grid, max_combos, seed=seed + t)
+            fresh: list[dict[str, Any]] = []
+            for combo in listed:
+                try:
+                    sig = _combo_sig(combo)
+                except (TypeError, ValueError, KeyError):
+                    fresh.append(combo)
+                    continue
+                if sig in seen_sigs:
+                    continue
+                seen_sigs.add(sig)
+                fresh.append(combo)
+            if t == 0 and reference:
+                fresh = list(_with_reference(fresh, reference))
+                planned = len(fresh)
+            if not fresh:
+                tour_stats.append(
+                    {"tour": t + 1, "stride": stride, "space": grid_space(current_grid), "tested": 0, "sampled": sampled}
+                )
+                continue
+            tour_space = grid_space(current_grid)
+
+            def tour_progress(
+                phase: str,
+                done: int,
+                total: int,
+                detail: str = "",
+                *,
+                tour_i: int = t,
+                tour_stride: int = stride,
+                tour_sampled: bool = sampled,
+                tour_grid: int = tour_space,
+                tour_n: int = n_tours,
+            ) -> None:
+                if not on_progress:
+                    return
+                weight = 1000
+                overall_done = tour_i * weight + int(weight * done / max(1, total))
+                sobol = " · Sobol" if tour_sampled else ""
+                msg = (
+                    f"Tur {tour_i + 1}/{tour_n} (her {tour_stride}. değer){sobol} · "
+                    f"{detail or _search_progress_label(done, total, tour_grid)}"
+                )
+                on_progress(phase, overall_done, tour_n * weight, msg)
+
+            if on_progress:
+                tour_progress("searching", 0, max(1, len(fresh)), f"0/{len(fresh)}")
+            found = run_one_pass(fresh, len(fresh), tour_space, tour_progress)
+            absorb(found)
+            acc_state = snapshot_acc(partial=True, cancelled_flag=cancelled)
+            tour_stats.append(
+                {
+                    "tour": t + 1,
+                    "stride": stride,
+                    "space": tour_space,
+                    "tested": int(found.get("tested") or 0),
+                    "sampled": sampled,
+                }
+            )
+            emit_partial(acc_state)
+            if cancelled:
+                break
+        planned_total = n_tours * 1000
+        found = snapshot_acc(partial=False, cancelled_flag=cancelled)
+
+    final = snapshot_acc(partial=False, cancelled_flag=cancelled)
     if on_progress:
-        if found.get("cancelled"):
-            on_progress("cancelled", found["tested"], planned, "Durduruldu")
+        if final.get("cancelled"):
+            on_progress("cancelled", acc_tested, max(acc_tested, 1), "Durduruldu")
         else:
-            on_progress("done", found["tested"], found["tested"], "Tamamlandı")
+            on_progress("done", planned_total, planned_total, "Tamamlandı")
     return json_safe({
         "symbol": symbol,
         "timeframe": timeframe,
@@ -1062,10 +1556,12 @@ def run_bias_optimize(
         "from": start.isoformat() if hasattr(start, "isoformat") else str(start),
         "to": end.isoformat() if hasattr(end, "isoformat") else str(end),
         "filters": filters,
-        "combo_count": int(found.get("tested") or planned),
+        "combo_count": acc_tested,
         "grid_size": space,
+        "sampling": sampling,
+        "refine": {**plan, "tour_stats": tour_stats},
         "coverage_note": coverage_note(timeframe, period, (end - start).days if hasattr(end - start, "days") else 0),
-        **found,
+        **final,
     })
 
 

@@ -7,16 +7,26 @@ from app.services.bias_optimizer import (
     build_grid,
     build_strategy_chart,
     chart_from_frame,
+    coarsen_grid,
+    coarsen_values,
     combo_budget,
     combo_passes,
+    describe_search_plan,
     expand_combos,
     grid_space,
+    neighborhood_grid,
+    neighborhood_values,
     numeric_span,
     parse_reference,
+    refine_strides,
     search_bias_params,
 )
 from app.services.borsapy_client import coverage_note
 from app.services.pine_market_bias import market_bias_series, summarize_bias_trades
+
+
+def _combo_key(combo: dict) -> tuple:
+    return tuple(sorted(combo.items()))
 
 
 def _wave_frame(n: int = 480) -> pd.DataFrame:
@@ -449,8 +459,8 @@ def test_small_grid_enumerates_all_when_under_cap():
         assert "Tamamını tara" in str(exc)
 
 
-def test_capped_grid_keeps_start_and_classic():
-    grid = build_grid(
+def _wide_sample_grid():
+    return build_grid(
         {
             "mode": "quick",
             "ha_len": {"start": 48, "stop": 200, "step": 1},
@@ -466,10 +476,120 @@ def test_capped_grid_keeps_start_and_classic():
             "optimize": {"exit_mode": False, "require_bar": False, "ha_htf": False},
         }
     )
+
+
+def test_capped_grid_keeps_start_and_classic():
+    grid = _wide_sample_grid()
     combos = expand_combos(grid, max_combos=180, seed=1)
     assert len(combos) == 180
     assert any(c["ha_len"] == 48 and c["ha_len2"] == 55 and c["osc_len"] == 5 for c in combos)
     assert any(c["ha_len"] == 100 and c["ha_len2"] == 100 and c["osc_len"] == 7 for c in combos)
+
+
+def test_qmc_sample_is_deterministic_and_spreads():
+    grid = _wide_sample_grid()
+    a = expand_combos(grid, max_combos=180, seed=7)
+    b = expand_combos(grid, max_combos=180, seed=7)
+    assert a == b
+    assert len({_combo_key(c) for c in a}) == 180
+    ha = [c["ha_len"] for c in a]
+    bins = [0] * 8
+    for val in ha:
+        t = (val - 48) / (200 - 48)
+        bins[min(7, max(0, int(t * 8)))] += 1
+    assert min(bins) >= 1
+    assert any(
+        c["ha_len"] not in (48, 100, 200)
+        and c["ha_len2"] not in (55, 100, 200)
+        and c["osc_len"] not in (5, 7, 20)
+        for c in a
+    )
+
+
+def test_qmc_sample_fills_joint_ha_space():
+    grid = _wide_sample_grid()
+    qmc = expand_combos(grid, max_combos=400, seed=3)
+    assert len(qmc) == 400
+    pairs = {(c["ha_len"], c["ha_len2"]) for c in qmc}
+    assert len(pairs) >= 280
+
+
+def test_coarsen_keeps_endpoints_and_stride():
+    vals = list(range(48, 201))
+    out = coarsen_values(vals, 4)
+    assert out[0] == 48
+    assert out[-1] == 200
+    assert out[1] - out[0] == 4
+    assert 64 in out
+
+
+def test_wide_grid_adds_coarse_tours_until_cap():
+    grid = _wide_sample_grid()
+    strides = refine_strides(grid, 20000)
+    assert strides[-3:] == [4, 2, 1]
+    assert strides[0] >= 8
+    assert grid_space(coarsen_grid(grid, strides[0])) <= 20000 or strides[0] >= 256
+    plan = describe_search_plan(
+        {
+            "mode": "quick",
+            "max_combos": 20000,
+            "ha_len": {"start": 48, "stop": 200, "step": 1},
+            "ha_len2": {"start": 55, "stop": 200, "step": 1},
+            "osc_len": {"start": 5, "stop": 20, "step": 1},
+            "rr_mult": {"start": 1, "stop": 2, "step": 0.1},
+            "swing_bars": {"start": 4, "stop": 30, "step": 1},
+            "max_same": {"start": 1, "stop": 6, "step": 1},
+            "ha_htf": {"start": 30, "stop": 30, "step": 15},
+            "exit_mode": "Swing RR",
+            "reverse_exit": "true, false",
+            "require_bar": "false",
+            "optimize": {"exit_mode": False, "require_bar": False, "ha_htf": False},
+        }
+    )
+    assert plan["mode"] == "refine"
+    assert plan["tours"] == len(plan["strides"])
+    assert plan["extra_tours"] >= 1
+    assert plan["strides"][-1] == 1
+
+
+def test_neighborhood_stays_on_next_stride():
+    vals = list(range(48, 201))
+    around = neighborhood_values(vals, [64], prev_stride=4, next_stride=2)
+    assert 64 in around
+    assert all((v - 48) % 2 == 0 or v == 64 for v in around)
+    assert min(around) >= 60
+    assert max(around) <= 68
+    grid = _wide_sample_grid()
+    seeds = [{"params": {"ha_len": 64, "ha_len2": 100, "osc_len": 7, "rrMult": 1.0, "swingBars": 8, "maxSame": 1, "ha_htf": "30"}}]
+    nb = neighborhood_grid(grid, seeds, 4, 2)
+    assert 64 in nb["ha_len"]
+    assert nb["reverse_exit"] == grid["reverse_exit"]
+
+
+def test_small_grid_plan_is_single_full_tour():
+    plan = describe_search_plan(
+        {
+            "mode": "quick",
+            "max_combos": 20000,
+            "ha_len": {"start": 48, "stop": 80, "step": 16},
+            "ha_len2": {"start": 72, "stop": 96, "step": 24},
+            "osc_len": {"start": 7, "stop": 11, "step": 4},
+            "exit_mode": "Swing RR",
+            "optimize": {
+                "ha_htf": False,
+                "exit_mode": False,
+                "rr_mult": False,
+                "swing_bars": False,
+                "tp_pct": False,
+                "sl_pct": False,
+                "max_same": False,
+                "reverse_exit": False,
+                "require_bar": False,
+            },
+        }
+    )
+    assert plan["mode"] == "full"
+    assert plan["tours"] == 1
 
 
 def test_search_raises_when_every_combo_fails():
