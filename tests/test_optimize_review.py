@@ -71,16 +71,27 @@ def test_build_symbol_review_keeps_top_five_and_extras():
     assert "AEFES alarm" in out["note"]
 
 
-def test_build_symbol_review_without_alarm_uses_passed_sets():
-    result = {
-        "symbol": "SISE1!",
-        "results": [_row(passed=True), _row(rank=2, passed=False, profit_factor=0.8)],
-        "reference": None,
-    }
+def test_build_symbol_review_without_alarm_proposes_five_sets():
+    rows = []
+    for i in range(8):
+        rows.append(
+            _row(
+                rank=i + 1,
+                passed=i < 2,
+                profit_factor=2.2 - i * 0.1,
+                win_rate=70 - i,
+                net_profit_pct=24 - i,
+            )
+        )
+    rows.append(_row(rank=99, passed=False, trades=0, profit_factor=9, win_rate=99, net_profit_pct=99))
+    result = {"symbol": "SISE1!", "results": rows, "reference": None}
     out = build_symbol_review(result, None)
     assert out["alarm"] is None
-    assert len(out["recommendations"]) == 1
-    assert "alarmında yok" in out["note"]
+    assert len(out["recommendations"]) == REVIEW_TOP
+    assert all(r["trades"] for r in out["recommendations"])
+    assert out["recommendations"][0]["passed"] is True
+    assert "alarm kurma" in out["note"]
+    assert any("yeni alarm" in (r["reasons"][0] if r["reasons"] else "") for r in out["recommendations"])
 
 
 def test_pine_overrides_and_reference_roundtrip():

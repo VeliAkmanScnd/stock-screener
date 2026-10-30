@@ -1278,6 +1278,7 @@ function renderOptReviewPay(item) {
   const extras = item.extras || [];
   const alarm = item.alarm;
   const title = `${item.symbol || ""}${item.name ? ` · ${item.name}` : ""}`;
+  const recLabel = alarm ? `${recs.length} revizyon` : `${recs.length} alarm önerisi`;
   const alarmLabel = alarm ? `alarm «${alarm.name || alarm.id}»` : "alarm yok";
   const extraBlock = extras.length
     ? `<details class="opt-rev-extra"><summary>${extras.length} diğer set</summary>${extras.map(renderOptReviewRec).join("")}</details>`
@@ -1288,7 +1289,7 @@ function renderOptReviewPay(item) {
   return `<article class="opt-rev-pay">
     <div class="opt-rev-pay-head">
       <h3>${optEsc(title)}</h3>
-      <span class="opt-rev-pay-meta">${recs.length} öneri · ${optEsc(alarmLabel)}${item.tested ? ` · ${item.tested} set` : ""}</span>
+      <span class="opt-rev-pay-meta">${optEsc(recLabel)} · ${optEsc(alarmLabel)}${item.tested ? ` · ${item.tested} set` : ""}</span>
     </div>
     ${body}
   </article>`;

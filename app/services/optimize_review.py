@@ -221,7 +221,7 @@ def alarm_for_contract(db, contract: str, timeframe: str | None = None) -> dict[
 
 def improvement_reasons(row: dict[str, Any], ref: dict[str, Any] | None) -> list[str]:
     if not ref:
-        return ["Bu pay için kayıtlı alarm yok; en iyi setler önerildi"] if row.get("passed") else []
+        return new_alarm_reasons(row)
     reasons: list[str] = []
     pf, rpf = float(row.get("profit_factor") or 0), float(ref.get("profit_factor") or 0)
     wr, rwr = float(row.get("win_rate") or 0), float(ref.get("win_rate") or 0)
@@ -238,6 +238,38 @@ def improvement_reasons(row: dict[str, Any], ref: dict[str, Any] | None) -> list
     if dd > rdd + 3:
         return []
     return reasons
+
+
+def new_alarm_reasons(row: dict[str, Any]) -> list[str]:
+    if int(row.get("trades") or 0) <= 0:
+        return []
+    if row.get("passed"):
+        return ["Eşikleri geçti — yeni alarm için uygun"]
+    return ["Taramanın en iyi seti — yeni alarm adayı"]
+
+
+def _sort_proposals(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return sorted(
+        rows,
+        key=lambda r: (
+            not r["passed"],
+            -len(r.get("reasons") or []),
+            -float(r.get("profit_factor") or 0),
+            -float(r.get("net_profit_pct") or 0),
+            -float(r.get("win_rate") or 0),
+        ),
+    )
+
+
+def propose_new_alarm_sets(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Rank scan rows into alarm-create suggestions when the pay has no alarm."""
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        reasons = new_alarm_reasons(row)
+        if not reasons:
+            continue
+        out.append(_compact_row(row, reasons))
+    return _sort_proposals(out)
 
 
 def _compact_row(row: dict[str, Any], reasons: list[str]) -> dict[str, Any]:
@@ -259,31 +291,28 @@ def _compact_row(row: dict[str, Any], reasons: list[str]) -> dict[str, Any]:
 def build_symbol_review(result: dict[str, Any], alarm: dict[str, Any] | None) -> dict[str, Any]:
     ref = result.get("reference") if isinstance(result.get("reference"), dict) else None
     rows = [r for r in (result.get("results") or []) if isinstance(r, dict) and r.get("tag") != "referans"]
-    improved: list[dict[str, Any]] = []
-    for row in rows:
-        reasons = improvement_reasons(row, ref)
-        if not reasons:
-            continue
-        improved.append(_compact_row(row, reasons))
-    improved.sort(
-        key=lambda r: (
-            not r["passed"],
-            -len(r["reasons"]),
-            -float(r.get("profit_factor") or 0),
-            -float(r.get("net_profit_pct") or 0),
-        )
-    )
-    note = ""
-    if alarm and ref:
-        if not improved:
-            note = "Mevcut alarm bu örneklemde önde veya eşit; zorunlu revizyon yok."
+    if not alarm:
+        improved = propose_new_alarm_sets(rows)
+        if improved:
+            note = "Kayıtlı alarm yok; tarama sonuçlarından alarm kurma önerileri üretildi."
         else:
-            note = f"Alarm «{alarm.get('name') or alarm.get('id')}» ile kıyaslandı."
-    elif not alarm:
-        note = "Bu pay bir Market Bias alarmında yok; taramanın en iyi setleri listelendi."
-        if not improved:
-            fallback = [_compact_row(r, ["En iyi tarama seti"]) for r in rows[: REVIEW_TOP + REVIEW_EXTRA]]
-            improved = fallback
+            note = "Kayıtlı alarm yok ve tarama önerilebilir set üretmedi."
+    else:
+        improved = []
+        for row in rows:
+            reasons = improvement_reasons(row, ref)
+            if not reasons:
+                continue
+            improved.append(_compact_row(row, reasons))
+        improved = _sort_proposals(improved)
+        if ref:
+            if not improved:
+                note = "Mevcut alarm bu örneklemde önde veya eşit; zorunlu revizyon yok."
+            else:
+                note = f"Alarm «{alarm.get('name') or alarm.get('id')}» ile kıyaslandı."
+        else:
+            improved = propose_new_alarm_sets(rows)
+            note = "Alarm kaydı var ama karşılaştırılacak parametre yok; tarama setleri alarm önerisi olarak listelendi."
     return {
         "symbol": result.get("symbol"),
         "name": result.get("name") or "",
