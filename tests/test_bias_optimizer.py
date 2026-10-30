@@ -568,7 +568,7 @@ def test_neighborhood_stays_on_next_stride():
     assert nb["reverse_exit"] == grid["reverse_exit"]
 
 
-def test_refine_seeds_prefer_profit_times_wr_and_diverse_regions():
+def test_refine_seeds_take_profit_and_wr_groups():
     found = {
         "results": [
             {
@@ -609,13 +609,15 @@ def test_refine_seeds_prefer_profit_times_wr_and_diverse_regions():
         ]
     }
     assert refine_combo_score(found["results"][1]) > refine_combo_score(found["results"][0])
-    seeds = pick_refine_seeds(found, n=3)
+    seeds = pick_refine_seeds(found, n=4)
     has = [s["params"]["ha_len"] for s in seeds]
-    assert has[0] == 70
-    assert 71 not in has
+    assert 70 in has
     assert 56 in has
-    assert 64 in has
+    assert 71 not in has
     assert 100 not in has
+    pair = pick_refine_seeds(found, n=2)
+    pair_has = {s["params"]["ha_len"] for s in pair}
+    assert pair_has == {70, 56}
 
 
 def test_small_grid_plan_is_single_full_tour():

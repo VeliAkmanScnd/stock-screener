@@ -703,34 +703,61 @@ def _seed_region(row: dict[str, Any]) -> tuple:
     return (ha // 8, ha2 // 8, round(rr * 2) / 2, swing // 4)
 
 
+def _take_unique_regions(
+    rows: list[dict[str, Any]],
+    n: int,
+    seen: set[tuple],
+) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        if len(out) >= n:
+            break
+        region = _seed_region(row)
+        if region in seen:
+            continue
+        seen.add(region)
+        out.append(row)
+    return out
+
+
 def pick_refine_seeds(found: dict[str, Any], n: int = REFINE_TOP) -> list[dict[str, Any]]:
-    n = max(1, int(n))
+    """Two groups: highest-profit regions and highest-WR regions, then fill by kâr×WR."""
+    n = max(2, int(n))
     rows = [r for r in (found.get("results") or []) if r.get("tag") != "referans"]
-    rows.sort(
+    if not rows:
+        return []
+    profit_rows = sorted(
+        rows,
+        key=lambda r: (
+            not r.get("passed"),
+            -_finite_num(r.get("net_profit_pct"), 0.0),
+            -_finite_num(r.get("win_rate"), 0.0),
+        ),
+    )
+    wr_rows = sorted(
+        rows,
+        key=lambda r: (
+            not r.get("passed"),
+            -_finite_num(r.get("win_rate"), 0.0),
+            -_finite_num(r.get("net_profit_pct"), 0.0),
+        ),
+    )
+    combo_rows = sorted(
+        rows,
         key=lambda r: (
             not r.get("passed"),
             -refine_combo_score(r),
             -_finite_num(r.get("net_profit_pct"), 0.0),
             -_finite_num(r.get("win_rate"), 0.0),
-        )
+        ),
     )
-    picked: list[dict[str, Any]] = []
+    n_profit = (n + 1) // 2
+    n_wr = n - n_profit
     seen: set[tuple] = set()
-    for row in rows:
-        region = _seed_region(row)
-        if region in seen:
-            continue
-        seen.add(region)
-        picked.append(row)
-        if len(picked) >= n:
-            return picked
-    ids = {id(row) for row in picked}
-    for row in rows:
-        if id(row) in ids:
-            continue
-        picked.append(row)
-        if len(picked) >= n:
-            break
+    picked = _take_unique_regions(profit_rows, n_profit, seen)
+    picked.extend(_take_unique_regions(wr_rows, n_wr, seen))
+    if len(picked) < n:
+        picked.extend(_take_unique_regions(combo_rows, n - len(picked), seen))
     return picked
 
 
