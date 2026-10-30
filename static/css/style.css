@@ -998,11 +998,19 @@ body {
   font-weight: 600;
   color: var(--silver);
   min-width: 9rem;
-  max-width: 22rem;
+  max-width: 36rem;
   text-align: right;
   font-variant-numeric: tabular-nums;
   white-space: normal;
   line-height: 1.25;
+}
+
+.opt-progress-eta {
+  color: var(--warn);
+}
+
+.opt-progress-elapsed {
+  color: var(--accent);
 }
 
 .bist-tv-help {

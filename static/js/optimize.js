@@ -59,13 +59,25 @@ function optNum(id, fallback) {
   return Number.isFinite(v) ? v : fallback;
 }
 
+function formatOptProgressLabel(label) {
+  return String(label || "")
+    .split(" · ")
+    .map((part) => {
+      const safe = optEsc(part);
+      if (/kaldı\s*$/.test(part)) return `<span class="opt-progress-eta">${safe}</span>`;
+      if (/geçti\s*$/.test(part)) return `<span class="opt-progress-elapsed">${safe}</span>`;
+      return safe;
+    })
+    .join(" · ");
+}
+
 function setOptProgress(pct, label) {
   const wrap = document.querySelector("#optProgress");
   const bar = document.querySelector("#optProgressBar");
   const text = document.querySelector("#optProgressLabel");
   if (wrap) wrap.hidden = false;
   if (bar) bar.style.width = `${Math.max(0, Math.min(100, pct))}%`;
-  if (text) text.textContent = label || `${Math.round(pct)}%`;
+  if (text) text.innerHTML = formatOptProgressLabel(label || `${Math.round(pct)}%`);
 }
 
 function hideOptProgress() {

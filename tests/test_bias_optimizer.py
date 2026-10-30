@@ -840,7 +840,7 @@ def test_parse_reference_and_tag_in_results():
 
 
 def test_format_eta_and_progress_label():
-    from app.services.bias_optimizer import _search_progress_label, format_eta
+    from app.services.bias_optimizer import append_elapsed_label, _search_progress_label, format_eta
 
     assert format_eta(3) == "birkaç sn"
     assert format_eta(40) == "40 sn"
@@ -850,6 +850,11 @@ def test_format_eta_and_progress_label():
     assert "80/145" in label
     assert "%55" in label
     assert "~1 dk kaldı" in label
+    with_elapsed = append_elapsed_label(label, 40)
+    assert with_elapsed.endswith("40 sn geçti")
+    assert "~1 dk kaldı" in with_elapsed
+    assert append_elapsed_label("Durduruluyor…", 12) == "Durduruluyor… · 12 sn geçti"
+    assert append_elapsed_label("Tamamlandı · 12 sn geçti", 20) == "Tamamlandı · 12 sn geçti"
 
 
 def test_coverage_note_for_short_15m():

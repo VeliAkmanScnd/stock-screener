@@ -1352,6 +1352,19 @@ def format_eta(seconds: float | None) -> str:
     return f"{max(1, int(round(hours)))} sa"
 
 
+def append_elapsed_label(detail: str, seconds: float | None) -> str:
+    stamp = format_eta(seconds)
+    if not stamp:
+        return detail or ""
+    bit = f"{stamp} geçti"
+    text = (detail or "").strip()
+    if not text:
+        return bit
+    if "geçti" in text:
+        return text
+    return f"{text} · {bit}"
+
+
 def _search_progress_label(
     done: int,
     total: int,
@@ -2035,7 +2048,15 @@ def start_optimize_job(body: dict[str, Any]) -> str:
             pct = int(min(100, max(0, done / total * 100))) if total else 0
         else:
             pct = 100
-        _update(progress=pct, phase=phase, message=detail or phase)
+        elapsed_s = None
+        with _lock:
+            job = _jobs.get(job_id)
+            if job and job.created_at:
+                started = job.created_at
+                if started.tzinfo is None:
+                    started = started.replace(tzinfo=timezone.utc)
+                elapsed_s = (datetime.now(timezone.utc) - started).total_seconds()
+        _update(progress=pct, phase=phase, message=append_elapsed_label(detail or phase, elapsed_s))
 
     def worker() -> None:
         try:
