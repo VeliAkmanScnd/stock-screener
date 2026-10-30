@@ -641,10 +641,10 @@ def test_discovery_50k_covers_ha_smooth_plane_and_profit_region():
     assert any(
         c["ha_len"] == 70
         and int(c["ha_len2"]) == 91
+        and int(c["swing_bars"]) == 9
         and abs(float(c["rr_mult"]) - 1.0) < 1e-9
         for c in listed
     )
-    assert any(c["ha_len"] == 70 and int(c["swing_bars"]) == 9 for c in listed)
 
 
 def test_neighborhood_stays_on_next_stride():

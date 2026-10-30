@@ -900,31 +900,63 @@ def _even_picks(vals: list, take: int) -> list:
     return [vals[round(j * last / (take - 1))] for j in range(take)]
 
 
+def _plane_companion_pins(grid: dict[str, list]) -> list[dict[str, Any]]:
+    """Classic swing 4 and the 40% pocket (swing 9, RR 1) on every HA × smooth cell."""
+    swing_vals = list(grid.get("swing_bars") or [])
+    rr_vals = list(grid.get("rr_mult") or [])
+    swings: list[Any] = []
+    for target in (9, 4):
+        if not swing_vals:
+            break
+        picked = swing_vals[_value_index(swing_vals, target)]
+        if picked not in swings:
+            swings.append(picked)
+    if not swings and swing_vals:
+        swings = [swing_vals[_preferred_index("swing_bars", swing_vals)]]
+    rr = rr_vals[_value_index(rr_vals, 1.0)] if rr_vals else None
+    pins: list[dict[str, Any]] = []
+    for sw in swings or [None]:
+        pin: dict[str, Any] = {}
+        if sw is not None:
+            pin["swing_bars"] = sw
+        if rr is not None:
+            pin["rr_mult"] = rr
+        pins.append(pin)
+    return pins or [{}]
+
+
 def _cover_ha_plane_combos(
     grid: dict[str, list],
     cap: int,
     seed: int,
 ) -> list[dict[str, Any]]:
-    """Every HA period × smooth pair, then leftover budget Sobol-samples the other axes."""
+    """Every HA period × smooth pair (swing 9 and 4, RR 1), then leftover Sobol."""
     ha_vals = list(grid.get("ha_len") or [None])
     sm_vals = list(grid.get("ha_len2") or [None])
     cap = max(1, int(cap))
     n_ha = len(ha_vals)
     n_sm = len(sm_vals)
     n_pairs = n_ha * n_sm
+    companions = _plane_companion_pins(grid)
+    while len(companions) > 1 and n_pairs * len(companions) > cap:
+        companions.pop()
     plane: list[dict[str, Any]] = []
-    if n_pairs <= cap:
+    if n_pairs * max(1, len(companions)) <= cap:
         for ha in ha_vals:
             for sm in sm_vals:
-                plane.append(_pin_combo(grid, {"ha_len": ha, "ha_len2": sm}))
+                for pin in companions:
+                    plane.append(
+                        _pin_combo(grid, {"ha_len": ha, "ha_len2": sm, **pin})
+                    )
     else:
         per_ha = max(1, cap // max(1, n_ha))
+        pin = companions[0] if companions else {}
         for ha in ha_vals:
             if len(plane) >= cap:
                 break
             take = min(per_ha, cap - len(plane), n_sm)
             for sm in _even_picks(sm_vals, take):
-                plane.append(_pin_combo(grid, {"ha_len": ha, "ha_len2": sm}))
+                plane.append(_pin_combo(grid, {"ha_len": ha, "ha_len2": sm, **pin}))
                 if len(plane) >= cap:
                     break
     leftover = cap - len(plane)

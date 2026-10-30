@@ -208,7 +208,7 @@ function formatOptSearchPlan(plan) {
     if (plan.dense_neighborhood) {
       const radii = (plan.strides || []).map((s) => `±${s}`).join(" → ");
       const cover = plan.ha_cover === "ha_len+ha_len2"
-        ? "Tur 1 her HA period × smooth çiftini tarar, diğerleri Sobol."
+        ? "Tur 1 her HA period × smooth çiftini swing 9/4 ve RR 1 ile tarar, kalan Sobol."
         : plan.ha_cover === "ha_len2"
           ? "Tur 1 her HA smoothing değerini tarar, diğerleri Sobol."
           : "Tur 1 her HA period değerini tarar, smooth ve diğerleri Sobol.";
