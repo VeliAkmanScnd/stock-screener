@@ -686,9 +686,52 @@ def describe_search_plan(body: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def refine_combo_score(row: dict[str, Any]) -> float:
+    """Kâr × WR — both need to be high; sparse high-WR / low-profit sets lose."""
+    profit = _finite_num(row.get("net_profit_pct"), 0.0)
+    wr = _finite_num(row.get("win_rate"), 0.0)
+    if profit <= 0:
+        return profit
+    return profit * wr
+
+
+def _seed_region(row: dict[str, Any]) -> tuple:
+    ha = int(_finite_num(_seed_axis_value(row, "ha_len"), 0))
+    ha2 = int(_finite_num(_seed_axis_value(row, "ha_len2"), 0))
+    rr = _finite_num(_seed_axis_value(row, "rr_mult"), 0)
+    swing = int(_finite_num(_seed_axis_value(row, "swing_bars"), 0))
+    return (ha // 8, ha2 // 8, round(rr * 2) / 2, swing // 4)
+
+
 def pick_refine_seeds(found: dict[str, Any], n: int = REFINE_TOP) -> list[dict[str, Any]]:
+    n = max(1, int(n))
     rows = [r for r in (found.get("results") or []) if r.get("tag") != "referans"]
-    return rows[: max(1, int(n))]
+    rows.sort(
+        key=lambda r: (
+            not r.get("passed"),
+            -refine_combo_score(r),
+            -_finite_num(r.get("net_profit_pct"), 0.0),
+            -_finite_num(r.get("win_rate"), 0.0),
+        )
+    )
+    picked: list[dict[str, Any]] = []
+    seen: set[tuple] = set()
+    for row in rows:
+        region = _seed_region(row)
+        if region in seen:
+            continue
+        seen.add(region)
+        picked.append(row)
+        if len(picked) >= n:
+            return picked
+    ids = {id(row) for row in picked}
+    for row in rows:
+        if id(row) in ids:
+            continue
+        picked.append(row)
+        if len(picked) >= n:
+            break
+    return picked
 
 
 def _strip_rank(row: dict[str, Any]) -> dict[str, Any]:

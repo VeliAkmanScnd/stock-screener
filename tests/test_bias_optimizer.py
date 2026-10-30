@@ -13,6 +13,8 @@ from app.services.bias_optimizer import (
     combo_passes,
     describe_search_plan,
     expand_combos,
+    pick_refine_seeds,
+    refine_combo_score,
     grid_space,
     neighborhood_grid,
     neighborhood_values,
@@ -564,6 +566,56 @@ def test_neighborhood_stays_on_next_stride():
     nb = neighborhood_grid(grid, seeds, 4, 2)
     assert 64 in nb["ha_len"]
     assert nb["reverse_exit"] == grid["reverse_exit"]
+
+
+def test_refine_seeds_prefer_profit_times_wr_and_diverse_regions():
+    found = {
+        "results": [
+            {
+                "tag": "",
+                "passed": True,
+                "net_profit_pct": 14.95,
+                "win_rate": 85.71,
+                "params": {"ha_len": 56, "ha_len2": 92, "rrMult": 1.8, "swingBars": 4},
+            },
+            {
+                "tag": "",
+                "passed": True,
+                "net_profit_pct": 55.19,
+                "win_rate": 80.77,
+                "params": {"ha_len": 70, "ha_len2": 91, "rrMult": 1.0, "swingBars": 9},
+            },
+            {
+                "tag": "",
+                "passed": True,
+                "net_profit_pct": 54.78,
+                "win_rate": 80.0,
+                "params": {"ha_len": 71, "ha_len2": 90, "rrMult": 1.0, "swingBars": 9},
+            },
+            {
+                "tag": "",
+                "passed": True,
+                "net_profit_pct": 15.48,
+                "win_rate": 60.0,
+                "params": {"ha_len": 64, "ha_len2": 80, "rrMult": 2.0, "swingBars": 4},
+            },
+            {
+                "tag": "referans",
+                "passed": True,
+                "net_profit_pct": 14.01,
+                "win_rate": 45.45,
+                "params": {"ha_len": 100, "ha_len2": 100, "rrMult": 1.0, "swingBars": 4},
+            },
+        ]
+    }
+    assert refine_combo_score(found["results"][1]) > refine_combo_score(found["results"][0])
+    seeds = pick_refine_seeds(found, n=3)
+    has = [s["params"]["ha_len"] for s in seeds]
+    assert has[0] == 70
+    assert 71 not in has
+    assert 56 in has
+    assert 64 in has
+    assert 100 not in has
 
 
 def test_small_grid_plan_is_single_full_tour():
