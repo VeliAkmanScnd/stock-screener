@@ -29,7 +29,7 @@ class OptimizeBody(BaseModel):
     min_profit_factor: float = 1.2
     min_profit: float = 5
     min_trades: int = Field(default=8, ge=1, le=500)
-    max_combos: int = Field(default=180, ge=20, le=50000)
+    max_combos: int = Field(default=50000, ge=20, le=50000)
     scan_all: bool = False
     ha_len: Any = None
     ha_len2: Any = None

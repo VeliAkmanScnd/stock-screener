@@ -39,7 +39,8 @@ class OptimizeCancelled(Exception):
 
 MAX_COMBOS = 50000
 SCAN_ALL_MAX = 10_000_000
-RESULT_LIMIT = 500
+RESULT_SLICE = 500
+RESULT_LIMIT = RESULT_SLICE * 3
 RANGE_AXIS_MAX = 400
 REFINE_BASE_STRIDES = (4, 2, 1)
 REFINE_MAX_STRIDE = 256
@@ -371,7 +372,7 @@ def combo_budget(body: dict[str, Any], space: int) -> int:
                 "Adımı büyütün veya optimize etmediğiniz eksenleri kapatın."
             )
         return max(1, int(space))
-    return max(20, min(MAX_COMBOS, int(body.get("max_combos") or 180)))
+    return max(20, min(MAX_COMBOS, int(body.get("max_combos") or MAX_COMBOS)))
 
 
 _HALTON_PRIMES = (
@@ -707,7 +708,7 @@ def describe_search_plan(body: dict[str, Any]) -> dict[str, Any]:
     grid = build_grid(body)
     space = grid_space(grid)
     scan_all = bool(body.get("scan_all"))
-    cap = max(20, min(MAX_COMBOS, int(body.get("max_combos") or 180)))
+    cap = max(20, min(MAX_COMBOS, int(body.get("max_combos") or MAX_COMBOS)))
     if scan_all:
         return {
             "mode": "full",
@@ -1259,12 +1260,14 @@ def _row_identity(row: dict[str, Any]) -> tuple:
 
 
 def _keep_diverse_rows(rows: list[dict[str, Any]], limit: int = RESULT_LIMIT) -> list[dict[str, Any]]:
-    """Keep high-profit rows even when high-WR / high-PF sets would crowd them out."""
-    if len(rows) <= limit:
+    """Keep 500 kâr + 500 WR + 500 PF (or limit/3 each in tests)."""
+    slice_n = RESULT_SLICE if limit >= RESULT_SLICE * 3 else max(1, int(limit) // 3)
+    cap = slice_n * 3
+    if len(rows) <= cap:
         return list(rows)
-    n_profit = max(1, limit // 3)
-    n_wr = max(1, limit // 3)
-    n_pf = max(1, limit - n_profit - n_wr)
+    n_profit = slice_n
+    n_wr = slice_n
+    n_pf = slice_n
     seen: set[tuple] = set()
     out: list[dict[str, Any]] = []
 

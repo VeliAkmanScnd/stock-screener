@@ -3,6 +3,8 @@ import pandas as pd
 
 from app.services.bias_optimizer import (
     MAX_COMBOS,
+    RESULT_LIMIT,
+    RESULT_SLICE,
     SCAN_ALL_MAX,
     build_grid,
     build_strategy_chart,
@@ -654,6 +656,8 @@ def test_keep_diverse_rows_preserves_high_profit_against_high_pf():
     kept = _keep_diverse_rows(rows, limit=9)
     assert any(r["net_profit_pct"] == 55.19 for r in kept)
     assert _pick_best(kept)["params"]["slot"] == "profit"
+    assert RESULT_SLICE == 500
+    assert RESULT_LIMIT == 1500
 
 
 def test_refine_seeds_take_profit_and_wr_groups():

@@ -909,7 +909,7 @@ function collectOptBody() {
     period: document.querySelector("#optPeriod")?.value || "60d",
     mode: document.querySelector("#optMode")?.value || "quick",
     side: document.querySelector("#optSide")?.value || "both",
-    max_combos: Math.max(20, Math.min(OPT_MAX_COMBOS, Math.round(optNum("#optMaxCombos", 180)))),
+    max_combos: Math.max(20, Math.min(OPT_MAX_COMBOS, Math.round(optNum("#optMaxCombos", OPT_MAX_COMBOS)))),
     scan_all: !!document.querySelector("#optScanAll")?.checked,
     min_win_rate: optNum("#optMinWinRate", 45),
     max_drawdown: optNum("#optMaxDd", 18),
