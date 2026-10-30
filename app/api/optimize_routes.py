@@ -276,3 +276,21 @@ def stop_optimize_review(_user: User = Depends(get_current_user)):
     from app.services.optimize_review import cancel_review
 
     return cancel_review()
+
+
+@router.post("/review/email")
+def email_optimize_review(db: Session = Depends(get_db), _user: User = Depends(get_current_user)):
+    from app.services.optimize_review import latest_run, notify_review_finished, run_to_dict
+
+    payload = run_to_dict(latest_run(db))
+    if not payload or not payload.get("id"):
+        raise HTTPException(404, "Gönderilecek rapor yok")
+    if payload.get("status") in ("running", "cancelling"):
+        raise HTTPException(409, "Tarama bitince gönderilir")
+    try:
+        result = notify_review_finished(payload["id"], force=True)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"ok": True, "run_id": payload["id"], **result}

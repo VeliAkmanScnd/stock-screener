@@ -518,7 +518,10 @@ def start_review(config: dict[str, Any] | None = None, *, resume: bool = False) 
                         _update_run(dbw, run, status="done", current_symbol=None, finished_at=_now())
             finally:
                 dbw.close()
-            notify_review_finished(run_id)
+            try:
+                notify_review_finished(run_id)
+            except Exception:
+                logger.exception("Review email failed")
         except Exception as exc:
             logger.exception("optimize review failed")
             dbw = SessionLocal()
@@ -528,7 +531,10 @@ def start_review(config: dict[str, Any] | None = None, *, resume: bool = False) 
                     _update_run(dbw, run, status="error", error_message=str(exc), finished_at=_now(), current_symbol=None)
             finally:
                 dbw.close()
-            notify_review_finished(run_id)
+            try:
+                notify_review_finished(run_id)
+            except Exception:
+                logger.exception("Review email failed")
 
     with _run_lock:
         _thread = threading.Thread(target=worker, name="bias-review", daemon=True)
@@ -612,7 +618,7 @@ def build_review_email(payload: dict[str, Any]) -> tuple[str, str, str]:
     return subject, "\n".join(lines).strip(), "".join(html_parts)
 
 
-def notify_review_finished(run_id: int) -> None:
+def notify_review_finished(run_id: int, *, force: bool = False) -> dict[str, Any]:
     from app.services.email_service import send_email, smtp_configured
 
     db = SessionLocal()
@@ -622,21 +628,17 @@ def notify_review_finished(run_id: int) -> None:
         payload = run_to_dict(run) or {}
     finally:
         db.close()
-    if not settings.get("notify_email"):
+    if not force and not settings.get("notify_email"):
         logger.info("Review email skipped — notify off")
-        return
+        return {"ok": False, "skipped": "notify off"}
     to_address = normalize_review_emails(settings.get("email_to") or "")
     if not to_address:
-        logger.info("Review email skipped — no recipients")
-        return
+        raise ValueError("E-posta alıcısı yok")
     if not smtp_configured():
-        logger.warning("Review email skipped — SMTP not configured")
-        return
-    try:
-        subject, body, body_html = build_review_email(payload)
-        send_email(to_address=to_address, subject=subject, body_text=body, body_html=body_html)
-    except Exception:
-        logger.exception("Review email failed")
+        raise RuntimeError("SMTP .env içinde yok; e-posta gönderilemez")
+    subject, body, body_html = build_review_email(payload)
+    send_email(to_address=to_address, subject=subject, body_text=body, body_html=body_html)
+    return {"ok": True, "to": to_address}
 
 
 def maybe_resume_review() -> None:

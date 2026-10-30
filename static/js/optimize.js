@@ -1431,6 +1431,18 @@ async function saveOptReviewMail() {
   }
 }
 
+async function sendOptReviewMail() {
+  optReviewStatus("Rapor e-postası gönderiliyor…");
+  try {
+    const res = await apiFetch("/api/optimize/review/email", { method: "POST" });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || "Gönderilemedi");
+    optReviewStatus("Rapor e-postası gönderildi.", "ok");
+  } catch (err) {
+    optReviewStatus(err.message || "Gönderilemedi", "error");
+  }
+}
+
 async function saveOptReviewWeekly() {
   const on = !!document.querySelector("#optReviewWeekly")?.checked;
   try {
@@ -1541,6 +1553,7 @@ function initOptimize() {
   document.querySelector("#optReviewWeekly")?.addEventListener("change", saveOptReviewWeekly);
   document.querySelector("#optReviewNotifyEmail")?.addEventListener("change", saveOptReviewMail);
   document.querySelector("#btnOptReviewSaveMail")?.addEventListener("click", saveOptReviewMail);
+  document.querySelector("#btnOptReviewSendMail")?.addEventListener("click", sendOptReviewMail);
   document.querySelector("#optReviewEmail")?.addEventListener("change", saveOptReviewMail);
   document.querySelector("#optReviewReport")?.addEventListener("click", (ev) => {
     const btn = ev.target.closest("[data-opt-review-chart]");
