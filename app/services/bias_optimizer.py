@@ -43,8 +43,10 @@ RESULT_LIMIT = 500
 RANGE_AXIS_MAX = 400
 REFINE_BASE_STRIDES = (4, 2, 1)
 REFINE_MAX_STRIDE = 256
-REFINE_TOP = 12
+REFINE_TOP = 16
 REFINE_MIN_RADIUS = 8
+REFINE_SPACE_WIDE = 100_000
+REFINE_SPACE_HUGE = 10_000_000
 NUMERIC_REFINE_KEYS = (
     "ha_len",
     "ha_len2",
@@ -552,17 +554,14 @@ def coarsen_grid(grid: dict[str, list], stride: int) -> dict[str, list]:
     return out
 
 
-def refine_strides(grid: dict[str, list], cap: int) -> list[int]:
-    """4→2→1, plus 8 / 16 / … while the coarsest cartesian still exceeds cap."""
-    strides = list(REFINE_BASE_STRIDES)
-    cap = max(1, int(cap))
-    for _ in range(8):
-        if grid_space(coarsen_grid(grid, strides[0])) <= cap:
-            break
-        nxt = strides[0] * 2
-        if nxt > REFINE_MAX_STRIDE:
-            break
-        strides.insert(0, nxt)
+def refine_strides(grid: dict[str, list], cap: int | None = None) -> list[int]:
+    """Zoom layers after discovery. Always +1 (8), often +2 (16), huge grids +3 (32)."""
+    space = grid_space(grid)
+    strides = [8, 4, 2, 1]
+    if space > REFINE_SPACE_WIDE:
+        strides.insert(0, 16)
+    if space > REFINE_SPACE_HUGE:
+        strides.insert(0, 32)
     return strides
 
 
@@ -736,7 +735,7 @@ def describe_search_plan(body: dict[str, Any]) -> dict[str, Any]:
     tour1 = min(space, cap + (coarse_space if coarse_space <= cap else 0))
     return {
         "mode": "refine",
-        "tours": len(strides),
+        "tours": 1 + len(strides),
         "strides": strides,
         "space": space,
         "cap": cap,
@@ -1595,15 +1594,19 @@ def run_bias_optimize(
         found = run_one_pass(combos, planned, space, on_progress)
         absorb(found)
     else:
-        strides = [int(s) for s in (plan.get("strides") or REFINE_BASE_STRIDES)]
-        n_tours = max(1, len(strides))
+        zoom_strides = [int(s) for s in (plan.get("strides") or [8, 4, 2, 1])]
+        n_tours = 1 + max(1, len(zoom_strides))
         current_grid = grid
         acc_state = {"results": []}
-        for t, stride in enumerate(strides):
+        tour_jobs: list[tuple[str, int, int]] = [("discovery", zoom_strides[0], 0)]
+        for zi, zstride in enumerate(zoom_strides):
+            prev = zoom_strides[zi - 1] if zi else zoom_strides[0]
+            tour_jobs.append(("zoom", zstride, prev))
+        for t, (kind, stride, prev_stride) in enumerate(tour_jobs):
             if stopped():
                 cancelled = True
                 break
-            if t == 0:
+            if kind == "discovery":
                 listed, sampled = discovery_combos(grid, max_combos, seed, stride)
                 planned = len(listed)
                 current_grid = grid
@@ -1611,7 +1614,7 @@ def run_bias_optimize(
                 seeds = pick_refine_seeds(acc_state)
                 if not seeds:
                     break
-                current_grid = neighborhood_grid(grid, seeds, strides[t - 1], stride)
+                current_grid = neighborhood_grid(grid, seeds, prev_stride, stride)
                 listed, planned, sampled = combos_for_grid(current_grid, max_combos, seed=seed + t)
             fresh: list[dict[str, Any]] = []
             for combo in listed:

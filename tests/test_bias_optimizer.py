@@ -529,9 +529,7 @@ def test_coarsen_keeps_endpoints_and_stride():
 def test_wide_grid_adds_coarse_tours_until_cap():
     grid = _wide_sample_grid()
     strides = refine_strides(grid, 20000)
-    assert strides[-3:] == [4, 2, 1]
-    assert strides[0] >= 8
-    assert grid_space(coarsen_grid(grid, strides[0])) <= 20000 or strides[0] >= 256
+    assert strides == [32, 16, 8, 4, 2, 1]
     plan = describe_search_plan(
         {
             "mode": "quick",
@@ -550,10 +548,47 @@ def test_wide_grid_adds_coarse_tours_until_cap():
         }
     )
     assert plan["mode"] == "refine"
-    assert plan["tours"] == len(plan["strides"])
-    assert plan["extra_tours"] >= 1
+    assert plan["tours"] == 1 + len(plan["strides"])
+    assert plan["extra_tours"] == 3
     assert plan["strides"][-1] == 1
     assert plan["tour1_discovery"] is True
+
+
+def test_medium_grid_uses_two_extra_zoom_layers():
+    plan = describe_search_plan(
+        {
+            "mode": "quick",
+            "max_combos": 200,
+            "ha_len": {"start": 48, "stop": 80, "step": 1},
+            "ha_len2": {"start": 72, "stop": 96, "step": 1},
+            "osc_len": {"start": 5, "stop": 20, "step": 1},
+            "exit_mode": "Swing RR",
+            "optimize": {
+                "ha_htf": False,
+                "exit_mode": False,
+                "rr_mult": True,
+                "swing_bars": True,
+                "tp_pct": False,
+                "sl_pct": False,
+                "max_same": False,
+                "reverse_exit": False,
+                "require_bar": False,
+            },
+            "rr_mult": {"start": 1, "stop": 2, "step": 0.1},
+            "swing_bars": {"start": 4, "stop": 30, "step": 1},
+        }
+    )
+    space = plan["space"]
+    assert space > 200
+    if space > 10_000_000:
+        assert plan["strides"][0] == 32
+    elif space > 100_000:
+        assert plan["strides"] == [16, 8, 4, 2, 1]
+        assert plan["extra_tours"] == 2
+        assert plan["tours"] == 6
+    else:
+        assert plan["strides"] == [8, 4, 2, 1]
+        assert plan["extra_tours"] == 1
 
 
 def test_discovery_combos_include_off_coarse_ha_and_swing():

@@ -189,9 +189,9 @@ function formatOptSearchPlan(plan) {
   }
   const steps = (plan.strides || []).join(" → ");
   const tours = plan.tours || (plan.strides || []).length;
-  const extra = plan.extra_tours ? ` (+${plan.extra_tours} kaba tur)` : "";
+  const extra = plan.extra_tours || 0;
   if (plan.tour1_discovery) {
-    return `Izgara ${space} set. ${tours} tur${extra}: ${steps}. Tur 1 keşif: Sobol ${cap} (tam adım) + sığan kaba ızgara; sonra kâr ve WR cepleri ayrı sıkılaşır.`;
+    return `Izgara ${space} set. ${tours} tur (keşif + ${steps}, +${extra} kademe). Tur 1 Sobol ${cap} tam adım; sonra kâr ve WR cepleri ayrı sıkılaşır.`;
   }
   const t1 = fmtOptInt(plan.tour1_space);
   if (plan.tour1_sampled) {
