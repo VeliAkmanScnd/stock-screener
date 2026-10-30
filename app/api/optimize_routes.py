@@ -64,6 +64,8 @@ class PresetBody(BaseModel):
 
 class ReviewSettingsBody(BaseModel):
     weekly_enabled: bool | None = None
+    notify_email: bool | None = None
+    email_to: str | None = None
     config: dict[str, Any] | None = None
 
 
@@ -240,7 +242,16 @@ def put_optimize_review_settings(
 ):
     from app.services.optimize_review import save_review_settings
 
-    return save_review_settings(db, weekly_enabled=body.weekly_enabled, config=body.config)
+    try:
+        return save_review_settings(
+            db,
+            weekly_enabled=body.weekly_enabled,
+            notify_email=body.notify_email,
+            email_to=body.email_to,
+            config=body.config,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
 
 @router.post("/review/start")

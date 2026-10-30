@@ -5,8 +5,11 @@ from app.services.optimize_review import (
     REVIEW_EXTRA,
     REVIEW_TOP,
     alarm_for_contract,
+    build_review_email,
     build_symbol_review,
+    highlight_keys,
     improvement_reasons,
+    normalize_review_emails,
     pine_overrides_from_public,
     reference_from_overrides,
     run_to_dict,
@@ -69,6 +72,9 @@ def test_build_symbol_review_keeps_top_five_and_extras():
     assert len(out["extras"]) <= REVIEW_EXTRA
     assert out["recommendations"][0]["pine_overrides"]["ha_len"] == 64
     assert "AEFES alarm" in out["note"]
+    assert "win_rate" in out["recommendations"][0]["highlights"]
+    assert "profit_factor" in out["recommendations"][0]["highlights"]
+    assert out["timeframe"] == "" or out.get("timeframe") is not None
 
 
 def test_build_symbol_review_without_alarm_proposes_five_sets():
@@ -159,6 +165,49 @@ def test_alarm_for_contract_prefers_enabled_matching_timeframe():
     hit = alarm_for_contract(_Db(), "AEFES1!", "30m")
     assert hit["id"] == 2
     assert hit["overrides"]["ha_len"] == 80
+
+
+def test_highlight_keys_from_reasons():
+    assert highlight_keys(["WR 50% → 62%", "PF 1.40 → 1.80", "Kâr 8% → 12%"]) == [
+        "win_rate",
+        "profit_factor",
+        "net_profit_pct",
+    ]
+
+
+def test_normalize_review_emails_accepts_commas():
+    assert normalize_review_emails("veliakman@gmail.com, akbastt@gmail.com") == "veliakman@gmail.com; akbastt@gmail.com"
+
+
+def test_build_review_email_lists_recommendations():
+    payload = {
+        "status": "done",
+        "done_count": 1,
+        "total_count": 47,
+        "summary": "1/47 pay tamam · 2 revizyon önerisi",
+        "symbols": [
+            {
+                "symbol": "AEFES1!",
+                "name": "Anadolu Efes",
+                "note": "Alarm «AEFES» ile kıyaslandı.",
+                "recommendations": [
+                    {
+                        "win_rate": 62,
+                        "profit_factor": 1.8,
+                        "net_profit_pct": 12,
+                        "max_drawdown": 7,
+                        "trades": 20,
+                        "reasons": ["WR 50.0% → 62.0%"],
+                        "highlights": ["win_rate"],
+                    }
+                ],
+            }
+        ],
+    }
+    subject, text, html_body = build_review_email(payload)
+    assert "tamamlandı" in subject
+    assert "AEFES1!" in text
+    assert "<strong>WR 62.0%</strong>" in html_body
 
 
 def test_pay_universe_has_forty_seven_contracts():

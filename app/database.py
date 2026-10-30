@@ -195,6 +195,8 @@ class OptimizeReviewMeta(Base):
 
     id = Column(Integer, primary_key=True)
     weekly_enabled = Column(Boolean, nullable=False, default=False)
+    notify_email = Column(Boolean, nullable=False, default=True)
+    email_to = Column(Text, nullable=False, default="veliakman@gmail.com; akbastt@gmail.com")
     config_json = Column(Text, nullable=False, default="{}")
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
@@ -305,6 +307,23 @@ def _migrate_db() -> None:
                 text(
                     "ALTER TABLE track_user_settings ADD COLUMN "
                     "use_tf_level_benchmarks BOOLEAN NOT NULL DEFAULT 1"
+                )
+            )
+        review_cols = {
+            row[1] for row in conn.execute(text("PRAGMA table_info(optimize_review_meta)"))
+        }
+        if review_cols and "notify_email" not in review_cols:
+            conn.execute(
+                text(
+                    "ALTER TABLE optimize_review_meta ADD COLUMN "
+                    "notify_email BOOLEAN NOT NULL DEFAULT 1"
+                )
+            )
+        if review_cols and "email_to" not in review_cols:
+            conn.execute(
+                text(
+                    "ALTER TABLE optimize_review_meta ADD COLUMN email_to TEXT "
+                    "NOT NULL DEFAULT 'veliakman@gmail.com; akbastt@gmail.com'"
                 )
             )
         conn.commit()

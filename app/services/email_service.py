@@ -26,6 +26,55 @@ def smtp_configured() -> bool:
     return bool(SMTP_HOST and SMTP_FROM)
 
 
+def send_email(
+    *,
+    to_address: str,
+    subject: str,
+    body_text: str,
+    body_html: str | None = None,
+) -> None:
+    if not smtp_configured():
+        raise RuntimeError(
+            "E-posta yapılandırılmamış. .env dosyasına SMTP_HOST, SMTP_FROM ve gerekirse "
+            "SMTP_USER / SMTP_PASSWORD ekleyin."
+        )
+
+    recipients = parse_email_list(to_address)
+    if not recipients:
+        raise ValueError("En az bir geçerli e-posta adresi gerekli.")
+
+    msg = MIMEMultipart()
+    msg["From"] = SMTP_FROM
+    msg["To"] = ", ".join(recipients)
+    msg["Date"] = formatdate(localtime=True)
+    msg["Subject"] = subject
+    if body_html:
+        alt = MIMEMultipart("alternative")
+        alt.attach(MIMEText(body_text, "plain", "utf-8"))
+        alt.attach(MIMEText(body_html, "html", "utf-8"))
+        msg.attach(alt)
+    else:
+        msg.attach(MIMEText(body_text, "plain", "utf-8"))
+    _deliver(msg, recipients)
+    logger.info("Email sent to %s (%s)", ", ".join(recipients), subject)
+
+
+def _deliver(msg: MIMEMultipart, recipients: list[str]) -> None:
+    if SMTP_USE_TLS:
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=60) as server:
+            server.ehlo()
+            server.starttls()
+            server.ehlo()
+            if SMTP_USER and SMTP_PASSWORD:
+                server.login(SMTP_USER, SMTP_PASSWORD)
+            server.sendmail(SMTP_FROM, recipients, msg.as_string())
+    else:
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=60) as server:
+            if SMTP_USER and SMTP_PASSWORD:
+                server.login(SMTP_USER, SMTP_PASSWORD)
+            server.sendmail(SMTP_FROM, recipients, msg.as_string())
+
+
 def send_tv_list_email(
     *,
     to_address: str,
@@ -54,19 +103,5 @@ def send_tv_list_email(
     attachment = MIMEApplication(tv_list_text.encode("utf-8"), Name=filename)
     attachment["Content-Disposition"] = f'attachment; filename="{filename}"'
     msg.attach(attachment)
-
-    if SMTP_USE_TLS:
-        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=60) as server:
-            server.ehlo()
-            server.starttls()
-            server.ehlo()
-            if SMTP_USER and SMTP_PASSWORD:
-                server.login(SMTP_USER, SMTP_PASSWORD)
-            server.sendmail(SMTP_FROM, recipients, msg.as_string())
-    else:
-        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=60) as server:
-            if SMTP_USER and SMTP_PASSWORD:
-                server.login(SMTP_USER, SMTP_PASSWORD)
-            server.sendmail(SMTP_FROM, recipients, msg.as_string())
-
+    _deliver(msg, recipients)
     logger.info("TV list email sent to %s", ", ".join(recipients))

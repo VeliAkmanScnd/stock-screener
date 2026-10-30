@@ -6,7 +6,7 @@
   <title>TradeLABtr Stock Screener</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/css/style.css?v=57" />
+  <link rel="stylesheet" href="/static/css/style.css?v=58" />
   <link rel="stylesheet" href="/static/css/auth.css?v=7" />
 </head>
 <body>
@@ -813,6 +813,18 @@
             <button type="button" class="btn danger btn-sm" id="btnOptReviewStop" hidden>Durdur</button>
           </div>
         </div>
+        <div class="opt-review-mail">
+          <label class="opt-preset-check">
+            <input type="checkbox" id="optReviewNotifyEmail" checked />
+            <span>Bitince e-posta</span>
+          </label>
+          <label class="field opt-review-mail-field">
+            <span>Alıcılar</span>
+            <input type="text" id="optReviewEmail" value="veliakman@gmail.com; akbastt@gmail.com" placeholder="veli@…; diger@…" autocomplete="off" />
+          </label>
+          <button type="button" class="btn secondary btn-sm" id="btnOptReviewSaveMail">E-postayı kaydet</button>
+        </div>
+        <p class="hint" id="optReviewMailHint">Tarama bitince bu adreslere rapor gider. Adresleri virgül veya noktalı virgülle ayırın.</p>
         <div class="scan-progress" id="optReviewProgress" hidden>
           <div class="scan-progress-track">
             <div class="scan-progress-bar" id="optReviewProgressBar"></div>
@@ -1335,6 +1347,6 @@
   <script src="/static/js/perf.js?v=5"></script>
   <script src="/static/js/help.js?v=2"></script>
   <script src="/static/js/alarm.js?v=1"></script>
-  <script src="/static/js/optimize.js?v=19"></script>
+  <script src="/static/js/optimize.js?v=20"></script>
 </body>
 </html>

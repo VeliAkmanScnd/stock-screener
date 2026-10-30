@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 import json
 import logging
 import threading
@@ -10,12 +11,14 @@ from typing import Any
 
 from app.database import OptimizeReviewMeta, OptimizeReviewRun, ScheduledScan, SessionLocal
 from app.services.alarm_service import config_from_row, is_alarm_config, list_viop_pay_contracts, parse_contracts
+from app.services.schedule_helpers import normalize_email_storage, parse_email_list
 from app.utils.json_safe import json_safe
 
 logger = logging.getLogger(__name__)
 
 REVIEW_TOP = 5
 REVIEW_EXTRA = 20
+DEFAULT_REVIEW_EMAILS = "veliakman@gmail.com; akbastt@gmail.com"
 DEFAULT_REVIEW_CONFIG: dict[str, Any] = {
     "timeframe": "30m",
     "period": "13mo",
@@ -50,11 +53,24 @@ def default_review_config() -> dict[str, Any]:
     return dict(DEFAULT_REVIEW_CONFIG)
 
 
+def normalize_review_emails(raw: str | None) -> str:
+    text = str(raw or "").replace(",", ";")
+    if not text.strip():
+        return ""
+    return normalize_email_storage(parse_email_list(text))
+
+
 def get_meta(db) -> OptimizeReviewMeta:
     row = db.query(OptimizeReviewMeta).filter(OptimizeReviewMeta.id == 1).first()
     if row:
         return row
-    row = OptimizeReviewMeta(id=1, weekly_enabled=False, config_json=json.dumps(DEFAULT_REVIEW_CONFIG))
+    row = OptimizeReviewMeta(
+        id=1,
+        weekly_enabled=False,
+        notify_email=True,
+        email_to=DEFAULT_REVIEW_EMAILS,
+        config_json=json.dumps(DEFAULT_REVIEW_CONFIG),
+    )
     db.add(row)
     db.commit()
     db.refresh(row)
@@ -62,21 +78,37 @@ def get_meta(db) -> OptimizeReviewMeta:
 
 
 def review_settings(db) -> dict[str, Any]:
+    from app.services.email_service import smtp_configured
+
     meta = get_meta(db)
     cfg = _load_json(meta.config_json, {})
     if not isinstance(cfg, dict) or not cfg:
         cfg = default_review_config()
     return {
         "weekly_enabled": bool(meta.weekly_enabled),
+        "notify_email": bool(getattr(meta, "notify_email", True)),
+        "email_to": (meta.email_to or "").strip(),
+        "smtp_configured": smtp_configured(),
         "config": {**default_review_config(), **cfg},
         "updated_at": meta.updated_at.isoformat() if meta.updated_at else None,
     }
 
 
-def save_review_settings(db, *, weekly_enabled: bool | None = None, config: dict[str, Any] | None = None) -> dict[str, Any]:
+def save_review_settings(
+    db,
+    *,
+    weekly_enabled: bool | None = None,
+    notify_email: bool | None = None,
+    email_to: str | None = None,
+    config: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     meta = get_meta(db)
     if weekly_enabled is not None:
         meta.weekly_enabled = bool(weekly_enabled)
+    if notify_email is not None:
+        meta.notify_email = bool(notify_email)
+    if email_to is not None:
+        meta.email_to = normalize_review_emails(email_to)
     if isinstance(config, dict) and config:
         merged = {**default_review_config(), **_load_json(meta.config_json, {}), **config}
         merged.pop("symbol", None)
@@ -240,6 +272,21 @@ def improvement_reasons(row: dict[str, Any], ref: dict[str, Any] | None) -> list
     return reasons
 
 
+def highlight_keys(reasons: list[str] | None) -> list[str]:
+    keys: list[str] = []
+    for raw in reasons or []:
+        text = str(raw)
+        if text.startswith("WR"):
+            keys.append("win_rate")
+        elif text.startswith("PF"):
+            keys.append("profit_factor")
+        elif text.startswith("Kâr"):
+            keys.append("net_profit_pct")
+        elif text.startswith("DD"):
+            keys.append("max_drawdown")
+    return keys
+
+
 def new_alarm_reasons(row: dict[str, Any]) -> list[str]:
     if int(row.get("trades") or 0) <= 0:
         return []
@@ -284,6 +331,7 @@ def _compact_row(row: dict[str, Any], reasons: list[str]) -> dict[str, Any]:
         "trades": row.get("trades"),
         "params": row.get("params") or {},
         "reasons": reasons,
+        "highlights": highlight_keys(reasons),
         "pine_overrides": pine_overrides_from_public(row.get("params") or {}),
     }
 
@@ -323,6 +371,8 @@ def build_symbol_review(result: dict[str, Any], alarm: dict[str, Any] | None) ->
         "passed": result.get("passed") or 0,
         "bars": result.get("bars") or 0,
         "note": note,
+        "timeframe": result.get("timeframe") or "",
+        "period": result.get("period") or "",
         "recommendations": improved[:REVIEW_TOP],
         "extras": improved[REVIEW_TOP : REVIEW_TOP + REVIEW_EXTRA],
     }
@@ -468,6 +518,7 @@ def start_review(config: dict[str, Any] | None = None, *, resume: bool = False) 
                         _update_run(dbw, run, status="done", current_symbol=None, finished_at=_now())
             finally:
                 dbw.close()
+            notify_review_finished(run_id)
         except Exception as exc:
             logger.exception("optimize review failed")
             dbw = SessionLocal()
@@ -477,6 +528,7 @@ def start_review(config: dict[str, Any] | None = None, *, resume: bool = False) 
                     _update_run(dbw, run, status="error", error_message=str(exc), finished_at=_now(), current_symbol=None)
             finally:
                 dbw.close()
+            notify_review_finished(run_id)
 
     with _run_lock:
         _thread = threading.Thread(target=worker, name="bias-review", daemon=True)
@@ -486,6 +538,105 @@ def start_review(config: dict[str, Any] | None = None, *, resume: bool = False) 
         return run_to_dict(db.query(OptimizeReviewRun).filter(OptimizeReviewRun.id == run_id).first()) or {}
     finally:
         db.close()
+
+
+def _fmt_metric(value: Any, digits: int = 1) -> str:
+    try:
+        return f"{float(value):.{digits}f}"
+    except (TypeError, ValueError):
+        return "—"
+
+
+def build_review_email(payload: dict[str, Any]) -> tuple[str, str, str]:
+    status = payload.get("status") or ""
+    done = int(payload.get("done_count") or 0)
+    total = int(payload.get("total_count") or 0)
+    symbols = [s for s in (payload.get("symbols") or []) if isinstance(s, dict)]
+    rec_n = sum(len(s.get("recommendations") or []) for s in symbols)
+    if status == "done":
+        title = "Alarm revizyonu tamamlandı"
+    elif status == "cancelled":
+        title = "Alarm revizyonu durduruldu"
+    else:
+        title = "Alarm revizyonu hata ile bitti"
+    subject = f"{title} · {done}/{total} pay · {rec_n} öneri"
+    lines = [payload.get("summary") or title, ""]
+    html_parts = [
+        f"<h2>{html.escape(title)}</h2>",
+        f"<p>{html.escape(payload.get('summary') or '')}</p>",
+    ]
+    if not symbols:
+        lines.append("Raporda pay yok.")
+        html_parts.append("<p>Raporda pay yok.</p>")
+        return subject, "\n".join(lines), "".join(html_parts)
+    for item in symbols:
+        recs = item.get("recommendations") or []
+        extras = item.get("extras") or []
+        head = f"{item.get('symbol') or ''} · {item.get('name') or ''} · {len(recs)} öneri"
+        if extras:
+            head += f" · +{len(extras)} diğer"
+        lines.append(head)
+        if item.get("note"):
+            lines.append(f"  {item['note']}")
+        html_parts.append(f"<h3>{html.escape(head)}</h3>")
+        if item.get("note"):
+            html_parts.append(f"<p>{html.escape(str(item['note']))}</p>")
+        html_parts.append("<ul>")
+        for rec in recs:
+            hl = set(rec.get("highlights") or [])
+            bits = [
+                ("WR", f"{_fmt_metric(rec.get('win_rate'))}%", "win_rate"),
+                ("PF", _fmt_metric(rec.get("profit_factor"), 2), "profit_factor"),
+                ("Kâr", f"{_fmt_metric(rec.get('net_profit_pct'))}%", "net_profit_pct"),
+                ("DD", f"{_fmt_metric(rec.get('max_drawdown'))}%", "max_drawdown"),
+            ]
+            metric_plain = " · ".join(f"{label} {val}" for label, val, _key in bits)
+            metric_html = " · ".join(
+                f"<strong>{html.escape(label)} {html.escape(val)}</strong>" if key in hl else f"{html.escape(label)} {html.escape(val)}"
+                for label, val, key in bits
+            )
+            why = " · ".join(str(x) for x in (rec.get("reasons") or []) if x)
+            lines.append(f"  {metric_plain} · {rec.get('trades') or 0} işlem")
+            if why:
+                lines.append(f"  {why}")
+            why_html = ""
+            if why:
+                why_html = "<br>" + " · ".join(
+                    f"<strong>{html.escape(str(x))}</strong>" if highlight_keys([x]) else html.escape(str(x))
+                    for x in (rec.get("reasons") or [])
+                    if x
+                )
+            html_parts.append(f"<li>{metric_html} · {int(rec.get('trades') or 0)} işlem{why_html}</li>")
+        html_parts.append("</ul>")
+        lines.append("")
+    return subject, "\n".join(lines).strip(), "".join(html_parts)
+
+
+def notify_review_finished(run_id: int) -> None:
+    from app.services.email_service import send_email, smtp_configured
+
+    db = SessionLocal()
+    try:
+        settings = review_settings(db)
+        run = db.query(OptimizeReviewRun).filter(OptimizeReviewRun.id == run_id).first()
+        payload = run_to_dict(run) or {}
+    finally:
+        db.close()
+    if not settings.get("notify_email"):
+        logger.info("Review email skipped — notify off")
+        return
+    to_address = normalize_review_emails(settings.get("email_to") or "")
+    if not to_address:
+        logger.info("Review email skipped — no recipients")
+        return
+    if not smtp_configured():
+        logger.warning("Review email skipped — SMTP not configured")
+        return
+    try:
+        subject, body, body_html = build_review_email(payload)
+        send_email(to_address=to_address, subject=subject, body_text=body, body_html=body_html)
+    except Exception:
+        logger.exception("Review email failed")
 
 
 def maybe_resume_review() -> None:

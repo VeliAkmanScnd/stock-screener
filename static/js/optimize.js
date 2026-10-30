@@ -595,7 +595,7 @@ function bindOptChartLightDismiss(dialog) {
   });
 }
 
-async function openOptChart(raw) {
+async function openOptChart(raw, extra) {
   const dialog = document.querySelector("#optChartDialog");
   const wrap = document.querySelector("#optChartWrap");
   const title = document.querySelector("#optChartTitle");
@@ -610,9 +610,14 @@ async function openOptChart(raw) {
     return;
   }
   const payload = optLastPayload || {};
+  const ctx = extra || {};
+  const symbol = ctx.symbol || payload.symbol;
+  const timeframe = ctx.timeframe || payload.timeframe || "15m";
+  const period = ctx.period || payload.period || "60d";
+  const jobId = "job_id" in ctx ? (ctx.job_id || "") : (optLastJobId || optJobId || payload.job_id || "");
   wrap.innerHTML = '<p class="hint">Grafik hazırlanıyor…</p>';
   if (stats) stats.innerHTML = "";
-  if (title) title.textContent = `${payload.symbol || "Set"} — strateji grafiği`;
+  if (title) title.textContent = `${symbol || "Set"} — strateji grafiği`;
   if (meta) meta.textContent = "Sermaye eğrisi ve aylık kâr/zarar yükleniyor…";
   if (typeof dialog.showModal === "function") dialog.showModal();
   else dialog.setAttribute("open", "");
@@ -620,16 +625,16 @@ async function openOptChart(raw) {
     const res = await apiFetch("/api/optimize/chart", {
       method: "POST",
       body: JSON.stringify({
-        symbol: payload.symbol,
-        timeframe: payload.timeframe || "15m",
-        period: payload.period || "60d",
-        job_id: optLastJobId || optJobId || payload.job_id || "",
+        symbol,
+        timeframe,
+        period,
+        job_id: jobId,
         params,
       }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.detail || "Grafik alınamadı");
-    if (title) title.textContent = `${data.symbol || payload.symbol || ""} — strateji grafiği`;
+    if (title) title.textContent = `${data.symbol || symbol || ""} — strateji grafiği`;
     if (meta) {
       meta.textContent = `${data.timeframe || ""} · ${optChartDate(data.from)} – ${optChartDate(data.to)} · ${data.bars || 0} bar · ${data.metrics?.trades || 0} işlem`;
     }
@@ -1264,12 +1269,38 @@ function optReviewParamLine(rec) {
   return parts.filter(Boolean).join(" · ");
 }
 
-function renderOptReviewRec(rec) {
-  const why = (rec.reasons || []).join(" · ");
+function optRevMetric(label, value, key, highlights) {
+  const text = `${label} ${value}`;
+  if ((highlights || []).includes(key)) return `<strong>${optEsc(text)}</strong>`;
+  return optEsc(text);
+}
+
+function optRevWhy(reasons) {
+  return (reasons || [])
+    .map((r) => {
+      const text = String(r);
+      const improved = /^(WR|PF|Kâr|DD)\b/.test(text);
+      return improved ? `<strong>${optEsc(text)}</strong>` : optEsc(text);
+    })
+    .join(" · ");
+}
+
+function renderOptReviewRec(rec, item) {
+  const hl = rec.highlights || [];
+  const why = optRevWhy(rec.reasons);
+  const params = rec.pine_overrides || pineOverridesFromRow(rec.params || {});
+  const json = optEsc(JSON.stringify(params));
+  const cfg = optReviewState?.run?.config || optReviewState?.settings?.config || {};
+  const symbol = item?.symbol || "";
+  const timeframe = item?.timeframe || cfg.timeframe || "30m";
+  const period = item?.period || cfg.period || "13mo";
   return `<div class="opt-rev-rec">
-    <div class="opt-rev-rec-metrics">WR ${fmtOptNum(rec.win_rate, 1)}% · PF ${fmtOptNum(rec.profit_factor, 2)} · Kâr ${fmtOptNum(rec.net_profit_pct, 1)}% · DD ${fmtOptNum(rec.max_drawdown, 1)}% · ${fmtOptNum(rec.trades, 0)} işlem</div>
+    <div class="opt-rev-rec-top">
+      <div class="opt-rev-rec-metrics">${optRevMetric("WR", `${fmtOptNum(rec.win_rate, 1)}%`, "win_rate", hl)} · ${optRevMetric("PF", fmtOptNum(rec.profit_factor, 2), "profit_factor", hl)} · ${optRevMetric("Kâr", `${fmtOptNum(rec.net_profit_pct, 1)}%`, "net_profit_pct", hl)} · ${optRevMetric("DD", `${fmtOptNum(rec.max_drawdown, 1)}%`, "max_drawdown", hl)} · ${optEsc(fmtOptNum(rec.trades, 0))} işlem</div>
+      <button type="button" class="btn secondary btn-sm" data-opt-review-chart="${json}" data-symbol="${optEsc(symbol)}" data-timeframe="${optEsc(timeframe)}" data-period="${optEsc(period)}">Grafik</button>
+    </div>
     <div class="opt-rev-rec-params">${optEsc(optReviewParamLine(rec))}</div>
-    ${why ? `<div class="opt-rev-rec-why">${optEsc(why)}</div>` : ""}
+    ${why ? `<div class="opt-rev-rec-why">${why}</div>` : ""}
   </div>`;
 }
 
@@ -1281,11 +1312,11 @@ function renderOptReviewPay(item) {
   const recLabel = alarm ? `${recs.length} revizyon` : `${recs.length} alarm önerisi`;
   const alarmLabel = alarm ? `alarm «${alarm.name || alarm.id}»` : "alarm yok";
   const extraBlock = extras.length
-    ? `<details class="opt-rev-extra"><summary>${extras.length} diğer set</summary>${extras.map(renderOptReviewRec).join("")}</details>`
+    ? `<details class="opt-rev-extra"><summary>${extras.length} diğer set</summary>${extras.map((r) => renderOptReviewRec(r, item)).join("")}</details>`
     : "";
   const body = item.status === "error"
     ? `<p class="opt-rev-note">${optEsc(item.error || item.note || "Tarama hata verdi")}</p>`
-    : `${item.note ? `<p class="opt-rev-note">${optEsc(item.note)}</p>` : ""}${recs.map(renderOptReviewRec).join("")}${extraBlock}`;
+    : `${item.note ? `<p class="opt-rev-note">${optEsc(item.note)}</p>` : ""}${recs.map((r) => renderOptReviewRec(r, item)).join("")}${extraBlock}`;
   return `<article class="opt-rev-pay">
     <div class="opt-rev-pay-head">
       <h3>${optEsc(title)}</h3>
@@ -1301,6 +1332,18 @@ function renderOptReview(payload) {
   const run = payload?.run;
   const weekly = document.querySelector("#optReviewWeekly");
   if (weekly) weekly.checked = !!settings.weekly_enabled;
+  const notify = document.querySelector("#optReviewNotifyEmail");
+  if (notify) notify.checked = settings.notify_email !== false;
+  const email = document.querySelector("#optReviewEmail");
+  if (email && document.activeElement !== email) {
+    email.value = settings.email_to || "veliakman@gmail.com; akbastt@gmail.com";
+  }
+  const mailHint = document.querySelector("#optReviewMailHint");
+  if (mailHint) {
+    mailHint.textContent = settings.smtp_configured
+      ? "Tarama bitince bu adreslere rapor gider. Adresleri virgül veya noktalı virgülle ayırın."
+      : "SMTP .env’de yok; e-posta kutusu işaretli olsa da gönderilemez.";
+  }
   const summary = document.querySelector("#optReviewSummary");
   const running = optReviewRunning(run);
   const done = run?.done_count || 0;
@@ -1366,6 +1409,26 @@ async function loadOptReview() {
   renderOptReview(data);
   scheduleOptReviewPoll(data.run);
   return data;
+}
+
+async function saveOptReviewMail() {
+  const email = document.querySelector("#optReviewEmail")?.value || "";
+  const notify = !!document.querySelector("#optReviewNotifyEmail")?.checked;
+  try {
+    const res = await apiFetch("/api/optimize/review/settings", {
+      method: "PUT",
+      body: JSON.stringify({ email_to: email, notify_email: notify }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || "E-posta kaydı başarısız");
+    optReviewStatus(
+      notify ? `Bitince e-posta: ${data.email_to || email}` : "Bitince e-posta kapalı.",
+      "ok",
+    );
+    if (optReviewState) optReviewState.settings = data;
+  } catch (err) {
+    optReviewStatus(err.message || "E-posta kaydı hatası", "error");
+  }
 }
 
 async function saveOptReviewWeekly() {
@@ -1476,6 +1539,19 @@ function initOptimize() {
     if (document.querySelector("#optPresetThisSymbol")?.checked) loadOptPresets();
   });
   document.querySelector("#optReviewWeekly")?.addEventListener("change", saveOptReviewWeekly);
+  document.querySelector("#optReviewNotifyEmail")?.addEventListener("change", saveOptReviewMail);
+  document.querySelector("#btnOptReviewSaveMail")?.addEventListener("click", saveOptReviewMail);
+  document.querySelector("#optReviewEmail")?.addEventListener("change", saveOptReviewMail);
+  document.querySelector("#optReviewReport")?.addEventListener("click", (ev) => {
+    const btn = ev.target.closest("[data-opt-review-chart]");
+    if (!btn) return;
+    openOptChart(btn.getAttribute("data-opt-review-chart"), {
+      symbol: btn.getAttribute("data-symbol") || "",
+      timeframe: btn.getAttribute("data-timeframe") || "30m",
+      period: btn.getAttribute("data-period") || "13mo",
+      job_id: "",
+    });
+  });
   document.querySelector("#btnOptReviewSaveGrid")?.addEventListener("click", saveOptReviewGrid);
   document.querySelector("#btnOptReviewStart")?.addEventListener("click", startOptReview);
   document.querySelector("#btnOptReviewStop")?.addEventListener("click", stopOptReview);
