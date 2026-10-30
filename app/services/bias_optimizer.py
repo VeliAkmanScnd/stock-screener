@@ -44,7 +44,7 @@ RANGE_AXIS_MAX = 400
 REFINE_BASE_STRIDES = (4, 2, 1)
 REFINE_MAX_STRIDE = 256
 REFINE_TOP = 16
-REFINE_MIN_RADIUS = 8
+REFINE_MIN_RADIUS = 16
 REFINE_SPACE_WIDE = 100_000
 REFINE_SPACE_HUGE = 10_000_000
 NUMERIC_REFINE_KEYS = (
@@ -791,6 +791,7 @@ def pick_refine_seeds(found: dict[str, Any], n: int = REFINE_TOP) -> list[dict[s
         key=lambda r: (
             not r.get("passed"),
             -_finite_num(r.get("net_profit_pct"), 0.0),
+            -_finite_num(r.get("trades"), 0.0),
             -_finite_num(r.get("win_rate"), 0.0),
         ),
     )
@@ -845,7 +846,7 @@ def _assemble_found(
         "cancelled": cancelled,
         "partial": partial,
         "reference": next((r for r in ranked if r.get("tag") == "referans"), None),
-        "best": next((r for r in ranked if r.get("passed") and r.get("tag") != "referans"), None),
+        "best": _pick_best(ranked),
         "results": ranked,
     }
 
@@ -1224,11 +1225,80 @@ def _search_progress_label(
 
 def _result_rank_key(row: dict[str, Any]) -> tuple:
     return (
-        not row["passed"],
-        -float(row["profit_factor"]),
-        -float(row["net_profit_pct"]),
-        -float(row["win_rate"]),
-        float(row["max_drawdown"]),
+        not row.get("passed"),
+        -_finite_num(row.get("profit_factor"), 0.0),
+        -_finite_num(row.get("net_profit_pct"), 0.0),
+        -_finite_num(row.get("win_rate"), 0.0),
+        _finite_num(row.get("max_drawdown"), 0.0),
+    )
+
+
+def _profit_keep_key(row: dict[str, Any]) -> tuple:
+    return (
+        not row.get("passed"),
+        -_finite_num(row.get("net_profit_pct"), 0.0),
+        -_finite_num(row.get("trades"), 0.0),
+        -_finite_num(row.get("win_rate"), 0.0),
+    )
+
+
+def _wr_keep_key(row: dict[str, Any]) -> tuple:
+    return (
+        not row.get("passed"),
+        -_finite_num(row.get("win_rate"), 0.0),
+        -_finite_num(row.get("net_profit_pct"), 0.0),
+        -_finite_num(row.get("trades"), 0.0),
+    )
+
+
+def _row_identity(row: dict[str, Any]) -> tuple:
+    params = row.get("params") if isinstance(row.get("params"), dict) else {}
+    if params:
+        return tuple(sorted((str(k), str(v)) for k, v in params.items()))
+    return (id(row),)
+
+
+def _keep_diverse_rows(rows: list[dict[str, Any]], limit: int = RESULT_LIMIT) -> list[dict[str, Any]]:
+    """Keep high-profit rows even when high-WR / high-PF sets would crowd them out."""
+    if len(rows) <= limit:
+        return list(rows)
+    n_profit = max(1, limit // 3)
+    n_wr = max(1, limit // 3)
+    n_pf = max(1, limit - n_profit - n_wr)
+    seen: set[tuple] = set()
+    out: list[dict[str, Any]] = []
+
+    def take(sorted_rows: list[dict[str, Any]], count: int) -> None:
+        added = 0
+        for row in sorted_rows:
+            if added >= count:
+                return
+            ident = _row_identity(row)
+            if ident in seen:
+                continue
+            seen.add(ident)
+            out.append(row)
+            added += 1
+
+    take(sorted(rows, key=_profit_keep_key), n_profit)
+    take(sorted(rows, key=_wr_keep_key), n_wr)
+    take(sorted(rows, key=_result_rank_key), n_pf)
+    return out
+
+
+def _pick_best(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
+    cand = [r for r in rows if r.get("passed") and r.get("tag") != "referans"]
+    if not cand:
+        cand = [r for r in rows if r.get("tag") != "referans"]
+    if not cand:
+        return None
+    return max(
+        cand,
+        key=lambda r: (
+            _finite_num(r.get("net_profit_pct"), 0.0),
+            _finite_num(r.get("win_rate"), 0.0),
+            _finite_num(r.get("trades"), 0.0),
+        ),
     )
 
 
@@ -1243,7 +1313,16 @@ def _progress_step(total: int) -> int:
 
 
 def _ranked_results(refs: list[dict[str, Any]], buf: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    rest = sorted(buf, key=_result_rank_key)[:RESULT_LIMIT]
+    kept = _keep_diverse_rows(buf, RESULT_LIMIT)
+    rest = sorted(
+        kept,
+        key=lambda r: (
+            not r.get("passed"),
+            -_finite_num(r.get("net_profit_pct"), 0.0),
+            -_finite_num(r.get("win_rate"), 0.0),
+            -_finite_num(r.get("profit_factor"), 0.0),
+        ),
+    )
     ranked = []
     for idx, row in enumerate(list(refs) + rest, start=1):
         ranked.append({"rank": idx, **row})
@@ -1308,8 +1387,9 @@ def search_bias_params(
     def trim_buf() -> None:
         if len(buf) <= RESULT_LIMIT:
             return
-        buf.sort(key=_result_rank_key)
-        del buf[RESULT_LIMIT:]
+        kept = _keep_diverse_rows(buf, RESULT_LIMIT)
+        buf.clear()
+        buf.extend(kept)
 
     def emit_snapshot() -> None:
         nonlocal last_snap
@@ -1326,7 +1406,7 @@ def search_bias_params(
                 "cancelled": cancelled,
                 "partial": True,
                 "reference": next((r for r in ranked if r.get("tag") == "referans"), None),
-                "best": next((r for r in ranked if r.get("passed") and r.get("tag") != "referans"), None),
+                "best": _pick_best(ranked),
                 "results": ranked,
             }
         )
@@ -1414,7 +1494,7 @@ def search_bias_params(
         )
     ranked = _ranked_results(refs, buf)
     reference = next((r for r in ranked if r.get("tag") == "referans"), None)
-    best = next((r for r in ranked if r.get("passed") and r.get("tag") != "referans"), None)
+    best = _pick_best(ranked)
     return {
         "tested": attempted,
         "passed": passed_n,

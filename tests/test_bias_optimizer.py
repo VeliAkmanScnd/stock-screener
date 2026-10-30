@@ -16,6 +16,8 @@ from app.services.bias_optimizer import (
     expand_combos,
     pick_refine_seeds,
     refine_combo_score,
+    _keep_diverse_rows,
+    _pick_best,
     grid_space,
     neighborhood_grid,
     neighborhood_values,
@@ -622,6 +624,36 @@ def test_neighborhood_stays_on_next_stride():
     nb = neighborhood_grid(grid, seeds, 4, 2)
     assert 64 in nb["ha_len"]
     assert nb["reverse_exit"] == grid["reverse_exit"]
+
+
+def test_keep_diverse_rows_preserves_high_profit_against_high_pf():
+    rows = []
+    for i in range(40):
+        rows.append(
+            {
+                "passed": True,
+                "tag": "",
+                "net_profit_pct": 12.0 + i * 0.01,
+                "win_rate": 85.0,
+                "profit_factor": 8.0,
+                "trades": 7,
+                "params": {"ha_len": 50 + i, "slot": f"wr{i}"},
+            }
+        )
+    rows.append(
+        {
+            "passed": True,
+            "tag": "",
+            "net_profit_pct": 55.19,
+            "win_rate": 80.77,
+            "profit_factor": 6.12,
+            "trades": 26,
+            "params": {"ha_len": 70, "slot": "profit"},
+        }
+    )
+    kept = _keep_diverse_rows(rows, limit=9)
+    assert any(r["net_profit_pct"] == 55.19 for r in kept)
+    assert _pick_best(kept)["params"]["slot"] == "profit"
 
 
 def test_refine_seeds_take_profit_and_wr_groups():
