@@ -605,7 +605,7 @@ def test_discovery_combos_include_off_coarse_ha_and_swing():
 
 def test_discovery_covers_every_ha_period():
     grid = _wide_sample_grid()
-    assert discovery_cover_key(grid) == "ha_len"
+    assert discovery_cover_key(grid) == "ha_len+ha_len2"
     listed, sampled = discovery_combos(grid, cap=2000, seed=3, coarse_stride=8)
     assert sampled
     found = {int(c["ha_len"]) for c in listed}
@@ -627,19 +627,24 @@ def test_discovery_covers_every_ha_period():
             "optimize": {"exit_mode": False, "require_bar": False, "ha_htf": False},
         }
     )
-    assert plan["ha_cover"] == "ha_len"
+    assert plan["ha_cover"] == "ha_len+ha_len2"
 
 
-def test_discovery_50k_hits_profit_region_ha70_swing9():
+def test_discovery_50k_covers_ha_smooth_plane_and_profit_region():
     grid = _wide_sample_grid()
     listed, sampled = discovery_combos(grid, cap=50000, seed=3, coarse_stride=8)
     assert sampled
+    pairs = {(int(c["ha_len"]), int(c["ha_len2"])) for c in listed}
+    expected = {(int(ha), int(sm)) for ha in grid["ha_len"] for sm in grid["ha_len2"]}
+    assert expected <= pairs
+    assert (70, 91) in pairs
     assert any(
         c["ha_len"] == 70
-        and int(c["swing_bars"]) == 9
+        and int(c["ha_len2"]) == 91
         and abs(float(c["rr_mult"]) - 1.0) < 1e-9
         for c in listed
     )
+    assert any(c["ha_len"] == 70 and int(c["swing_bars"]) == 9 for c in listed)
 
 
 def test_neighborhood_stays_on_next_stride():

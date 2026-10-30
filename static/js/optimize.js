@@ -207,9 +207,11 @@ function formatOptSearchPlan(plan) {
   if (plan.tour1_discovery) {
     if (plan.dense_neighborhood) {
       const radii = (plan.strides || []).map((s) => `±${s}`).join(" → ");
-      const cover = plan.ha_cover === "ha_len2"
-        ? "Tur 1 her HA smoothing değerini tarar, diğerleri Sobol."
-        : "Tur 1 her HA period değerini tarar, smooth ve diğerleri Sobol.";
+      const cover = plan.ha_cover === "ha_len+ha_len2"
+        ? "Tur 1 her HA period × smooth çiftini tarar, diğerleri Sobol."
+        : plan.ha_cover === "ha_len2"
+          ? "Tur 1 her HA smoothing değerini tarar, diğerleri Sobol."
+          : "Tur 1 her HA period değerini tarar, smooth ve diğerleri Sobol.";
       return `Izgara ${space} set. ${tours} tur (keşif + ${radii} sıkı komşuluk). ${cover} Sonra tohum çevresi atlamadan taranır.`;
     }
     return `Izgara ${space} set. ${tours} tur (keşif + ${steps}, +${extra} kademe). Tur 1 Sobol ${cap} tam adım; sonra kâr ve WR cepleri ayrı sıkılaşır.`;
@@ -1165,7 +1167,7 @@ async function startOptRun(e) {
   const planText = formatOptSearchPlan(optSearchPlan);
   optStatus(planText || "Tarama başlatılıyor…");
   if (optSearchPlan?.mode === "refine") {
-    setOptProgress(2, `Tur 1/${optSearchPlan.tours} keşif HA tam + Sobol diğer`);
+    setOptProgress(2, `Tur 1/${optSearchPlan.tours} keşif HA×smooth tam + Sobol diğer`);
   } else {
     setOptProgress(2, "Başlatılıyor…");
   }

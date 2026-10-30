@@ -828,10 +828,14 @@ def _merge_unique_combos(*groups: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def discovery_cover_key(grid: dict[str, list]) -> str | None:
-    """Cover HA period completely; if it is pinned, cover smoothing instead."""
-    if len(grid.get("ha_len") or []) > 1:
+    """Cover HA period × smoothing when both vary; otherwise the one free HA axis."""
+    ha = len(grid.get("ha_len") or []) > 1
+    smooth = len(grid.get("ha_len2") or []) > 1
+    if ha and smooth:
+        return "ha_len+ha_len2"
+    if ha:
         return "ha_len"
-    if len(grid.get("ha_len2") or []) > 1:
+    if smooth:
         return "ha_len2"
     return None
 
@@ -875,16 +879,74 @@ def _stratified_axis_combos(
     return out[:cap]
 
 
+def _pin_combo(grid: dict[str, list], pins: dict[str, Any]) -> dict[str, Any]:
+    keys = list(ENGINE_KEYS)
+    values = [list(grid.get(k) or [None]) for k in keys]
+    idxs = [_preferred_index(keys[j], values[j]) for j in range(len(keys))]
+    for j, key in enumerate(keys):
+        if key in pins and pins[key] is not None:
+            idxs[j] = _value_index(values[j], pins[key])
+    return _combo_from_indices(keys, values, idxs)
+
+
+def _even_picks(vals: list, take: int) -> list:
+    if take <= 0 or not vals:
+        return []
+    if take >= len(vals):
+        return list(vals)
+    if take == 1:
+        return [vals[0]]
+    last = len(vals) - 1
+    return [vals[round(j * last / (take - 1))] for j in range(take)]
+
+
+def _cover_ha_plane_combos(
+    grid: dict[str, list],
+    cap: int,
+    seed: int,
+) -> list[dict[str, Any]]:
+    """Every HA period × smooth pair, then leftover budget Sobol-samples the other axes."""
+    ha_vals = list(grid.get("ha_len") or [None])
+    sm_vals = list(grid.get("ha_len2") or [None])
+    cap = max(1, int(cap))
+    n_ha = len(ha_vals)
+    n_sm = len(sm_vals)
+    n_pairs = n_ha * n_sm
+    plane: list[dict[str, Any]] = []
+    if n_pairs <= cap:
+        for ha in ha_vals:
+            for sm in sm_vals:
+                plane.append(_pin_combo(grid, {"ha_len": ha, "ha_len2": sm}))
+    else:
+        per_ha = max(1, cap // max(1, n_ha))
+        for ha in ha_vals:
+            if len(plane) >= cap:
+                break
+            take = min(per_ha, cap - len(plane), n_sm)
+            for sm in _even_picks(sm_vals, take):
+                plane.append(_pin_combo(grid, {"ha_len": ha, "ha_len2": sm}))
+                if len(plane) >= cap:
+                    break
+    leftover = cap - len(plane)
+    if leftover <= 0:
+        return plane[:cap]
+    extra = expand_combos(grid, leftover * 2 + 32, seed=seed)
+    return _merge_unique_combos(plane, extra)[:cap]
+
+
 def discovery_combos(
     grid: dict[str, list],
     cap: int,
     seed: int,
     coarse_stride: int,
 ) -> tuple[list[dict[str, Any]], bool]:
-    """Every HA period (or smooth) gets a slice; other axes keep Sobol/LHS inside that slice."""
+    """HA period × smooth plane first; osc/RR/swing keep Sobol on the leftover budget."""
     cap = max(1, int(cap))
     cover = discovery_cover_key(grid)
-    if cover:
+    if cover == "ha_len+ha_len2":
+        fine = _cover_ha_plane_combos(grid, cap, seed)
+        sampled = grid_space(grid) > len(fine)
+    elif cover:
         fine = _stratified_axis_combos(grid, cap, seed, cover)
         sampled = grid_space(grid) > len(fine)
     else:
@@ -1954,7 +2016,7 @@ def run_bias_optimize(
                 overall_done = tour_i * weight + int(weight * done / max(1, total))
                 if tour_i == 0:
                     if tour_sampled:
-                        kind = "keşif HA tam + Sobol diğer"
+                        kind = "keşif HA×smooth tam + Sobol diğer"
                     else:
                         kind = "keşif"
                 else:
