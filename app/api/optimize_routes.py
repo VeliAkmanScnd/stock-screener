@@ -66,6 +66,8 @@ class ReviewSettingsBody(BaseModel):
     weekly_enabled: bool | None = None
     notify_email: bool | None = None
     email_to: str | None = None
+    notify_telegram: bool | None = None
+    telegram_to: str | None = None
     config: dict[str, Any] | None = None
 
 
@@ -248,6 +250,8 @@ def put_optimize_review_settings(
             weekly_enabled=body.weekly_enabled,
             notify_email=body.notify_email,
             email_to=body.email_to,
+            notify_telegram=body.notify_telegram,
+            telegram_to=body.telegram_to,
             config=body.config,
         )
     except ValueError as exc:

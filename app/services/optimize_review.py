@@ -69,6 +69,8 @@ def get_meta(db) -> OptimizeReviewMeta:
         weekly_enabled=False,
         notify_email=True,
         email_to=DEFAULT_REVIEW_EMAILS,
+        notify_telegram=True,
+        telegram_to="",
         config_json=json.dumps(DEFAULT_REVIEW_CONFIG),
     )
     db.add(row)
@@ -79,6 +81,7 @@ def get_meta(db) -> OptimizeReviewMeta:
 
 def review_settings(db) -> dict[str, Any]:
     from app.services.email_service import smtp_configured
+    from app.services.telegram_service import telegram_configured
 
     meta = get_meta(db)
     cfg = _load_json(meta.config_json, {})
@@ -88,7 +91,10 @@ def review_settings(db) -> dict[str, Any]:
         "weekly_enabled": bool(meta.weekly_enabled),
         "notify_email": bool(getattr(meta, "notify_email", True)),
         "email_to": (meta.email_to or "").strip(),
+        "notify_telegram": bool(getattr(meta, "notify_telegram", True)),
+        "telegram_to": (getattr(meta, "telegram_to", None) or "").strip(),
         "smtp_configured": smtp_configured(),
+        "telegram_configured": telegram_configured(),
         "config": {**default_review_config(), **cfg},
         "updated_at": meta.updated_at.isoformat() if meta.updated_at else None,
     }
@@ -100,6 +106,8 @@ def save_review_settings(
     weekly_enabled: bool | None = None,
     notify_email: bool | None = None,
     email_to: str | None = None,
+    notify_telegram: bool | None = None,
+    telegram_to: str | None = None,
     config: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     meta = get_meta(db)
@@ -109,6 +117,10 @@ def save_review_settings(
         meta.notify_email = bool(notify_email)
     if email_to is not None:
         meta.email_to = normalize_review_emails(email_to)
+    if notify_telegram is not None:
+        meta.notify_telegram = bool(notify_telegram)
+    if telegram_to is not None:
+        meta.telegram_to = (telegram_to or "").strip()
     if isinstance(config, dict) and config:
         merged = {**default_review_config(), **_load_json(meta.config_json, {}), **config}
         merged.pop("symbol", None)
@@ -618,8 +630,28 @@ def build_review_email(payload: dict[str, Any]) -> tuple[str, str, str]:
     return subject, "\n".join(lines).strip(), "".join(html_parts)
 
 
+def _telegram_chunks(text: str, limit: int = 3500) -> list[str]:
+    rest = (text or "").strip()
+    if not rest:
+        return []
+    chunks: list[str] = []
+    while rest:
+        if len(rest) <= limit:
+            chunks.append(rest)
+            break
+        cut = rest.rfind("\n\n", 0, limit)
+        if cut < 80:
+            cut = rest.rfind("\n", 0, limit)
+        if cut < 80:
+            cut = limit
+        chunks.append(rest[:cut].strip())
+        rest = rest[cut:].strip()
+    return chunks
+
+
 def notify_review_finished(run_id: int, *, force: bool = False) -> dict[str, Any]:
-    from app.services.email_service import send_email, smtp_configured
+    from app.services.email_service import send_tv_list_email, smtp_configured
+    from app.services.telegram_service import parse_chat_ids, send_telegram_text, telegram_configured
 
     db = SessionLocal()
     try:
@@ -628,17 +660,66 @@ def notify_review_finished(run_id: int, *, force: bool = False) -> dict[str, Any
         payload = run_to_dict(run) or {}
     finally:
         db.close()
-    if not force and not settings.get("notify_email"):
-        logger.info("Review email skipped — notify off")
+    want_email = bool(settings.get("notify_email"))
+    want_telegram = bool(settings.get("notify_telegram"))
+    if not force and not want_email and not want_telegram:
+        logger.info("Review notify skipped — all channels off")
         return {"ok": False, "skipped": "notify off"}
-    to_address = normalize_review_emails(settings.get("email_to") or "")
-    if not to_address:
-        raise ValueError("E-posta alıcısı yok")
-    if not smtp_configured():
-        raise RuntimeError("SMTP .env içinde yok; e-posta gönderilemez")
-    subject, body, body_html = build_review_email(payload)
-    send_email(to_address=to_address, subject=subject, body_text=body, body_html=body_html)
-    return {"ok": True, "to": to_address}
+    if force and not want_email and not want_telegram:
+        want_email = True
+    subject, body, _body_html = build_review_email(payload)
+    sent: dict[str, Any] = {"ok": True, "email": False, "telegram": 0}
+    errors: list[str] = []
+
+    if want_email:
+        to_address = normalize_review_emails(settings.get("email_to") or "")
+        if not to_address:
+            errors.append("E-posta alıcısı yok")
+        elif not smtp_configured():
+            errors.append("SMTP yok (.env: SMTP_HOST, SMTP_FROM) — zamanlanmış tarama ile aynı ayar")
+        else:
+            try:
+                send_tv_list_email(
+                    to_address=to_address,
+                    subject=subject,
+                    body_text=body,
+                    tv_list_text=body + "\n",
+                    filename=f"alarm_revizyon_{run_id}.txt",
+                )
+                sent["email"] = True
+                sent["to"] = to_address
+            except Exception as exc:
+                errors.append(f"e-posta: {exc}")
+                logger.exception("Review email failed")
+
+    if want_telegram:
+        extra = (settings.get("telegram_to") or "").strip()
+        chats = parse_chat_ids(extra)
+        if not chats and not telegram_configured():
+            errors.append("Telegram yok (.env: TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)")
+        else:
+            from app.config import TELEGRAM_CHAT_ID
+
+            targets = chats or parse_chat_ids(TELEGRAM_CHAT_ID)
+            if not targets:
+                errors.append("Telegram chat id yok")
+            else:
+                try:
+                    n = 0
+                    for chat_id in targets:
+                        for chunk in _telegram_chunks(f"{subject}\n\n{body}"):
+                            send_telegram_text(chat_id, chunk, parse_mode=None)
+                            n += 1
+                    sent["telegram"] = n
+                except Exception as exc:
+                    errors.append(f"telegram: {exc}")
+                    logger.exception("Review telegram failed")
+
+    if errors and not sent["email"] and not sent["telegram"]:
+        raise RuntimeError(" · ".join(errors))
+    if errors:
+        sent["warnings"] = errors
+    return sent
 
 
 def maybe_resume_review() -> None:

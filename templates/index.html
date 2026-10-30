@@ -816,16 +816,24 @@
         <div class="opt-review-mail">
           <label class="opt-preset-check">
             <input type="checkbox" id="optReviewNotifyEmail" checked />
-            <span>Bitince e-posta</span>
+            <span>E-posta ile gönder</span>
+          </label>
+          <label class="opt-preset-check">
+            <input type="checkbox" id="optReviewNotifyTelegram" checked />
+            <span>Telegram ile gönder</span>
           </label>
           <label class="field opt-review-mail-field">
-            <span>Alıcılar</span>
-            <input type="text" id="optReviewEmail" value="veliakman@gmail.com; akbastt@gmail.com" placeholder="veli@…; diger@…" autocomplete="off" />
+            <span>E-posta</span>
+            <input type="text" id="optReviewEmail" value="veliakman@gmail.com; akbastt@gmail.com" placeholder="you@example.com; partner@example.com" autocomplete="email" />
           </label>
-          <button type="button" class="btn secondary btn-sm" id="btnOptReviewSaveMail">E-postayı kaydet</button>
+          <label class="field opt-review-mail-field">
+            <span>Telegram chat id (isteğe bağlı)</span>
+            <input type="text" id="optReviewTelegram" placeholder="Boşsa .env TELEGRAM_CHAT_ID" autocomplete="off" />
+          </label>
+          <button type="button" class="btn secondary btn-sm" id="btnOptReviewSaveMail">Kanalı kaydet</button>
           <button type="button" class="btn secondary btn-sm" id="btnOptReviewSendMail">Raporu gönder</button>
         </div>
-        <p class="hint" id="optReviewMailHint">Tarama bitince bu adreslere rapor gider. Adresleri virgül veya noktalı virgülle ayırın.</p>
+        <p class="hint" id="optReviewMailHint">Zamanlanmış tarama ile aynı SMTP / Telegram geçidi (.env). Adresleri virgül veya noktalı virgülle ayırın.</p>
         <div class="scan-progress" id="optReviewProgress" hidden>
           <div class="scan-progress-track">
             <div class="scan-progress-bar" id="optReviewProgressBar"></div>
@@ -1348,6 +1356,6 @@
   <script src="/static/js/perf.js?v=5"></script>
   <script src="/static/js/help.js?v=2"></script>
   <script src="/static/js/alarm.js?v=1"></script>
-  <script src="/static/js/optimize.js?v=21"></script>
+  <script src="/static/js/optimize.js?v=22"></script>
 </body>
 </html>

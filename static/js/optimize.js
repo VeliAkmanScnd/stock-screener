@@ -1334,15 +1334,23 @@ function renderOptReview(payload) {
   if (weekly) weekly.checked = !!settings.weekly_enabled;
   const notify = document.querySelector("#optReviewNotifyEmail");
   if (notify) notify.checked = settings.notify_email !== false;
+  const notifyTg = document.querySelector("#optReviewNotifyTelegram");
+  if (notifyTg) notifyTg.checked = settings.notify_telegram !== false;
   const email = document.querySelector("#optReviewEmail");
   if (email && document.activeElement !== email) {
     email.value = settings.email_to || "veliakman@gmail.com; akbastt@gmail.com";
   }
+  const tg = document.querySelector("#optReviewTelegram");
+  if (tg && document.activeElement !== tg) tg.value = settings.telegram_to || "";
   const mailHint = document.querySelector("#optReviewMailHint");
   if (mailHint) {
-    mailHint.textContent = settings.smtp_configured
-      ? "Tarama bitince bu adreslere rapor gider. Adresleri virgül veya noktalı virgülle ayırın."
-      : "SMTP .env’de yok; e-posta kutusu işaretli olsa da gönderilemez.";
+    const smtp = settings.smtp_configured
+      ? "SMTP hazır (zamanlanmış tarama ile aynı)."
+      : "SMTP yok (.env: SMTP_HOST, SMTP_FROM).";
+    const telegram = settings.telegram_configured
+      ? "Telegram hazır."
+      : "Telegram yok (.env: TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID).";
+    mailHint.textContent = `${smtp} ${telegram} Adresleri virgül veya noktalı virgülle ayırın.`;
   }
   const summary = document.querySelector("#optReviewSummary");
   const running = optReviewRunning(run);
@@ -1414,30 +1422,44 @@ async function loadOptReview() {
 async function saveOptReviewMail() {
   const email = document.querySelector("#optReviewEmail")?.value || "";
   const notify = !!document.querySelector("#optReviewNotifyEmail")?.checked;
+  const notifyTg = !!document.querySelector("#optReviewNotifyTelegram")?.checked;
+  const telegram = document.querySelector("#optReviewTelegram")?.value || "";
   try {
     const res = await apiFetch("/api/optimize/review/settings", {
       method: "PUT",
-      body: JSON.stringify({ email_to: email, notify_email: notify }),
+      body: JSON.stringify({
+        email_to: email,
+        notify_email: notify,
+        notify_telegram: notifyTg,
+        telegram_to: telegram,
+      }),
     });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.detail || "E-posta kaydı başarısız");
-    optReviewStatus(
-      notify ? `Bitince e-posta: ${data.email_to || email}` : "Bitince e-posta kapalı.",
-      "ok",
-    );
+    if (!res.ok) throw new Error(data.detail || "Kanal kaydı başarısız");
+    const parts = [];
+    if (notify) parts.push(`e-posta ${data.email_to || email}`);
+    if (notifyTg) parts.push("Telegram");
+    optReviewStatus(parts.length ? `Bitince: ${parts.join(" · ")}` : "Bitince bildirim kapalı.", "ok");
     if (optReviewState) optReviewState.settings = data;
   } catch (err) {
-    optReviewStatus(err.message || "E-posta kaydı hatası", "error");
+    optReviewStatus(err.message || "Kanal kaydı hatası", "error");
   }
 }
 
 async function sendOptReviewMail() {
-  optReviewStatus("Rapor e-postası gönderiliyor…");
+  optReviewStatus("Rapor gönderiliyor (SMTP / Telegram)…");
   try {
     const res = await apiFetch("/api/optimize/review/email", { method: "POST" });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.detail || "Gönderilemedi");
-    optReviewStatus("Rapor e-postası gönderildi.", "ok");
+    const parts = [];
+    if (data.email) parts.push("e-posta");
+    if (data.telegram) parts.push("Telegram");
+    const warn = (data.warnings || []).join(" · ");
+    optReviewStatus(
+      `${parts.length ? `Gönderildi: ${parts.join(" · ")}` : "Gönderilemedi."}${warn ? ` ${warn}` : ""}`,
+      parts.length ? "ok" : "error",
+    );
   } catch (err) {
     optReviewStatus(err.message || "Gönderilemedi", "error");
   }
@@ -1552,9 +1574,11 @@ function initOptimize() {
   });
   document.querySelector("#optReviewWeekly")?.addEventListener("change", saveOptReviewWeekly);
   document.querySelector("#optReviewNotifyEmail")?.addEventListener("change", saveOptReviewMail);
+  document.querySelector("#optReviewNotifyTelegram")?.addEventListener("change", saveOptReviewMail);
   document.querySelector("#btnOptReviewSaveMail")?.addEventListener("click", saveOptReviewMail);
   document.querySelector("#btnOptReviewSendMail")?.addEventListener("click", sendOptReviewMail);
   document.querySelector("#optReviewEmail")?.addEventListener("change", saveOptReviewMail);
+  document.querySelector("#optReviewTelegram")?.addEventListener("change", saveOptReviewMail);
   document.querySelector("#optReviewReport")?.addEventListener("click", (ev) => {
     const btn = ev.target.closest("[data-opt-review-chart]");
     if (!btn) return;

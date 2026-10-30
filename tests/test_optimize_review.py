@@ -4,6 +4,7 @@ from app.services.alarm_service import list_viop_pay_contracts
 from app.services.optimize_review import (
     REVIEW_EXTRA,
     REVIEW_TOP,
+    _telegram_chunks,
     alarm_for_contract,
     build_review_email,
     build_symbol_review,
@@ -173,6 +174,14 @@ def test_highlight_keys_from_reasons():
         "profit_factor",
         "net_profit_pct",
     ]
+
+
+def test_telegram_chunks_split_long_report():
+    text = "\n\n".join(f"pay {i}\nWR 60" for i in range(40))
+    chunks = _telegram_chunks(text, limit=200)
+    assert len(chunks) > 1
+    assert all(len(c) <= 200 for c in chunks)
+    assert "pay 0" in chunks[0]
 
 
 def test_normalize_review_emails_accepts_commas():

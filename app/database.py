@@ -197,6 +197,8 @@ class OptimizeReviewMeta(Base):
     weekly_enabled = Column(Boolean, nullable=False, default=False)
     notify_email = Column(Boolean, nullable=False, default=True)
     email_to = Column(Text, nullable=False, default="veliakman@gmail.com; akbastt@gmail.com")
+    notify_telegram = Column(Boolean, nullable=False, default=True)
+    telegram_to = Column(Text, nullable=True)
     config_json = Column(Text, nullable=False, default="{}")
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
@@ -326,6 +328,15 @@ def _migrate_db() -> None:
                     "NOT NULL DEFAULT 'veliakman@gmail.com; akbastt@gmail.com'"
                 )
             )
+        if review_cols and "notify_telegram" not in review_cols:
+            conn.execute(
+                text(
+                    "ALTER TABLE optimize_review_meta ADD COLUMN "
+                    "notify_telegram BOOLEAN NOT NULL DEFAULT 1"
+                )
+            )
+        if review_cols and "telegram_to" not in review_cols:
+            conn.execute(text("ALTER TABLE optimize_review_meta ADD COLUMN telegram_to TEXT"))
         conn.commit()
 
 
