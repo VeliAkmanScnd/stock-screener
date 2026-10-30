@@ -323,6 +323,7 @@ function paintOptTable() {
   if (!body) return;
   const all = optLastPayload?.results || [];
   if (tools) tools.hidden = all.length === 0;
+  syncOptExportButtons(all.length);
   if (!all.length) {
     if (countEl) {
       countEl.hidden = true;
@@ -449,6 +450,164 @@ function renderOptResults(payload, live) {
   renderOptCompare(optLastPayload);
   syncOptSortHeaders();
   paintOptTable();
+}
+
+function syncOptExportButtons(count) {
+  const n = Number(count);
+  const on = Number.isFinite(n) ? n > 0 : (optLastPayload?.results || []).length > 0;
+  ["#btnOptExportCsv", "#btnOptExportXml"].forEach((id) => {
+    const el = document.querySelector(id);
+    if (el) el.disabled = !on;
+  });
+}
+
+function optExportRows() {
+  const all = optLastPayload?.results || [];
+  const filtered = sortOptRows(filterOptRows(all));
+  return filtered.length ? filtered : all;
+}
+
+function optExportFilename(ext) {
+  const p = optLastPayload || {};
+  const sym = String(p.symbol || "bias").replace(/[^\w.-]+/g, "_");
+  const tf = String(p.timeframe || "").replace(/[^\w]+/g, "");
+  const day = new Date().toISOString().slice(0, 10);
+  const bits = ["bias-tester", sym, tf, day].filter(Boolean);
+  return `${bits.join("-")}.${ext}`;
+}
+
+function optCsvCell(value) {
+  const s = String(value ?? "");
+  if (/[",\r\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+  return s;
+}
+
+function optXmlEsc(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
+function optDownloadText(filename, text, mime) {
+  const blob = new Blob([text], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.rel = "noopener";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function optRowExportFields(row) {
+  const p = row.params || {};
+  const meta = optLastPayload || {};
+  return {
+    symbol: meta.symbol || "",
+    timeframe: meta.timeframe || "",
+    period: meta.period || "",
+    rank: row.rank ?? "",
+    tag: row.tag || "",
+    passed: row.passed ? "evet" : "hayir",
+    win_rate: row.win_rate ?? "",
+    profit_factor: row.profit_factor ?? "",
+    net_profit_pct: row.net_profit_pct ?? "",
+    max_drawdown: row.max_drawdown ?? "",
+    trades: row.trades ?? "",
+    ha_len: p.ha_len ?? "",
+    ha_len2: p.ha_len2 ?? "",
+    osc_len: p.osc_len ?? "",
+    ha_htf: p.ha_htf || "chart",
+    exit_mode: p.exitMode || "",
+    rr_mult: p.exitMode === "Percent" ? "" : (p.rrMult ?? ""),
+    swing_bars: p.exitMode === "Percent" ? "" : (p.swingBars ?? ""),
+    tp_pct: p.exitMode === "Percent" ? (p.tp_pct ?? "") : "",
+    sl_pct: p.exitMode === "Percent" ? (p.sl_pct ?? "") : "",
+    reverse_exit: p.reverse_exit ? "acik" : "kapali",
+    require_bar: p.require_bar ? "acik" : "kapali",
+    max_same: p.maxSame ?? "",
+  };
+}
+
+const OPT_EXPORT_COLS = [
+  ["symbol", "sembol"],
+  ["timeframe", "periyot"],
+  ["period", "veri_suresi"],
+  ["rank", "sira"],
+  ["tag", "etiket"],
+  ["passed", "esik_gecti"],
+  ["win_rate", "wr"],
+  ["profit_factor", "pf"],
+  ["net_profit_pct", "kar_pct"],
+  ["max_drawdown", "dd_pct"],
+  ["trades", "islem"],
+  ["ha_len", "ha"],
+  ["ha_len2", "smooth"],
+  ["osc_len", "osc"],
+  ["ha_htf", "htf"],
+  ["exit_mode", "cikis"],
+  ["rr_mult", "rr"],
+  ["swing_bars", "swing"],
+  ["tp_pct", "tp_pct"],
+  ["sl_pct", "sl_pct"],
+  ["reverse_exit", "rev"],
+  ["require_bar", "mum"],
+  ["max_same", "same"],
+];
+
+function buildOptCsv(rows) {
+  const header = OPT_EXPORT_COLS.map(([, title]) => optCsvCell(title)).join(",");
+  const lines = rows.map((row) => {
+    const fields = optRowExportFields(row);
+    return OPT_EXPORT_COLS.map(([key]) => optCsvCell(fields[key])).join(",");
+  });
+  return `\uFEFF${[header, ...lines].join("\r\n")}\r\n`;
+}
+
+function buildOptXml(rows) {
+  const meta = optLastPayload || {};
+  const scanAttrs = [
+    ["symbol", meta.symbol],
+    ["timeframe", meta.timeframe],
+    ["period", meta.period],
+    ["bars", meta.bars],
+    ["from", meta.from],
+    ["to", meta.to],
+    ["tested", meta.tested],
+    ["passed", meta.passed],
+    ["gridSize", meta.grid_size],
+  ]
+    .filter(([, v]) => v != null && v !== "")
+    .map(([k, v]) => `${k}="${optXmlEsc(v)}"`)
+    .join(" ");
+  const root = scanAttrs ? `<biasScan ${scanAttrs}>` : "<biasScan>";
+  const body = rows
+    .map((row) => {
+      const fields = optRowExportFields(row);
+      const cells = OPT_EXPORT_COLS.map(([key, title]) => `    <${title}>${optXmlEsc(fields[key])}</${title}>`).join("\n");
+      return `  <row>\n${cells}\n  </row>`;
+    })
+    .join("\n");
+  return `<?xml version="1.0" encoding="UTF-8"?>\n${root}\n${body}\n</biasScan>\n`;
+}
+
+function exportOptResults(kind) {
+  const rows = optExportRows();
+  if (!rows.length) {
+    optStatus("Kaydedilecek sonuç yok.", "error");
+    return;
+  }
+  const xml = kind === "xml";
+  const filename = optExportFilename(xml ? "xml" : "csv");
+  const text = xml ? buildOptXml(rows) : buildOptCsv(rows);
+  const mime = xml ? "application/xml;charset=utf-8" : "text/csv;charset=utf-8";
+  optDownloadText(filename, text, mime);
+  optStatus(`${rows.length} satır ${xml ? "XML" : "CSV"} olarak indirildi.`, "ok");
 }
 
 function onOptSortClick(ev) {
@@ -896,6 +1055,8 @@ function initOptimize() {
     el.addEventListener("change", syncOptAxisUi);
   });
   document.querySelector(".opt-results-table thead")?.addEventListener("click", onOptSortClick);
+  document.querySelector("#btnOptExportCsv")?.addEventListener("click", () => exportOptResults("csv"));
+  document.querySelector("#btnOptExportXml")?.addEventListener("click", () => exportOptResults("xml"));
   document.querySelector("#btnOptRefFromGrid")?.addEventListener("click", fillOptRefFromGrid);
   document.querySelector("#optPeriod")?.addEventListener("change", syncOptPeriodHint);
   document.querySelector("#optTimeframe")?.addEventListener("change", syncOptPeriodHint);
