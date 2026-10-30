@@ -827,15 +827,68 @@ def _merge_unique_combos(*groups: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return out
 
 
+def discovery_cover_key(grid: dict[str, list]) -> str | None:
+    """Cover HA period completely; if it is pinned, cover smoothing instead."""
+    if len(grid.get("ha_len") or []) > 1:
+        return "ha_len"
+    if len(grid.get("ha_len2") or []) > 1:
+        return "ha_len2"
+    return None
+
+
+def _stratified_axis_combos(
+    grid: dict[str, list],
+    cap: int,
+    seed: int,
+    cover_key: str,
+) -> list[dict[str, Any]]:
+    """Give every cover-axis value a QMC share of the budget (smooth/RR/swing stay sampled)."""
+    vals = list(grid.get(cover_key) or [None])
+    n = len(vals)
+    cap = max(1, int(cap))
+    if n <= 1:
+        listed, _, _ = combos_for_grid(grid, cap, seed=seed)
+        return listed
+    if n >= cap:
+        last = n - 1
+        idxs = [0] if cap == 1 else [round(i * last / (cap - 1)) for i in range(cap)]
+        out: list[dict[str, Any]] = []
+        for i, idx in enumerate(idxs):
+            sliced = dict(grid)
+            sliced[cover_key] = [vals[idx]]
+            out.extend(expand_combos(sliced, 1, seed=seed + i))
+        return out[:cap]
+    base, extra = divmod(cap, n)
+    leftover = 0
+    out = []
+    for i, val in enumerate(vals):
+        budget = base + (1 if i < extra else 0) + leftover
+        if budget <= 0:
+            continue
+        sliced = dict(grid)
+        sliced[cover_key] = [val]
+        chunk = expand_combos(sliced, budget, seed=seed + i * 9973)
+        out.extend(chunk)
+        leftover = max(0, budget - len(chunk))
+        if len(out) >= cap:
+            break
+    return out[:cap]
+
+
 def discovery_combos(
     grid: dict[str, list],
     cap: int,
     seed: int,
     coarse_stride: int,
 ) -> tuple[list[dict[str, Any]], bool]:
-    """Fine-grid Sobol (the search that finds HA 70 / swing 9) plus a coarse lattice if it fits."""
+    """Every HA period (or smooth) gets a slice; other axes keep Sobol/LHS inside that slice."""
     cap = max(1, int(cap))
-    fine, _, sampled = combos_for_grid(grid, cap, seed=seed)
+    cover = discovery_cover_key(grid)
+    if cover:
+        fine = _stratified_axis_combos(grid, cap, seed, cover)
+        sampled = grid_space(grid) > len(fine)
+    else:
+        fine, _, sampled = combos_for_grid(grid, cap, seed=seed)
     coarse = coarsen_grid(grid, coarse_stride)
     coarse_space = grid_space(coarse)
     if 1 < coarse_space <= cap:
@@ -875,6 +928,7 @@ def describe_search_plan(body: dict[str, Any]) -> dict[str, Any]:
     strides = refine_strides(grid, cap)
     coarse_space = grid_space(coarsen_grid(grid, REFINE_COARSE_STRIDE))
     tour1 = min(space, cap + (coarse_space if coarse_space <= cap else 0))
+    cover = discovery_cover_key(grid)
     return {
         "mode": "refine",
         "tours": 1 + len(strides),
@@ -885,6 +939,7 @@ def describe_search_plan(body: dict[str, Any]) -> dict[str, Any]:
         "tour1_sampled": True,
         "tour1_discovery": True,
         "dense_neighborhood": True,
+        "ha_cover": cover,
         "extra_tours": 0,
     }
 
@@ -1898,7 +1953,10 @@ def run_bias_optimize(
                 weight = 1000
                 overall_done = tour_i * weight + int(weight * done / max(1, total))
                 if tour_i == 0:
-                    kind = "keşif Sobol + kaba ızgara" if tour_sampled else "keşif"
+                    if tour_sampled:
+                        kind = "keşif HA tam + Sobol diğer"
+                    else:
+                        kind = "keşif"
                 else:
                     kind = f"±{tour_stride} sıkı komşuluk"
                     if tour_sampled:

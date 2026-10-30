@@ -15,6 +15,7 @@ from app.services.bias_optimizer import (
     combo_passes,
     describe_search_plan,
     discovery_combos,
+    discovery_cover_key,
     expand_combos,
     pick_refine_seeds,
     refine_combo_score,
@@ -597,14 +598,48 @@ def test_discovery_combos_include_off_coarse_ha_and_swing():
     grid = _wide_sample_grid()
     listed, sampled = discovery_combos(grid, cap=400, seed=3, coarse_stride=8)
     assert sampled
-    assert any(c["ha_len"] == 70 for c in listed) or any(
-        abs(int(c["ha_len"]) - 70) <= 2 for c in listed
-    )
-    assert any(int(c["swing_bars"]) == 9 for c in listed) or any(
-        8 <= int(c["swing_bars"]) <= 10 for c in listed
-    )
+    assert any(c["ha_len"] == 70 for c in listed)
     coarse = coarsen_grid(grid, 8)
     assert 9 in coarse["swing_bars"] or 10 in coarse["swing_bars"]
+
+
+def test_discovery_covers_every_ha_period():
+    grid = _wide_sample_grid()
+    assert discovery_cover_key(grid) == "ha_len"
+    listed, sampled = discovery_combos(grid, cap=2000, seed=3, coarse_stride=8)
+    assert sampled
+    found = {int(c["ha_len"]) for c in listed}
+    assert set(grid["ha_len"]) <= found
+    plan = describe_search_plan(
+        {
+            "mode": "quick",
+            "max_combos": 20000,
+            "ha_len": {"start": 48, "stop": 200, "step": 1},
+            "ha_len2": {"start": 55, "stop": 200, "step": 1},
+            "osc_len": {"start": 5, "stop": 20, "step": 1},
+            "rr_mult": {"start": 1, "stop": 2, "step": 0.1},
+            "swing_bars": {"start": 4, "stop": 30, "step": 1},
+            "max_same": {"start": 1, "stop": 6, "step": 1},
+            "ha_htf": {"start": 30, "stop": 30, "step": 15},
+            "exit_mode": "Swing RR",
+            "reverse_exit": "true, false",
+            "require_bar": "false",
+            "optimize": {"exit_mode": False, "require_bar": False, "ha_htf": False},
+        }
+    )
+    assert plan["ha_cover"] == "ha_len"
+
+
+def test_discovery_50k_hits_profit_region_ha70_swing9():
+    grid = _wide_sample_grid()
+    listed, sampled = discovery_combos(grid, cap=50000, seed=3, coarse_stride=8)
+    assert sampled
+    assert any(
+        c["ha_len"] == 70
+        and int(c["swing_bars"]) == 9
+        and abs(float(c["rr_mult"]) - 1.0) < 1e-9
+        for c in listed
+    )
 
 
 def test_neighborhood_stays_on_next_stride():
