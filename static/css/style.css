@@ -2529,6 +2529,97 @@ body {
   margin-top: 0.75rem;
 }
 
+.opt-review-card .track-list-actions {
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.opt-review-report {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  margin-top: 0.85rem;
+}
+
+.opt-rev-pay {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface2);
+  padding: 0.7rem 0.85rem 0.8rem;
+}
+
+.opt-rev-pay-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+
+.opt-rev-pay-head h3 {
+  font-size: 0.95rem;
+  margin: 0;
+}
+
+.opt-rev-pay-meta {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.opt-rev-note {
+  margin: 0.35rem 0 0.5rem;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.opt-rev-rec {
+  border-top: 1px solid var(--border);
+  padding: 0.45rem 0 0.2rem;
+}
+
+.opt-rev-rec-metrics {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.9rem;
+}
+
+.opt-rev-rec-params,
+.opt-rev-rec-why {
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-top: 0.15rem;
+}
+
+.opt-rev-rec-why {
+  color: var(--text);
+}
+
+.opt-rev-extra {
+  margin-top: 0.4rem;
+}
+
+.opt-rev-extra > summary {
+  cursor: pointer;
+  list-style: none;
+  font-size: 0.85rem;
+  color: var(--muted);
+  user-select: none;
+}
+
+.opt-rev-extra > summary::-webkit-details-marker {
+  display: none;
+}
+
+.opt-rev-extra > summary::before {
+  content: "+";
+  display: inline-block;
+  width: 1.1rem;
+  font-weight: 700;
+}
+
+.opt-rev-extra[open] > summary::before {
+  content: "−";
+}
+
 .opt-panel .scan-progress .btn-opt-stop {
   flex-shrink: 0;
 }

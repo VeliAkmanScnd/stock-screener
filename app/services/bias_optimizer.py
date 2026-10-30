@@ -1105,6 +1105,11 @@ def get_optimize_job(job_id: str) -> dict[str, Any] | None:
         return job_to_dict(job) if job else None
 
 
+def optimize_job_is_running() -> bool:
+    with _lock:
+        return any(j.status == "running" for j in _jobs.values())
+
+
 def cancel_optimize_job(job_id: str) -> dict[str, Any] | None:
     with _lock:
         job = _jobs.get(job_id)
@@ -1120,6 +1125,10 @@ def cancel_optimize_job(job_id: str) -> dict[str, Any] | None:
 def start_optimize_job(body: dict[str, Any]) -> str:
     grid = build_grid(body)
     combo_budget(body, grid_space(grid))
+    from app.services.optimize_review import review_is_running
+
+    if review_is_running():
+        raise RuntimeError("Haftalık alarm revizyonu çalışıyor; bitince veya durdurunca tekil tarama başlatın")
     job_id = str(uuid.uuid4())
     with _lock:
         if any(j.status == "running" for j in _jobs.values()):

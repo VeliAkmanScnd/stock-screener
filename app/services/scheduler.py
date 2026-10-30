@@ -37,6 +37,7 @@ TRACK_ARCHIVE_JOB = "track_archive_expired"
 SCHEDULE_SYNC_JOB = "scheduled_scan_sync"
 NASDAQ_LIQUID_JOB = "nasdaq_liquid_refresh"
 VIOP_CONTRACTS_JOB = "viop_contracts_refresh"
+OPTIMIZE_REVIEW_JOB = "optimize_alarm_review"
 
 
 def _refresh_nasdaq_liquid_job() -> None:
@@ -330,6 +331,12 @@ def start_scheduler() -> None:
     _scheduler.start()
     reload_all_jobs()
     register_track_jobs()
+    try:
+        from app.services.optimize_review import maybe_resume_review
+
+        maybe_resume_review()
+    except Exception:
+        logger.exception("Alarm revision resume failed")
     # Warm NASDAQ liquid list in background (first build can take several minutes).
     threading.Thread(
         target=_refresh_nasdaq_liquid_job,
@@ -463,5 +470,16 @@ def register_track_jobs() -> None:
         max_instances=1,
         coalesce=True,
         misfire_grace_time=3600,
+    )
+    from app.services.optimize_review import weekly_tick
+
+    _scheduler.add_job(
+        weekly_tick,
+        trigger=CronTrigger(day_of_week="fri", hour=19, minute=0, timezone=tz),
+        id=OPTIMIZE_REVIEW_JOB,
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=7200,
     )
     logger.info("Track price jobs registered (%s)", tz)

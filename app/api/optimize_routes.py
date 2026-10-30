@@ -62,6 +62,11 @@ class PresetBody(BaseModel):
     config: dict[str, Any] = Field(default_factory=dict)
 
 
+class ReviewSettingsBody(BaseModel):
+    weekly_enabled: bool | None = None
+    config: dict[str, Any] | None = None
+
+
 def _preset_dict(row: OptimizePreset) -> dict[str, Any]:
     try:
         config = json.loads(row.config_json or "{}")
@@ -214,3 +219,49 @@ def delete_preset(
     db.delete(row)
     db.commit()
     return {"ok": True}
+
+
+@router.get("/review")
+def get_optimize_review(db: Session = Depends(get_db), _user: User = Depends(get_current_user)):
+    from app.services.optimize_review import latest_run, review_settings, run_to_dict
+
+    return {
+        "settings": review_settings(db),
+        "run": run_to_dict(latest_run(db)),
+        "schedule": "Cuma 19:00 Europe/Istanbul",
+    }
+
+
+@router.put("/review/settings")
+def put_optimize_review_settings(
+    body: ReviewSettingsBody,
+    db: Session = Depends(get_db),
+    _user: User = Depends(get_current_user),
+):
+    from app.services.optimize_review import save_review_settings
+
+    return save_review_settings(db, weekly_enabled=body.weekly_enabled, config=body.config)
+
+
+@router.post("/review/start")
+def start_optimize_review(body: ReviewSettingsBody | None = None, _user: User = Depends(get_current_user)):
+    from app.services.borsapy_client import is_borsapy_available
+    from app.services.optimize_review import start_review
+
+    if not is_borsapy_available():
+        raise HTTPException(400, "borsapy yüklü değil")
+    if not tradingview_auth_configured():
+        raise HTTPException(400, "TradingView sessionid / sessionid_sign .env içinde yok")
+    try:
+        return start_review((body.config if body else None) or None)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(409, str(exc)) from exc
+
+
+@router.post("/review/stop")
+def stop_optimize_review(_user: User = Depends(get_current_user)):
+    from app.services.optimize_review import cancel_review
+
+    return cancel_review()

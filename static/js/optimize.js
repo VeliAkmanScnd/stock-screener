@@ -1,10 +1,12 @@
 let optContractsLoaded = false;
 let optPollTimer = null;
+let optReviewTimer = null;
 let optPresets = [];
 let optLastPayload = null;
 let optJobId = null;
 let optLastJobId = null;
 let optSort = { key: "rank", dir: "asc" };
+let optReviewState = null;
 
 const OPT_SORT_DESC_DEFAULT = new Set([
   "win_rate",
@@ -69,7 +71,7 @@ function hideOptProgress() {
 function setOptRunState(running) {
   const start = document.querySelector("#btnOptRun");
   const stops = document.querySelectorAll(".btn-opt-stop");
-  if (start) start.disabled = !!running;
+  if (start) start.disabled = !!running || optReviewRunning(optReviewState?.run);
   stops.forEach((btn) => {
     if (btn.id === "btnOptStop") btn.hidden = !running;
     btn.disabled = !running;
@@ -1226,10 +1228,218 @@ async function deleteSelectedOptPreset() {
   }
 }
 
+function optReviewRunning(run) {
+  return !!run && (run.status === "running" || run.status === "cancelling");
+}
+
+function optReviewStatus(msg, kind) {
+  const el = document.querySelector("#optReviewStatus");
+  if (!el) return;
+  el.textContent = msg || "";
+  el.classList.toggle("ok", kind === "ok");
+  el.classList.toggle("error", kind === "error");
+}
+
+function fmtOptNum(v, digits) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return "—";
+  return n.toLocaleString("tr-TR", { maximumFractionDigits: digits ?? 2 });
+}
+
+function optReviewParamLine(rec) {
+  const p = rec?.params || rec?.pine_overrides || {};
+  const exit = p.exitMode || p.exit_mode || "";
+  const parts = [
+    `HA ${p.ha_len ?? "—"} / ${p.ha_len2 ?? "—"}`,
+    `osc ${p.osc_len ?? "—"}`,
+    `HTF ${p.ha_htf || "—"}`,
+    exit,
+  ];
+  if (String(exit).toLowerCase().includes("percent")) {
+    parts.push(`TP ${p.tp_pct ?? "—"} / SL ${p.sl_pct ?? "—"}`);
+  } else {
+    parts.push(`RR ${p.rrMult ?? p.rr_mult ?? "—"}`, `swing ${p.swingBars ?? p.swing_bars ?? "—"}`);
+  }
+  parts.push(`same ${p.maxSame ?? p.max_same ?? "—"}`);
+  return parts.filter(Boolean).join(" · ");
+}
+
+function renderOptReviewRec(rec) {
+  const why = (rec.reasons || []).join(" · ");
+  return `<div class="opt-rev-rec">
+    <div class="opt-rev-rec-metrics">WR ${fmtOptNum(rec.win_rate, 1)}% · PF ${fmtOptNum(rec.profit_factor, 2)} · Kâr ${fmtOptNum(rec.net_profit_pct, 1)}% · DD ${fmtOptNum(rec.max_drawdown, 1)}% · ${fmtOptNum(rec.trades, 0)} işlem</div>
+    <div class="opt-rev-rec-params">${optEsc(optReviewParamLine(rec))}</div>
+    ${why ? `<div class="opt-rev-rec-why">${optEsc(why)}</div>` : ""}
+  </div>`;
+}
+
+function renderOptReviewPay(item) {
+  const recs = item.recommendations || [];
+  const extras = item.extras || [];
+  const alarm = item.alarm;
+  const title = `${item.symbol || ""}${item.name ? ` · ${item.name}` : ""}`;
+  const alarmLabel = alarm ? `alarm «${alarm.name || alarm.id}»` : "alarm yok";
+  const extraBlock = extras.length
+    ? `<details class="opt-rev-extra"><summary>${extras.length} diğer set</summary>${extras.map(renderOptReviewRec).join("")}</details>`
+    : "";
+  const body = item.status === "error"
+    ? `<p class="opt-rev-note">${optEsc(item.error || item.note || "Tarama hata verdi")}</p>`
+    : `${item.note ? `<p class="opt-rev-note">${optEsc(item.note)}</p>` : ""}${recs.map(renderOptReviewRec).join("")}${extraBlock}`;
+  return `<article class="opt-rev-pay">
+    <div class="opt-rev-pay-head">
+      <h3>${optEsc(title)}</h3>
+      <span class="opt-rev-pay-meta">${recs.length} öneri · ${optEsc(alarmLabel)}${item.tested ? ` · ${item.tested} set` : ""}</span>
+    </div>
+    ${body}
+  </article>`;
+}
+
+function renderOptReview(payload) {
+  optReviewState = payload || null;
+  const settings = payload?.settings || {};
+  const run = payload?.run;
+  const weekly = document.querySelector("#optReviewWeekly");
+  if (weekly) weekly.checked = !!settings.weekly_enabled;
+  const summary = document.querySelector("#optReviewSummary");
+  const running = optReviewRunning(run);
+  const done = run?.done_count || 0;
+  const total = run?.total_count || 0;
+  const remaining = run?.remaining_count ?? Math.max(0, total - done);
+  const pct = total ? Math.round((done / total) * 100) : 0;
+  if (summary) {
+    if (run?.summary) summary.textContent = run.summary;
+    else if (settings.weekly_enabled) summary.textContent = "Haftalık tarama açık · sonraki start Cuma 19:00 İstanbul.";
+    else summary.textContent = "Henüz rapor yok. Haftalık tarama kapalı.";
+  }
+  const prog = document.querySelector("#optReviewProgress");
+  const bar = document.querySelector("#optReviewProgressBar");
+  const label = document.querySelector("#optReviewProgressLabel");
+  if (prog) prog.hidden = !run || (!running && done === 0);
+  if (bar) bar.style.width = `${Math.max(0, Math.min(100, pct))}%`;
+  if (label) {
+    label.textContent = running && run.current_symbol
+      ? `${done}/${total} · ${run.current_symbol} · kalan ${remaining}`
+      : `${done}/${total}`;
+  }
+  const start = document.querySelector("#btnOptReviewStart");
+  const stop = document.querySelector("#btnOptReviewStop");
+  if (start) start.disabled = running || !!optJobId;
+  if (stop) {
+    stop.hidden = !running;
+    stop.disabled = run?.status === "cancelling";
+  }
+  const testerStart = document.querySelector("#btnOptRun");
+  if (testerStart && running) testerStart.disabled = true;
+  else if (testerStart && !optJobId) testerStart.disabled = false;
+  const report = document.querySelector("#optReviewReport");
+  const symbols = run?.symbols || [];
+  if (report) {
+    if (!symbols.length) {
+      report.innerHTML = running
+        ? `<p class="hint">İlk pay taranıyor: ${optEsc(run.current_symbol || "…")}</p>`
+        : "";
+    } else {
+      const live = running && run.current_symbol
+        ? `<p class="hint">Şimdi ${optEsc(run.current_symbol)} · kalan ${remaining} pay</p>`
+        : "";
+      report.innerHTML = live + symbols.map(renderOptReviewPay).join("");
+    }
+  }
+}
+
+function scheduleOptReviewPoll(run) {
+  if (optReviewTimer) {
+    clearTimeout(optReviewTimer);
+    optReviewTimer = null;
+  }
+  if (!optReviewRunning(run)) return;
+  optReviewTimer = setTimeout(() => {
+    loadOptReview().catch(() => {});
+  }, 5000);
+}
+
+async function loadOptReview() {
+  const res = await apiFetch("/api/optimize/review");
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.detail || "Rapor alınamadı");
+  renderOptReview(data);
+  scheduleOptReviewPoll(data.run);
+  return data;
+}
+
+async function saveOptReviewWeekly() {
+  const on = !!document.querySelector("#optReviewWeekly")?.checked;
+  try {
+    const res = await apiFetch("/api/optimize/review/settings", {
+      method: "PUT",
+      body: JSON.stringify({ weekly_enabled: on }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || "Kayıt başarısız");
+    optReviewStatus(on ? "Cuma 19:00 tarama açık." : "Haftalık tarama kapalı.", "ok");
+    if (optReviewState) optReviewState.settings = data;
+    renderOptReview({ ...(optReviewState || {}), settings: data });
+  } catch (err) {
+    optReviewStatus(err.message || "Kayıt hatası", "error");
+  }
+}
+
+async function saveOptReviewGrid() {
+  const body = collectOptBody();
+  delete body.symbol;
+  delete body.reference;
+  try {
+    const res = await apiFetch("/api/optimize/review/settings", {
+      method: "PUT",
+      body: JSON.stringify({ config: body }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || "Izgara kaydedilemedi");
+    optReviewStatus("Haftalık tarama ızgarası kaydedildi (30m / 13 ay önerilir).", "ok");
+    if (optReviewState) optReviewState.settings = data;
+  } catch (err) {
+    optReviewStatus(err.message || "Kayıt hatası", "error");
+  }
+}
+
+async function startOptReview() {
+  optReviewStatus("47 pay taraması başlatılıyor…");
+  try {
+    const res = await apiFetch("/api/optimize/review/start", {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || "Başlatılamadı");
+    optReviewStatus("Revizyon taraması çalışıyor.", "ok");
+    await loadOptReview();
+  } catch (err) {
+    optReviewStatus(err.message || "Başlatılamadı", "error");
+  }
+}
+
+async function stopOptReview() {
+  try {
+    const res = await apiFetch("/api/optimize/review/stop", { method: "POST" });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || "Durdurulamadı");
+    optReviewStatus("Durduruluyor…");
+    renderOptReview({ ...(optReviewState || {}), run: data });
+    scheduleOptReviewPoll(data);
+  } catch (err) {
+    optReviewStatus(err.message || "Durdurulamadı", "error");
+  }
+}
+
 async function onOptTabShown() {
   await loadOptContracts();
   await loadOptPresets();
   syncOptAxisUi();
+  try {
+    await loadOptReview();
+  } catch (err) {
+    optReviewStatus(err.message || "Rapor alınamadı", "error");
+  }
 }
 
 function initOptimize() {
@@ -1264,6 +1474,10 @@ function initOptimize() {
   document.querySelector("#optSymbol")?.addEventListener("change", () => {
     if (document.querySelector("#optPresetThisSymbol")?.checked) loadOptPresets();
   });
+  document.querySelector("#optReviewWeekly")?.addEventListener("change", saveOptReviewWeekly);
+  document.querySelector("#btnOptReviewSaveGrid")?.addEventListener("click", saveOptReviewGrid);
+  document.querySelector("#btnOptReviewStart")?.addEventListener("click", startOptReview);
+  document.querySelector("#btnOptReviewStop")?.addEventListener("click", stopOptReview);
   syncOptAxisUi();
   document.querySelector("#optMode")?.addEventListener("change", (ev) => {
     const full = ev.target.value === "full";

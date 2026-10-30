@@ -188,6 +188,34 @@ class OptimizePreset(Base):
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
+class OptimizeReviewMeta(Base):
+    """Singleton weekly Bias-vs-alarm review settings (id=1)."""
+
+    __tablename__ = "optimize_review_meta"
+
+    id = Column(Integer, primary_key=True)
+    weekly_enabled = Column(Boolean, nullable=False, default=False)
+    config_json = Column(Text, nullable=False, default="{}")
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class OptimizeReviewRun(Base):
+    """One sequential 47-pay tester pass compared to alarm settings."""
+
+    __tablename__ = "optimize_review_runs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    status = Column(String(32), nullable=False, default="queued")
+    started_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    finished_at = Column(DateTime, nullable=True)
+    current_symbol = Column(String(32), nullable=True)
+    done_count = Column(Integer, nullable=False, default=0)
+    total_count = Column(Integer, nullable=False, default=0)
+    config_json = Column(Text, nullable=False, default="{}")
+    report_json = Column(Text, nullable=False, default="{}")
+    error_message = Column(Text, nullable=True)
+
+
 def _migrate_db() -> None:
     """Schema updates for existing SQLite DBs. create_all first for fresh installs."""
     Base.metadata.create_all(engine)
