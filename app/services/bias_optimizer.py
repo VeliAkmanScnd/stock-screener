@@ -37,7 +37,7 @@ SnapshotCallback = Callable[[dict[str, Any]], None]
 class OptimizeCancelled(Exception):
     """User asked to stop a running Bias tester job."""
 
-MAX_COMBOS = 20000
+MAX_COMBOS = 50000
 SCAN_ALL_MAX = 10_000_000
 RESULT_LIMIT = 500
 RANGE_AXIS_MAX = 400
@@ -1237,7 +1237,7 @@ def _progress_step(total: int) -> int:
         return 1
     if total <= 2000:
         return 2
-    if total <= 20000:
+    if total <= 50000:
         return 8
     return max(20, min(500, total // 400))
 

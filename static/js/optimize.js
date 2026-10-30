@@ -11,6 +11,8 @@ let optSearchPlan = null;
 let optPlanTimer = null;
 let optPlanSeq = 0;
 
+const OPT_MAX_COMBOS = 50000;
+
 const OPT_SORT_DESC_DEFAULT = new Set([
   "win_rate",
   "profit_factor",
@@ -180,8 +182,8 @@ function formatOptSearchPlan(plan) {
   const scanAll = !!document.querySelector("#optScanAll")?.checked;
   if (plan.mode !== "refine") {
     if (scanAll) {
-      if (plan.space > 20000) {
-        return `Tamamını tara: ${space} set, 1 tur. 20.000’i geçiyor — başlamadan teyit istenir; süre saatler veya bir gün olabilir.`;
+      if (plan.space > OPT_MAX_COMBOS) {
+        return `Tamamını tara: ${space} set, 1 tur. ${fmtOptInt(OPT_MAX_COMBOS)}’i geçiyor — başlamadan teyit istenir; süre saatler veya bir gün olabilir.`;
       }
       return `Tamamını tara: ${space} set, 1 tur.`;
     }
@@ -907,7 +909,7 @@ function collectOptBody() {
     period: document.querySelector("#optPeriod")?.value || "60d",
     mode: document.querySelector("#optMode")?.value || "quick",
     side: document.querySelector("#optSide")?.value || "both",
-    max_combos: Math.max(20, Math.min(20000, Math.round(optNum("#optMaxCombos", 180)))),
+    max_combos: Math.max(20, Math.min(OPT_MAX_COMBOS, Math.round(optNum("#optMaxCombos", 180)))),
     scan_all: !!document.querySelector("#optScanAll")?.checked,
     min_win_rate: optNum("#optMinWinRate", 45),
     max_drawdown: optNum("#optMaxDd", 18),
@@ -1129,9 +1131,9 @@ async function startOptRun(e) {
     return;
   }
   const space = estimateOptGridSize();
-  if (body.scan_all && space > 20000) {
+  if (body.scan_all && space > OPT_MAX_COMBOS) {
     const ok = confirm(
-      `Izgara ${Number(space).toLocaleString("tr-TR")} set. Tamamını tara 20.000’den fazla — saatler veya bir gün sürebilir. Yine de başlatılsın mı?`,
+      `Izgara ${Number(space).toLocaleString("tr-TR")} set. Tamamını tara ${OPT_MAX_COMBOS.toLocaleString("tr-TR")}’den fazla — saatler veya bir gün sürebilir. Yine de başlatılsın mı?`,
     );
     if (!ok) return;
   }
