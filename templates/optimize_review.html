@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Alarm revizyon raporu · TradeLABtr</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/css/style.css?v=59" />
+  <link rel="stylesheet" href="/static/css/auth.css?v=7" />
+</head>
+<body class="opt-review-page">
+  <div class="app" id="optReviewPageRoot">
+    <header class="header">
+      <div class="brand">
+        <span class="logo">◈</span>
+        <div>
+          <h1>Alarm revizyon raporu</h1>
+          <p class="tagline">Haftalık Bias tarama · alarm kıyası ve kurulum önerileri</p>
+        </div>
+      </div>
+      <div class="header-user">
+        <a class="btn secondary btn-sm" href="/">Screener</a>
+        <span class="header-user-name" id="headerUsername"></span>
+        <button type="button" class="btn-logout" id="btnLogout">Çıkış</button>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="card opt-review-card">
+        <div class="track-list-head">
+          <div>
+            <h2>Son sonuçlar</h2>
+            <p class="hint" id="optReviewSummary">Rapor yükleniyor…</p>
+          </div>
+        </div>
+        <div class="scan-progress" id="optReviewProgress" hidden>
+          <div class="scan-progress-track">
+            <div class="scan-progress-bar" id="optReviewProgressBar"></div>
+          </div>
+          <span class="scan-progress-label" id="optReviewProgressLabel">0/47</span>
+        </div>
+        <p class="auth-status" id="optReviewStatus"></p>
+        <div id="optReviewReport" class="opt-review-report"></div>
+      </section>
+    </main>
+  </div>
+
+  <dialog id="optChartDialog" class="opt-chart-dialog" aria-labelledby="optChartTitle" closedby="any">
+    <div class="opt-chart-head">
+      <div>
+        <h2 id="optChartTitle">Strateji grafiği</h2>
+        <p class="hint" id="optChartMeta"></p>
+      </div>
+      <form method="dialog">
+        <button type="submit" class="btn secondary btn-sm" autofocus>Kapat</button>
+      </form>
+    </div>
+    <div class="opt-chart-stats" id="optChartStats"></div>
+    <div class="opt-chart-wrap" id="optChartWrap"></div>
+  </dialog>
+
+  <script src="/static/js/auth.js?v=12"></script>
+  <script src="/static/js/optimize.js?v=24"></script>
+</body>
+</html>

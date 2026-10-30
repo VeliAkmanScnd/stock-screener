@@ -119,3 +119,13 @@ async def index(
     if user is None:
         return RedirectResponse(url="/login", status_code=302)
     return templates.TemplateResponse(request, "index.html")
+
+
+@app.get("/optimize/review", response_class=HTMLResponse)
+async def optimize_review_page(
+    request: Request,
+    user=Depends(optional_user),
+):
+    if user is None:
+        return RedirectResponse(url="/login", status_code=302)
+    return templates.TemplateResponse(request, "optimize_review.html")

@@ -2534,6 +2534,16 @@ body {
   align-items: center;
 }
 
+body.opt-review-page .app {
+  max-width: 1100px;
+}
+
+body.opt-review-page .header-user {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
 .opt-review-report {
   display: flex;
   flex-direction: column;

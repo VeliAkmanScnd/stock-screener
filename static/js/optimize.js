@@ -1385,7 +1385,9 @@ function renderOptReview(payload) {
     if (!symbols.length) {
       report.innerHTML = running
         ? `<p class="hint">İlk pay taranıyor: ${optEsc(run.current_symbol || "…")}</p>`
-        : "";
+        : (document.querySelector("#optReviewPageRoot")
+          ? `<p class="hint">Henüz kayıtlı revizyon raporu yok. Tester’dan taramayı başlatın.</p>`
+          : "");
     } else {
       const live = running && run.current_symbol
         ? `<p class="hint">Şimdi ${optEsc(run.current_symbol)} · kalan ${remaining} pay</p>`
@@ -1587,6 +1589,9 @@ function initOptimize() {
   });
   document.querySelector("#btnOptReviewSaveGrid")?.addEventListener("click", saveOptReviewGrid);
   document.querySelector("#btnOptReviewStart")?.addEventListener("click", startOptReview);
+  document.querySelector("#btnOptReviewOpen")?.addEventListener("click", () => {
+    window.open("/optimize/review", "_blank", "noopener");
+  });
   document.querySelector("#btnOptReviewStop")?.addEventListener("click", stopOptReview);
   syncOptAxisUi();
   document.querySelector("#optMode")?.addEventListener("change", (ev) => {
@@ -1656,3 +1661,9 @@ function initOptimize() {
 
 initOptimize();
 window.onOptTabShown = onOptTabShown;
+if (document.querySelector("#optReviewPageRoot")) {
+  const boot = typeof bootstrapAuth === "function" ? bootstrapAuth() : Promise.resolve();
+  Promise.resolve(boot)
+    .then(() => loadOptReview())
+    .catch((err) => optReviewStatus(err.message || "Rapor alınamadı", "error"));
+}
