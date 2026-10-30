@@ -44,6 +44,7 @@ RANGE_AXIS_MAX = 400
 REFINE_BASE_STRIDES = (4, 2, 1)
 REFINE_MAX_STRIDE = 256
 REFINE_TOP = 12
+REFINE_MIN_RADIUS = 8
 NUMERIC_REFINE_KEYS = (
     "ha_len",
     "ha_len2",
@@ -530,12 +531,22 @@ def coarsen_values(vals: list, stride: int) -> list:
     return [vals[i] for i in idxs]
 
 
+def axis_refine_stride(vals: list, stride: int) -> int:
+    """Keep short axes (RR, swing, osc) dense; only HA-sized lists jump by `stride`."""
+    n = len(vals)
+    if n <= 8:
+        return 1
+    keep_min = 8
+    max_stride = max(1, (n - 1) // (keep_min - 1))
+    return min(max(1, int(stride)), max_stride)
+
+
 def coarsen_grid(grid: dict[str, list], stride: int) -> dict[str, list]:
     out: dict[str, list] = {}
     for key in ENGINE_KEYS:
         vals = list(grid.get(key) or [None])
         if key in NUMERIC_REFINE_KEYS:
-            out[key] = coarsen_values(vals, stride)
+            out[key] = coarsen_values(vals, axis_refine_stride(vals, stride))
         else:
             out[key] = vals
     return out
@@ -572,21 +583,28 @@ def _value_index(vals: list, value: Any) -> int:
         return 0
 
 
-def neighborhood_values(vals: list, centers: list, prev_stride: int, next_stride: int) -> list:
+def neighborhood_values(
+    vals: list,
+    centers: list,
+    prev_stride: int,
+    next_stride: int,
+    radius: int | None = None,
+) -> list:
     if not vals:
         return []
     if not centers:
         return coarsen_values(vals, next_stride)
     prev_stride = max(1, int(prev_stride))
     next_stride = max(1, int(next_stride))
+    span = max(prev_stride, int(radius) if radius is not None else prev_stride)
     lo = len(vals) - 1
     hi = 0
     center_idxs: list[int] = []
     for c in centers:
         i = _value_index(vals, c)
         center_idxs.append(i)
-        lo = min(lo, max(0, i - prev_stride))
-        hi = max(hi, min(len(vals) - 1, i + prev_stride))
+        lo = min(lo, max(0, i - span))
+        hi = max(hi, min(len(vals) - 1, i + span))
     keep = set(center_idxs)
     start = lo - (lo % next_stride)
     for i in range(max(0, start), hi + 1, next_stride):
@@ -629,7 +647,13 @@ def neighborhood_grid(
             val = _seed_axis_value(seed, key)
             if val is not None:
                 centers.append(val)
-        out[key] = neighborhood_values(vals, centers, prev_stride, next_stride)
+        out[key] = neighborhood_values(
+            vals,
+            centers,
+            prev_stride,
+            next_stride,
+            radius=max(prev_stride, REFINE_MIN_RADIUS),
+        )
     return out
 
 
@@ -643,6 +667,41 @@ def combos_for_grid(
         return list(iter_full_grid(grid)), space, False
     listed = expand_combos(grid, cap, seed=seed)
     return listed, len(listed), True
+
+
+def _merge_unique_combos(*groups: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    seen: set[tuple] = set()
+    out: list[dict[str, Any]] = []
+    for group in groups:
+        for combo in group:
+            try:
+                sig = _combo_sig(combo)
+            except (TypeError, ValueError, KeyError):
+                out.append(combo)
+                continue
+            if sig in seen:
+                continue
+            seen.add(sig)
+            out.append(combo)
+    return out
+
+
+def discovery_combos(
+    grid: dict[str, list],
+    cap: int,
+    seed: int,
+    coarse_stride: int,
+) -> tuple[list[dict[str, Any]], bool]:
+    """Fine-grid Sobol (the search that finds HA 70 / swing 9) plus a coarse lattice if it fits."""
+    cap = max(1, int(cap))
+    fine, _, sampled = combos_for_grid(grid, cap, seed=seed)
+    coarse = coarsen_grid(grid, coarse_stride)
+    coarse_space = grid_space(coarse)
+    if 1 < coarse_space <= cap:
+        listed = _merge_unique_combos(list(iter_full_grid(coarse)), fine)
+    else:
+        listed = fine
+    return listed, sampled or grid_space(grid) > len(listed)
 
 
 def describe_search_plan(body: dict[str, Any]) -> dict[str, Any]:
@@ -673,7 +732,8 @@ def describe_search_plan(body: dict[str, Any]) -> dict[str, Any]:
             "extra_tours": 0,
         }
     strides = refine_strides(grid, cap)
-    tour1 = grid_space(coarsen_grid(grid, strides[0]))
+    coarse_space = grid_space(coarsen_grid(grid, strides[0]))
+    tour1 = min(space, cap + (coarse_space if coarse_space <= cap else 0))
     return {
         "mode": "refine",
         "tours": len(strides),
@@ -681,7 +741,8 @@ def describe_search_plan(body: dict[str, Any]) -> dict[str, Any]:
         "space": space,
         "cap": cap,
         "tour1_space": tour1,
-        "tour1_sampled": tour1 > cap,
+        "tour1_sampled": True,
+        "tour1_discovery": True,
         "extra_tours": max(0, len(strides) - len(REFINE_BASE_STRIDES)),
     }
 
@@ -1536,18 +1597,22 @@ def run_bias_optimize(
     else:
         strides = [int(s) for s in (plan.get("strides") or REFINE_BASE_STRIDES)]
         n_tours = max(1, len(strides))
-        current_grid = coarsen_grid(grid, strides[0])
+        current_grid = grid
         acc_state = {"results": []}
         for t, stride in enumerate(strides):
             if stopped():
                 cancelled = True
                 break
-            if t > 0:
+            if t == 0:
+                listed, sampled = discovery_combos(grid, max_combos, seed, stride)
+                planned = len(listed)
+                current_grid = grid
+            else:
                 seeds = pick_refine_seeds(acc_state)
                 if not seeds:
                     break
                 current_grid = neighborhood_grid(grid, seeds, strides[t - 1], stride)
-            listed, planned, sampled = combos_for_grid(current_grid, max_combos, seed=seed + t)
+                listed, planned, sampled = combos_for_grid(current_grid, max_combos, seed=seed + t)
             fresh: list[dict[str, Any]] = []
             for combo in listed:
                 try:
@@ -1585,9 +1650,14 @@ def run_bias_optimize(
                     return
                 weight = 1000
                 overall_done = tour_i * weight + int(weight * done / max(1, total))
-                sobol = " · Sobol" if tour_sampled else ""
+                if tour_i == 0:
+                    kind = "keşif Sobol + kaba ızgara" if tour_sampled else "keşif"
+                else:
+                    kind = f"her {tour_stride}. değer"
+                    if tour_sampled:
+                        kind += " · Sobol"
                 msg = (
-                    f"Tur {tour_i + 1}/{tour_n} (her {tour_stride}. değer){sobol} · "
+                    f"Tur {tour_i + 1}/{tour_n} ({kind}) · "
                     f"{detail or _search_progress_label(done, total, tour_grid)}"
                 )
                 on_progress(phase, overall_done, tour_n * weight, msg)

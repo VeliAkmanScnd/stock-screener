@@ -12,6 +12,7 @@ from app.services.bias_optimizer import (
     combo_budget,
     combo_passes,
     describe_search_plan,
+    discovery_combos,
     expand_combos,
     pick_refine_seeds,
     refine_combo_score,
@@ -552,6 +553,21 @@ def test_wide_grid_adds_coarse_tours_until_cap():
     assert plan["tours"] == len(plan["strides"])
     assert plan["extra_tours"] >= 1
     assert plan["strides"][-1] == 1
+    assert plan["tour1_discovery"] is True
+
+
+def test_discovery_combos_include_off_coarse_ha_and_swing():
+    grid = _wide_sample_grid()
+    listed, sampled = discovery_combos(grid, cap=400, seed=3, coarse_stride=8)
+    assert sampled
+    assert any(c["ha_len"] == 70 for c in listed) or any(
+        abs(int(c["ha_len"]) - 70) <= 2 for c in listed
+    )
+    assert any(int(c["swing_bars"]) == 9 for c in listed) or any(
+        8 <= int(c["swing_bars"]) <= 10 for c in listed
+    )
+    coarse = coarsen_grid(grid, 8)
+    assert 9 in coarse["swing_bars"] or 10 in coarse["swing_bars"]
 
 
 def test_neighborhood_stays_on_next_stride():
@@ -561,6 +577,11 @@ def test_neighborhood_stays_on_next_stride():
     assert all((v - 48) % 2 == 0 or v == 64 for v in around)
     assert min(around) >= 60
     assert max(around) <= 68
+    wide = neighborhood_values(vals, [64], prev_stride=4, next_stride=1, radius=8)
+    assert 70 in wide
+    swings = list(range(4, 31))
+    swing_nb = neighborhood_values(swings, [4], prev_stride=2, next_stride=1, radius=8)
+    assert 9 in swing_nb
     grid = _wide_sample_grid()
     seeds = [{"params": {"ha_len": 64, "ha_len2": 100, "osc_len": 7, "rrMult": 1.0, "swingBars": 8, "maxSame": 1, "ha_htf": "30"}}]
     nb = neighborhood_grid(grid, seeds, 4, 2)

@@ -190,6 +190,9 @@ function formatOptSearchPlan(plan) {
   const steps = (plan.strides || []).join(" → ");
   const tours = plan.tours || (plan.strides || []).length;
   const extra = plan.extra_tours ? ` (+${plan.extra_tours} kaba tur)` : "";
+  if (plan.tour1_discovery) {
+    return `Izgara ${space} set. ${tours} tur${extra}: ${steps}. Tur 1 keşif: Sobol ${cap} (tam adım) + sığan kaba ızgara; sonra kâr ve WR cepleri ayrı sıkılaşır.`;
+  }
   const t1 = fmtOptInt(plan.tour1_space);
   if (plan.tour1_sampled) {
     return `Izgara ${space} set. ${tours} tur${extra}: ${steps}. Tur 1 hâlâ ${t1} → Sobol ${cap}. Izgarayı daraltabilirsiniz.`;
@@ -1139,7 +1142,7 @@ async function startOptRun(e) {
   const planText = formatOptSearchPlan(optSearchPlan);
   optStatus(planText || "Tarama başlatılıyor…");
   if (optSearchPlan?.mode === "refine") {
-    setOptProgress(2, `Tur 1/${optSearchPlan.tours} (her ${(optSearchPlan.strides || [4])[0]}. değer)`);
+    setOptProgress(2, `Tur 1/${optSearchPlan.tours} keşif Sobol`);
   } else {
     setOptProgress(2, "Başlatılıyor…");
   }
