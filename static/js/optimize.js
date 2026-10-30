@@ -919,12 +919,8 @@ function syncOptPeriodHint() {
   const tf = document.querySelector("#optTimeframe")?.value || "15m";
   const period = document.querySelector("#optPeriod")?.value || "60d";
   let extra = "TradingView’deki kendi setinizi yazın; tarama onu her zaman dener ve tabloda Ref olarak işaretler.";
-  if (period === "13mo" && tf === "15m") {
-    extra += " 13 ay 15m ile inmez; 30 dakika seçin.";
-  } else if (period === "13mo") {
-    extra += " 13 ay için 30 dakika veya 1 saat uygundur.";
-  } else if (tf === "15m" && (period === "6mo" || period === "8mo" || period === "2y")) {
-    extra += " 15m indirme en fazla ~8 aydır.";
+  if (period === "13mo" || period === "2y") {
+    extra += " 15m geçmiş TV grafiğindeki gibi parça parça iner; daha kısa süre de seçebilirsiniz.";
   }
   hint.textContent = extra;
 }

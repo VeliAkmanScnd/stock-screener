@@ -340,12 +340,61 @@ def coverage_note(timeframe: str, period: str, span_days: int) -> str:
     if span_days >= int(want * 0.7):
         return ""
     if timeframe == "5m":
-        return "5m TradingView indirme yaklaşık 2.5 ay ile sınırlı."
+        return "5m TradingView indirme bu turda istenen süreden kısa geldi."
     if timeframe == "15m":
-        return "15m TradingView indirme yaklaşık 8 ay. 13 ay için 30 dakika seçin."
+        return "15m parça indirme TV grafiğindeki kadar gelmedi; tekrar deneyin."
     if timeframe == "30m":
-        return "30m TradingView indirme yaklaşık 22 ay; gelen veri istenen süreden kısa."
+        return "30m TradingView indirme istenen süreden kısa geldi."
     return f"İstenen süre {want} gün, gelen veri {span_days} gün."
+
+
+# One TV history call is bar-capped (~5–10k). 15m VIOP ~32 bars/day → ~8 months
+# in a single shot. Page backward with start/end so tester matches the TV chart.
+_CHUNK_CALENDAR_DAYS = {
+    "1m": 7,
+    "3m": 35,
+    "5m": 50,
+    "15m": 140,
+    "30m": 260,
+    "1h": 400,
+}
+_CHUNK_OVERLAP_DAYS = 3
+
+
+def backtest_chunk_windows(
+    start: pd.Timestamp,
+    end: pd.Timestamp,
+    chunk_days: int,
+    overlap_days: int = _CHUNK_OVERLAP_DAYS,
+) -> list[tuple[pd.Timestamp, pd.Timestamp]]:
+    """Newest-first windows covering [start, end]."""
+    if end <= start or chunk_days <= 0:
+        return [(start, end)] if end > start else []
+    windows: list[tuple[pd.Timestamp, pd.Timestamp]] = []
+    cursor = pd.Timestamp(end)
+    floor = pd.Timestamp(start)
+    overlap = pd.Timedelta(days=max(0, overlap_days))
+    guard = 0
+    while cursor > floor and guard < 40:
+        guard += 1
+        w_end = cursor
+        w_start = max(floor, w_end - pd.Timedelta(days=chunk_days))
+        windows.append((w_start, w_end))
+        if w_start <= floor:
+            break
+        cursor = w_start + overlap
+        if cursor >= w_end:
+            cursor = w_start
+    return windows
+
+
+def merge_ohlcv_parts(parts: list[pd.DataFrame]) -> pd.DataFrame | None:
+    frames = [p for p in parts if p is not None and not p.empty]
+    if not frames:
+        return None
+    out = pd.concat(frames)
+    out = out[~out.index.duplicated(keep="last")].sort_index()
+    return None if out.empty else out
 
 
 def _backtest_attempts(timeframe: str, want_days: int) -> list[tuple[str, str | None]]:
@@ -399,28 +448,69 @@ def fetch_ohlcv_one_backtest(
     bp_period = _borsapy_backtest_period(period)
     attempts = _backtest_attempts(timeframe, want_days)
     asof = pd.Timestamp.now(tz="Europe/Istanbul")
+    asof_naive = pd.Timestamp(asof)
+    if asof_naive.tzinfo is not None:
+        asof_naive = asof_naive.tz_convert("Europe/Istanbul").tz_localize(None)
+    end = asof_naive.normalize() + pd.Timedelta(days=1)
+    start = end - pd.Timedelta(days=want_days)
     last_error: Exception | None = None
     best: pd.DataFrame | None = None
     best_span = -1
+
+    def _one_shot(ticker: str, interval: str, *, period_key: str | None = None, start_at=None, end_at=None):
+        kwargs: dict = {
+            "tickers": [ticker],
+            "interval": interval,
+            "group_by": "ticker",
+            "progress": False,
+        }
+        if start_at is not None:
+            kwargs["start"] = pd.Timestamp(start_at).strftime("%Y-%m-%d")
+            kwargs["end"] = pd.Timestamp(end_at or end).strftime("%Y-%m-%d")
+        else:
+            kwargs["period"] = period_key or bp_period
+        with _TV_SLOTS:
+            raw_df = bp.download(**kwargs)
+        frames = _split_download(raw_df, [ticker])
+        frame = frames.get(ticker)
+        if frame is None and frames:
+            frame = next(iter(frames.values()))
+        return frame
+
+    def _chunked(ticker: str, interval: str):
+        chunk_days = _CHUNK_CALENDAR_DAYS.get(interval, 0)
+        if chunk_days <= 0 or want_days <= chunk_days:
+            return _one_shot(ticker, interval, start_at=start, end_at=end)
+        parts: list[pd.DataFrame] = []
+        oldest_seen: pd.Timestamp | None = None
+        for w_start, w_end in backtest_chunk_windows(start, end, chunk_days):
+            piece = _one_shot(ticker, interval, start_at=w_start, end_at=w_end)
+            if piece is None or piece.empty:
+                if parts:
+                    break
+                continue
+            parts.append(piece)
+            piece_oldest = pd.Timestamp(piece.index.min())
+            if oldest_seen is not None and piece_oldest >= oldest_seen - pd.Timedelta(days=2):
+                break
+            oldest_seen = piece_oldest if oldest_seen is None else min(oldest_seen, piece_oldest)
+            if oldest_seen <= start + pd.Timedelta(days=2):
+                break
+            time.sleep(0.15)
+        merged = merge_ohlcv_parts(parts)
+        if merged is not None:
+            return merged
+        return _one_shot(ticker, interval, period_key=bp_period)
+
     for ticker in candidates:
         for interval, resample_rule in attempts:
             try:
-                with _TV_SLOTS:
-                    raw_df = bp.download(
-                        [ticker],
-                        period=bp_period,
-                        interval=interval,
-                        group_by="ticker",
-                        progress=False,
-                    )
-                frames = _split_download(raw_df, [ticker])
-                frame = frames.get(ticker)
-                if frame is None and frames:
-                    frame = next(iter(frames.values()))
-                if frame is None:
-                    continue
                 if resample_rule:
-                    frame = _resample_ohlcv(frame, resample_rule, asof=asof)
+                    frame = _one_shot(ticker, interval, period_key=bp_period)
+                    if frame is not None:
+                        frame = _resample_ohlcv(frame, resample_rule, asof=asof)
+                else:
+                    frame = _chunked(ticker, interval)
                 norm = _normalize_frame(frame) if frame is not None else None
                 if norm is None or len(norm) < 30:
                     continue
