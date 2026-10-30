@@ -20,6 +20,7 @@ from app.services.bias_optimizer import (
     refine_combo_score,
     _keep_diverse_rows,
     _pick_best,
+    dense_refine_combos,
     grid_space,
     neighborhood_grid,
     neighborhood_values,
@@ -27,6 +28,7 @@ from app.services.bias_optimizer import (
     parse_reference,
     refine_strides,
     search_bias_params,
+    seed_neighborhood_grid,
 )
 from app.services.borsapy_client import coverage_note
 from app.services.pine_market_bias import market_bias_series, summarize_bias_trades
@@ -530,10 +532,10 @@ def test_coarsen_keeps_endpoints_and_stride():
     assert 64 in out
 
 
-def test_wide_grid_adds_coarse_tours_until_cap():
+def test_wide_grid_uses_dense_neighborhood_radii():
     grid = _wide_sample_grid()
     strides = refine_strides(grid, 20000)
-    assert strides == [32, 16, 8, 4, 2, 1]
+    assert strides == [8, 4, 2]
     plan = describe_search_plan(
         {
             "mode": "quick",
@@ -552,13 +554,14 @@ def test_wide_grid_adds_coarse_tours_until_cap():
         }
     )
     assert plan["mode"] == "refine"
-    assert plan["tours"] == 1 + len(plan["strides"])
-    assert plan["extra_tours"] == 3
-    assert plan["strides"][-1] == 1
+    assert plan["tours"] == 4
+    assert plan["strides"] == [8, 4, 2]
+    assert plan["dense_neighborhood"] is True
+    assert plan["extra_tours"] == 0
     assert plan["tour1_discovery"] is True
 
 
-def test_medium_grid_uses_two_extra_zoom_layers():
+def test_medium_grid_uses_dense_neighborhood_radii():
     plan = describe_search_plan(
         {
             "mode": "quick",
@@ -582,17 +585,12 @@ def test_medium_grid_uses_two_extra_zoom_layers():
             "swing_bars": {"start": 4, "stop": 30, "step": 1},
         }
     )
-    space = plan["space"]
-    assert space > 200
-    if space > 10_000_000:
-        assert plan["strides"][0] == 32
-    elif space > 100_000:
-        assert plan["strides"] == [16, 8, 4, 2, 1]
-        assert plan["extra_tours"] == 2
-        assert plan["tours"] == 6
-    else:
-        assert plan["strides"] == [8, 4, 2, 1]
-        assert plan["extra_tours"] == 1
+    assert plan["space"] > 200
+    assert plan["mode"] == "refine"
+    assert plan["strides"] == [8, 4, 2]
+    assert plan["tours"] == 4
+    assert plan["dense_neighborhood"] is True
+    assert plan["extra_tours"] == 0
 
 
 def test_discovery_combos_include_off_coarse_ha_and_swing():
@@ -625,7 +623,32 @@ def test_neighborhood_stays_on_next_stride():
     seeds = [{"params": {"ha_len": 64, "ha_len2": 100, "osc_len": 7, "rrMult": 1.0, "swingBars": 8, "maxSame": 1, "ha_htf": "30"}}]
     nb = neighborhood_grid(grid, seeds, 4, 2)
     assert 64 in nb["ha_len"]
+    assert 70 in nb["ha_len"]
     assert nb["reverse_exit"] == grid["reverse_exit"]
+
+
+def test_dense_refine_fills_off_lattice_ha_and_swing():
+    grid = _wide_sample_grid()
+    seeds = [
+        {
+            "params": {
+                "ha_len": 64,
+                "ha_len2": 100,
+                "osc_len": 7,
+                "rrMult": 1.0,
+                "swingBars": 4,
+                "maxSame": 1,
+                "ha_htf": "30",
+            }
+        }
+    ]
+    box = seed_neighborhood_grid(grid, seeds[0], 8, secondary_radius=0, tertiary_radius=0)
+    assert 70 in box["ha_len"]
+    assert 9 in box["swing_bars"]
+    listed, sampled = dense_refine_combos(grid, seeds, cap=20000, radius=8)
+    assert sampled is False
+    assert any(c["ha_len"] == 70 and int(c["swing_bars"]) == 9 for c in listed)
+    assert any(abs(float(c["rr_mult"]) - 1.0) < 1e-9 for c in listed)
 
 
 def test_keep_diverse_rows_preserves_high_profit_against_high_pf():
@@ -656,8 +679,8 @@ def test_keep_diverse_rows_preserves_high_profit_against_high_pf():
     kept = _keep_diverse_rows(rows, limit=9)
     assert any(r["net_profit_pct"] == 55.19 for r in kept)
     assert _pick_best(kept)["params"]["slot"] == "profit"
-    assert RESULT_SLICE == 500
-    assert RESULT_LIMIT == 1500
+    assert RESULT_SLICE == 200
+    assert RESULT_LIMIT == 600
 
 
 def test_refine_seeds_take_profit_and_wr_groups():

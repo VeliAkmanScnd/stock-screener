@@ -193,6 +193,10 @@ function formatOptSearchPlan(plan) {
   const tours = plan.tours || (plan.strides || []).length;
   const extra = plan.extra_tours || 0;
   if (plan.tour1_discovery) {
+    if (plan.dense_neighborhood) {
+      const radii = (plan.strides || []).map((s) => `±${s}`).join(" → ");
+      return `Izgara ${space} set. ${tours} tur (keşif + ${radii} sıkı komşuluk). Tur 1 Sobol ${cap} tam adım; her tohumun çevresi atlamadan taranır.`;
+    }
     return `Izgara ${space} set. ${tours} tur (keşif + ${steps}, +${extra} kademe). Tur 1 Sobol ${cap} tam adım; sonra kâr ve WR cepleri ayrı sıkılaşır.`;
   }
   const t1 = fmtOptInt(plan.tour1_space);
@@ -506,7 +510,9 @@ function renderOptResults(payload, live) {
     const refine = optLastPayload.refine;
     let comboBit;
     if (refine && refine.mode === "refine") {
-      const steps = (refine.strides || []).join("→");
+      const steps = refine.dense_neighborhood
+        ? (refine.strides || []).map((s) => `±${s}`).join("→")
+        : (refine.strides || []).join("→");
       comboBit = `${refine.tours || (refine.strides || []).length} tur (${steps}) · ${tested} set / ${fmtOptInt(space)} olası`;
     } else if (space > tested) {
       comboBit = `${tested} ${optLastPayload.sampling === "qmc" ? "Sobol/LHS örnek" : "örnek"} / ${fmtOptInt(space)} olası`;

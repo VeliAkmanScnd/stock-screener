@@ -39,15 +39,19 @@ class OptimizeCancelled(Exception):
 
 MAX_COMBOS = 50000
 SCAN_ALL_MAX = 10_000_000
-RESULT_SLICE = 500
+RESULT_SLICE = 200
 RESULT_LIMIT = RESULT_SLICE * 3
 RANGE_AXIS_MAX = 400
-REFINE_BASE_STRIDES = (4, 2, 1)
+REFINE_BASE_STRIDES = (8, 4, 2)
+REFINE_DENSE_RADII = (8, 4, 2)
+REFINE_COARSE_STRIDE = 8
 REFINE_MAX_STRIDE = 256
 REFINE_TOP = 16
-REFINE_MIN_RADIUS = 16
+REFINE_MIN_RADIUS = 8
 REFINE_SPACE_WIDE = 100_000
 REFINE_SPACE_HUGE = 10_000_000
+PRIMARY_REFINE_KEYS = ("ha_len", "ha_len2", "swing_bars")
+SECONDARY_REFINE_KEYS = ("osc_len", "rr_mult", "tp_pct", "sl_pct")
 NUMERIC_REFINE_KEYS = (
     "ha_len",
     "ha_len2",
@@ -556,14 +560,8 @@ def coarsen_grid(grid: dict[str, list], stride: int) -> dict[str, list]:
 
 
 def refine_strides(grid: dict[str, list], cap: int | None = None) -> list[int]:
-    """Zoom layers after discovery. Always +1 (8), often +2 (16), huge grids +3 (32)."""
-    space = grid_space(grid)
-    strides = [8, 4, 2, 1]
-    if space > REFINE_SPACE_WIDE:
-        strides.insert(0, 16)
-    if space > REFINE_SPACE_HUGE:
-        strides.insert(0, 32)
-    return strides
+    """Dense neighborhood radii after discovery — every integer, not a sparse lattice."""
+    return list(REFINE_DENSE_RADII)
 
 
 def _value_index(vals: list, value: Any) -> int:
@@ -636,6 +634,8 @@ def neighborhood_grid(
     prev_stride: int,
     next_stride: int,
 ) -> dict[str, list]:
+    """Axis-wise union around seeds, filled at stride 1 (tests / fallback)."""
+    span = max(int(prev_stride or 1), int(next_stride or 1), REFINE_MIN_RADIUS)
     out: dict[str, list] = {}
     for key in ENGINE_KEYS:
         vals = list(full.get(key) or [None])
@@ -650,11 +650,152 @@ def neighborhood_grid(
         out[key] = neighborhood_values(
             vals,
             centers,
-            prev_stride,
-            next_stride,
-            radius=max(prev_stride, REFINE_MIN_RADIUS),
+            prev_stride=span,
+            next_stride=1,
+            radius=span,
         )
     return out
+
+
+def _combo_from_seed(full: dict[str, list], seed: dict[str, Any]) -> dict[str, Any]:
+    combo: dict[str, Any] = {}
+    for key in ENGINE_KEYS:
+        vals = list(full.get(key) or [None])
+        if not vals:
+            combo[key] = None
+            continue
+        val = _seed_axis_value(seed, key)
+        if val is None:
+            combo[key] = vals[0]
+        else:
+            combo[key] = vals[_value_index(vals, val)]
+    return combo
+
+
+def _axis_refine_span(
+    key: str,
+    radius: int,
+    secondary_radius: int | None,
+    tertiary_radius: int | None,
+) -> int:
+    r = max(0, int(radius))
+    if key in PRIMARY_REFINE_KEYS:
+        return r
+    if key in SECONDARY_REFINE_KEYS:
+        if secondary_radius is not None:
+            return max(0, int(secondary_radius))
+        return max(0, r // 2)
+    if tertiary_radius is not None:
+        return max(0, int(tertiary_radius))
+    return 1 if r >= 2 else 0
+
+
+def seed_neighborhood_grid(
+    full: dict[str, list],
+    seed: dict[str, Any],
+    radius: int,
+    secondary_radius: int | None = None,
+    tertiary_radius: int | None = None,
+) -> dict[str, list]:
+    """Stride-1 box around one seed. Long axes get `radius`; others shrink first."""
+    out: dict[str, list] = {}
+    for key in ENGINE_KEYS:
+        vals = list(full.get(key) or [None])
+        if key not in NUMERIC_REFINE_KEYS or len(vals) <= 1:
+            out[key] = vals
+            continue
+        span = _axis_refine_span(key, radius, secondary_radius, tertiary_radius)
+        center = _seed_axis_value(seed, key)
+        if center is None:
+            out[key] = vals[:1]
+            continue
+        if span <= 0:
+            out[key] = [vals[_value_index(vals, center)]]
+            continue
+        out[key] = neighborhood_values(
+            vals,
+            [center],
+            prev_stride=span,
+            next_stride=1,
+            radius=span,
+        )
+    return out
+
+
+def _fit_seed_grid(
+    full: dict[str, list],
+    seed: dict[str, Any],
+    radius: int,
+    budget: int,
+) -> dict[str, list]:
+    """Keep primary axes wide; pin osc/RR/max_same before shrinking HA/swing."""
+    budget = max(1, int(budget))
+    r = max(1, int(radius))
+    wide = seed_neighborhood_grid(full, seed, r)
+    if grid_space(wide) <= budget:
+        return wide
+    while r >= 1:
+        pinned = seed_neighborhood_grid(
+            full,
+            seed,
+            r,
+            secondary_radius=0,
+            tertiary_radius=0,
+        )
+        if grid_space(pinned) <= budget:
+            return pinned
+        r -= 1
+    return seed_neighborhood_grid(full, seed, 1, secondary_radius=0, tertiary_radius=0)
+
+
+def _axis_ray_combos(full: dict[str, list], seed: dict[str, Any], key: str) -> list[dict[str, Any]]:
+    base = _combo_from_seed(full, seed)
+    vals = list(full.get(key) or [])
+    if len(vals) <= 1:
+        return [base]
+    out: list[dict[str, Any]] = []
+    for val in vals:
+        combo = dict(base)
+        combo[key] = val
+        out.append(combo)
+    return out
+
+
+def dense_refine_combos(
+    full: dict[str, list],
+    seeds: list[dict[str, Any]],
+    cap: int,
+    radius: int,
+) -> tuple[list[dict[str, Any]], bool]:
+    """Fully enumerate a tight stride-1 box around each seed, then cheap 1-D rays."""
+    cap = max(1, int(cap))
+    listed: list[dict[str, Any]] = []
+    sampled = False
+    remaining = cap
+    used_seeds: list[dict[str, Any]] = []
+    for seed in seeds:
+        if remaining <= 0:
+            break
+        box = _fit_seed_grid(full, seed, radius, remaining)
+        space = grid_space(box)
+        if space <= remaining:
+            chunk = list(iter_full_grid(box))
+        else:
+            chunk, _, sampled_one = combos_for_grid(box, remaining, seed=17)
+            sampled = sampled or sampled_one or space > remaining
+        listed = _merge_unique_combos(listed, chunk)
+        remaining = cap - len(listed)
+        used_seeds.append(seed)
+    if remaining > 0:
+        rays: list[dict[str, Any]] = []
+        for seed in used_seeds:
+            for key in ("rr_mult", "osc_len", "max_same", "ha_len", "ha_len2", "swing_bars"):
+                rays.extend(_axis_ray_combos(full, seed, key))
+        listed = _merge_unique_combos(listed, rays)
+        if len(listed) > cap:
+            listed = listed[:cap]
+            sampled = True
+    return listed, sampled
 
 
 def combos_for_grid(
@@ -732,7 +873,7 @@ def describe_search_plan(body: dict[str, Any]) -> dict[str, Any]:
             "extra_tours": 0,
         }
     strides = refine_strides(grid, cap)
-    coarse_space = grid_space(coarsen_grid(grid, strides[0]))
+    coarse_space = grid_space(coarsen_grid(grid, REFINE_COARSE_STRIDE))
     tour1 = min(space, cap + (coarse_space if coarse_space <= cap else 0))
     return {
         "mode": "refine",
@@ -743,7 +884,8 @@ def describe_search_plan(body: dict[str, Any]) -> dict[str, Any]:
         "tour1_space": tour1,
         "tour1_sampled": True,
         "tour1_discovery": True,
-        "extra_tours": max(0, len(strides) - len(REFINE_BASE_STRIDES)),
+        "dense_neighborhood": True,
+        "extra_tours": 0,
     }
 
 
@@ -816,8 +958,14 @@ def pick_refine_seeds(found: dict[str, Any], n: int = REFINE_TOP) -> list[dict[s
     n_profit = (n + 1) // 2
     n_wr = n - n_profit
     seen: set[tuple] = set()
-    picked = _take_unique_regions(profit_rows, n_profit, seen)
-    picked.extend(_take_unique_regions(wr_rows, n_wr, seen))
+    profit_picked = _take_unique_regions(profit_rows, n_profit, seen)
+    wr_picked = _take_unique_regions(wr_rows, n_wr, seen)
+    picked: list[dict[str, Any]] = []
+    for i in range(max(len(profit_picked), len(wr_picked))):
+        if i < len(profit_picked):
+            picked.append(profit_picked[i])
+        if i < len(wr_picked):
+            picked.append(wr_picked[i])
     if len(picked) < n:
         picked.extend(_take_unique_regions(combo_rows, n - len(picked), seen))
     return picked
@@ -1260,7 +1408,7 @@ def _row_identity(row: dict[str, Any]) -> tuple:
 
 
 def _keep_diverse_rows(rows: list[dict[str, Any]], limit: int = RESULT_LIMIT) -> list[dict[str, Any]]:
-    """Keep 500 kâr + 500 WR + 500 PF (or limit/3 each in tests)."""
+    """Keep 200 kâr + 200 WR + 200 PF (or limit/3 each in tests)."""
     slice_n = RESULT_SLICE if limit >= RESULT_SLICE * 3 else max(1, int(limit) // 3)
     cap = slice_n * 3
     if len(rows) <= cap:
@@ -1677,14 +1825,13 @@ def run_bias_optimize(
         found = run_one_pass(combos, planned, space, on_progress)
         absorb(found)
     else:
-        zoom_strides = [int(s) for s in (plan.get("strides") or [8, 4, 2, 1])]
-        n_tours = 1 + max(1, len(zoom_strides))
+        zoom_radii = [int(s) for s in (plan.get("strides") or list(REFINE_DENSE_RADII))]
+        n_tours = 1 + max(1, len(zoom_radii))
         current_grid = grid
         acc_state = {"results": []}
-        tour_jobs: list[tuple[str, int, int]] = [("discovery", zoom_strides[0], 0)]
-        for zi, zstride in enumerate(zoom_strides):
-            prev = zoom_strides[zi - 1] if zi else zoom_strides[0]
-            tour_jobs.append(("zoom", zstride, prev))
+        tour_jobs: list[tuple[str, int, int]] = [("discovery", REFINE_COARSE_STRIDE, 0)]
+        for radius in zoom_radii:
+            tour_jobs.append(("zoom", radius, radius))
         for t, (kind, stride, prev_stride) in enumerate(tour_jobs):
             if stopped():
                 cancelled = True
@@ -1697,8 +1844,9 @@ def run_bias_optimize(
                 seeds = pick_refine_seeds(acc_state)
                 if not seeds:
                     break
-                current_grid = neighborhood_grid(grid, seeds, prev_stride, stride)
-                listed, planned, sampled = combos_for_grid(current_grid, max_combos, seed=seed + t)
+                listed, sampled = dense_refine_combos(grid, seeds, max_combos, radius=stride)
+                current_grid = seed_neighborhood_grid(grid, seeds[0], stride)
+                planned = len(listed)
             fresh: list[dict[str, Any]] = []
             for combo in listed:
                 try:
@@ -1715,10 +1863,10 @@ def run_bias_optimize(
                 planned = len(fresh)
             if not fresh:
                 tour_stats.append(
-                    {"tour": t + 1, "stride": stride, "space": grid_space(current_grid), "tested": 0, "sampled": sampled}
+                    {"tour": t + 1, "stride": stride, "space": len(listed), "tested": 0, "sampled": sampled}
                 )
                 continue
-            tour_space = grid_space(current_grid)
+            tour_space = max(len(fresh), 1)
 
             def tour_progress(
                 phase: str,
@@ -1739,7 +1887,7 @@ def run_bias_optimize(
                 if tour_i == 0:
                     kind = "keşif Sobol + kaba ızgara" if tour_sampled else "keşif"
                 else:
-                    kind = f"her {tour_stride}. değer"
+                    kind = f"±{tour_stride} sıkı komşuluk"
                     if tour_sampled:
                         kind += " · Sobol"
                 msg = (
