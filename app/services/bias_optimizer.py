@@ -469,6 +469,156 @@ def _as_bool_param(value: Any, default: bool) -> bool:
     return default
 
 
+def engine_from_public(params: dict[str, Any]) -> dict[str, Any]:
+    raw = dict(params or {})
+    aliases = {
+        "exitMode": "exit_mode",
+        "rrMult": "rr_mult",
+        "swingBars": "swing_bars",
+        "maxSame": "max_same",
+    }
+    for src, dst in aliases.items():
+        if src in raw and (dst not in raw or raw.get(dst) in (None, "")):
+            raw[dst] = raw[src]
+    return _engine_typed(raw)
+
+
+def _month_key(iso: str) -> str:
+    try:
+        return pd.Timestamp(iso).strftime("%Y-%m")
+    except (TypeError, ValueError):
+        text = str(iso or "")
+        return text[:7] if len(text) >= 7 else text
+
+
+def build_strategy_chart(
+    trades: list[dict[str, Any]] | None,
+    start_equity: float = 10000.0,
+) -> dict[str, Any]:
+    closed = [t for t in (trades or []) if t.get("reason")]
+    equity = float(start_equity)
+    peak = equity
+    first_t = ""
+    if closed:
+        first_t = str(closed[0].get("entry_time") or closed[0].get("exit_time") or "")
+    points: list[dict[str, Any]] = [
+        {"t": first_t, "equity": round(equity, 2), "pnl_pct": 0.0, "dd_pct": 0.0, "side": "", "reason": ""}
+    ]
+    month_pnl: dict[str, float] = {}
+    for trade in closed:
+        pnl = float(trade.get("pnl_pct") or 0.0)
+        delta = equity * pnl / 100.0
+        equity *= 1.0 + pnl / 100.0
+        if equity > peak:
+            peak = equity
+        dd = (peak - equity) / peak * 100.0 if peak else 0.0
+        exit_t = str(trade.get("exit_time") or "")
+        points.append(
+            {
+                "t": exit_t,
+                "equity": round(equity, 2),
+                "pnl_pct": round(pnl, 4),
+                "dd_pct": round(dd, 2),
+                "side": str(trade.get("side") or ""),
+                "reason": str(trade.get("reason") or ""),
+            }
+        )
+        key = _month_key(exit_t)
+        if key:
+            month_pnl[key] = month_pnl.get(key, 0.0) + delta
+    months = [{"period": key, "pnl": round(val, 2)} for key, val in sorted(month_pnl.items())]
+    return {
+        "start_equity": round(float(start_equity), 2),
+        "end_equity": round(equity, 2),
+        "equity": points,
+        "months": months,
+    }
+
+
+def chart_from_frame(
+    df,
+    *,
+    chart_tf: str,
+    params: dict[str, Any],
+    start_equity: float = 10000.0,
+) -> dict[str, Any]:
+    frame = prepare_backtest_ohlcv(df)
+    if frame is None or frame.empty:
+        raise RuntimeError("OHLCV hazırlanamadı")
+    engine = engine_from_public(params)
+    series = market_bias_series(frame, chart_tf=chart_tf, **engine)
+    trades = list(series.get("trades") or [])
+    metrics = _sanitize_metrics(summarize_bias_trades(trades, start_equity=start_equity))
+    curve = build_strategy_chart(trades, start_equity=start_equity)
+    start = frame.index[0]
+    end = frame.index[-1]
+    return json_safe(
+        {
+            "timeframe": chart_tf,
+            "bars": int(len(frame)),
+            "from": start.isoformat() if hasattr(start, "isoformat") else str(start),
+            "to": end.isoformat() if hasattr(end, "isoformat") else str(end),
+            "params": _public_params(engine),
+            "metrics": metrics,
+            "trades": trades,
+            **curve,
+        }
+    )
+
+
+def load_backtest_frame(symbol: str, timeframe: str, period: str):
+    from app.services.borsapy_client import fetch_ohlcv_one_backtest
+
+    df = fetch_ohlcv_one_backtest(symbol, timeframe, period=period)
+    if df is None or df.empty:
+        raise RuntimeError(f"{symbol} için TradingView verisi alınamadı")
+    df = drop_unclosed_bar(df, timeframe, universe="viop")
+    df = prepare_backtest_ohlcv(df)
+    want_days = backtest_period_days(period)
+    if df is not None and not df.empty:
+        cut = df.index[-1] - pd.Timedelta(days=want_days)
+        sliced = df[df.index >= cut]
+        if len(sliced) >= 80:
+            df = sliced
+    if df is None or len(df) < 80:
+        raise RuntimeError(f"{symbol}: yetersiz bar ({0 if df is None else len(df)})")
+    return df
+
+
+def get_job_frame(job_id: str):
+    with _lock:
+        job = _jobs.get(job_id)
+        return None if not job else job.frame
+
+
+def chart_bias_combo(body: dict[str, Any]) -> dict[str, Any]:
+    from app.services.borsapy_client import is_borsapy_available, tradingview_auth_configured
+
+    symbol = str(body.get("symbol") or "").strip().upper()
+    timeframe = str(body.get("timeframe") or "15m").strip()
+    period = str(body.get("period") or "60d").strip() or "60d"
+    if period not in BACKTEST_PERIODS:
+        raise ValueError("Veri süresi 40 gün–2 yıl aralığında olmalı")
+    if not symbol:
+        raise ValueError("Sembol gerekli")
+    if timeframe not in ("3m", "5m", "15m", "30m", "1h", "1d"):
+        raise ValueError("Periyot 3m, 5m, 15m, 30m, 1h veya 1d olmalı")
+    params = body.get("params") if isinstance(body.get("params"), dict) else {}
+    start_equity = float(body.get("start_equity") or 10000.0)
+    job_id = str(body.get("job_id") or "").strip()
+    df = get_job_frame(job_id) if job_id else None
+    if df is None:
+        if not is_borsapy_available():
+            raise RuntimeError("borsapy yüklü değil")
+        if not tradingview_auth_configured():
+            raise RuntimeError("TradingView sessionid / sessionid_sign .env içinde yok")
+        df = load_backtest_frame(symbol, timeframe, period)
+    out = chart_from_frame(df, chart_tf=timeframe, params=params, start_equity=start_equity)
+    out["symbol"] = symbol
+    out["period"] = period
+    return out
+
+
 def _engine_typed(params: dict[str, Any]) -> dict[str, Any]:
     return {
         "ha_len": int(params["ha_len"]),
@@ -803,9 +953,9 @@ def run_bias_optimize(
     on_progress: ProgressCallback | None = None,
     should_stop: StopCheck | None = None,
     on_partial: SnapshotCallback | None = None,
+    on_frame: Callable[[Any], None] | None = None,
 ) -> dict[str, Any]:
     from app.services.borsapy_client import (
-        fetch_ohlcv_one_backtest,
         is_borsapy_available,
         tradingview_auth_configured,
     )
@@ -845,19 +995,9 @@ def run_bias_optimize(
         on_progress("downloading", 0, 1, f"{symbol} {timeframe} indiriliyor")
     if stopped():
         raise OptimizeCancelled("Tarama durduruldu")
-    df = fetch_ohlcv_one_backtest(symbol, timeframe, period=period)
-    if df is None or df.empty:
-        raise RuntimeError(f"{symbol} için TradingView verisi alınamadı")
-    df = drop_unclosed_bar(df, timeframe, universe="viop")
-    df = prepare_backtest_ohlcv(df)
-    want_days = backtest_period_days(period)
-    if df is not None and not df.empty:
-        cut = df.index[-1] - pd.Timedelta(days=want_days)
-        sliced = df[df.index >= cut]
-        if len(sliced) >= 80:
-            df = sliced
-    if df is None or len(df) < 80:
-        raise RuntimeError(f"{symbol}: yetersiz bar ({0 if df is None else len(df)})")
+    df = load_backtest_frame(symbol, timeframe, period)
+    if on_frame:
+        on_frame(df)
     if stopped():
         raise OptimizeCancelled("Tarama durduruldu")
 
@@ -939,6 +1079,7 @@ class OptimizeJob:
     result: dict[str, Any] | None = None
     error: str | None = None
     cancel_requested: bool = False
+    frame: Any = None
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -1022,12 +1163,16 @@ def start_optimize_job(body: dict[str, Any]) -> str:
             def on_partial(snapshot: dict[str, Any]) -> None:
                 _update(result=json_safe(snapshot))
 
+            def on_frame(frame: Any) -> None:
+                _update(frame=frame)
+
             result = json_safe(
                 run_bias_optimize(
                     body,
                     on_progress=report,
                     should_stop=should_stop,
                     on_partial=on_partial,
+                    on_frame=on_frame,
                 )
             )
             if result.get("cancelled") or should_stop():

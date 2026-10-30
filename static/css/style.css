@@ -2532,3 +2532,132 @@ body {
 .opt-panel .scan-progress .btn-opt-stop {
   flex-shrink: 0;
 }
+
+.opt-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+dialog:modal {
+  overscroll-behavior: contain;
+}
+
+dialog::backdrop {
+  overflow: hidden;
+  overscroll-behavior: contain;
+  background: rgba(0, 0, 0, 0.65);
+}
+
+.opt-chart-dialog[open] {
+  width: min(96vw, 72rem);
+  max-height: 92vh;
+  margin: auto;
+  padding: 1rem 1.15rem 1.1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+}
+
+.opt-chart-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.opt-chart-head h2 {
+  margin: 0 0 0.25rem;
+  font-size: 1.05rem;
+}
+
+.opt-chart-head .hint {
+  margin: 0;
+}
+
+.opt-chart-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
+  gap: 0.65rem;
+  margin: 0.85rem 0 0.5rem;
+}
+
+.opt-chart-stat {
+  background: var(--surface2, rgba(255, 255, 255, 0.04));
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.55rem 0.7rem;
+}
+
+.opt-chart-stat span {
+  display: block;
+  font-size: 0.72rem;
+  color: var(--muted);
+  margin-bottom: 0.2rem;
+}
+
+.opt-chart-stat strong {
+  font-size: 0.95rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.opt-chart-stat.up strong {
+  color: #26a69a;
+}
+
+.opt-chart-stat.down strong {
+  color: #ef5350;
+}
+
+.opt-chart-wrap {
+  margin-top: 0.35rem;
+  min-height: 22rem;
+}
+
+.opt-chart-svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.opt-chart-plot {
+  fill: #12161c;
+}
+
+.opt-chart-grid {
+  stroke: rgba(255, 255, 255, 0.08);
+  stroke-width: 1;
+}
+
+.opt-chart-line {
+  fill: none;
+  stroke: #26a69a;
+  stroke-width: 2.2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.opt-chart-area {
+  fill: url(#optChartFill);
+}
+
+.opt-chart-dot {
+  fill: #26a69a;
+  stroke: #0f1419;
+  stroke-width: 1.2;
+}
+
+.opt-chart-axis {
+  fill: var(--muted);
+  font-size: 11px;
+}
+
+.opt-chart-bar-up {
+  fill: #26a69a;
+}
+
+.opt-chart-bar-down {
+  fill: #ef5350;
+}

@@ -47,6 +47,15 @@ class OptimizeBody(BaseModel):
     reference: dict[str, Any] | None = None
 
 
+class ChartBody(BaseModel):
+    symbol: str = Field(min_length=1, max_length=32)
+    timeframe: str = "15m"
+    period: str = "60d"
+    job_id: str | None = None
+    params: dict[str, Any] = Field(default_factory=dict)
+    start_equity: float = Field(default=10000, ge=100, le=10_000_000)
+
+
 class PresetBody(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     symbol: str = ""
@@ -113,6 +122,18 @@ def optimize_job(job_id: str, _user: User = Depends(get_current_user)):
     if not job:
         raise HTTPException(404, "Test bulunamadı veya süresi doldu")
     return job
+
+
+@router.post("/chart")
+def bias_chart(body: ChartBody, _user: User = Depends(get_current_user)):
+    from app.services.bias_optimizer import chart_bias_combo
+
+    try:
+        return chart_bias_combo(body.model_dump())
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
 
 @router.post("/jobs/{job_id}/stop")

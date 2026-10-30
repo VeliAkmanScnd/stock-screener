@@ -6,7 +6,7 @@
   <title>TradeLABtr Stock Screener</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/css/style.css?v=55" />
+  <link rel="stylesheet" href="/static/css/style.css?v=56" />
   <link rel="stylesheet" href="/static/css/auth.css?v=7" />
 </head>
 <body>
@@ -1278,6 +1278,20 @@
     </div>
   </div>
 
+  <dialog id="optChartDialog" class="opt-chart-dialog" aria-labelledby="optChartTitle" closedby="any">
+    <div class="opt-chart-head">
+      <div>
+        <h2 id="optChartTitle">Strateji grafiği</h2>
+        <p class="hint" id="optChartMeta"></p>
+      </div>
+      <form method="dialog">
+        <button type="submit" class="btn secondary btn-sm" autofocus>Kapat</button>
+      </form>
+    </div>
+    <div class="opt-chart-stats" id="optChartStats"></div>
+    <div class="opt-chart-wrap" id="optChartWrap"></div>
+  </dialog>
+
   <div class="modal-overlay" id="trackChartModal" hidden>
     <div class="modal-card modal-card-wide track-chart-modal">
       <h2 id="trackChartTitle">Fiyat performansı</h2>
@@ -1295,6 +1309,6 @@
   <script src="/static/js/perf.js?v=5"></script>
   <script src="/static/js/help.js?v=2"></script>
   <script src="/static/js/alarm.js?v=1"></script>
-  <script src="/static/js/optimize.js?v=16"></script>
+  <script src="/static/js/optimize.js?v=17"></script>
 </body>
 </html>

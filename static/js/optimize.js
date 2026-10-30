@@ -3,6 +3,7 @@ let optPollTimer = null;
 let optPresets = [];
 let optLastPayload = null;
 let optJobId = null;
+let optLastJobId = null;
 let optSort = { key: "rank", dir: "asc" };
 
 const OPT_SORT_DESC_DEFAULT = new Set([
@@ -372,7 +373,10 @@ function paintOptTable() {
         <td>${optBoolLabel(p.reverse_exit)}</td>
         <td>${optBoolLabel(p.require_bar)}</td>
         <td>${p.maxSame ?? ""}</td>
-        <td><button type="button" class="btn secondary btn-sm" data-opt-copy="${json}">Kopyala</button></td>
+        <td><div class="opt-row-actions">
+          <button type="button" class="btn secondary btn-sm" data-opt-chart="${json}">Grafik</button>
+          <button type="button" class="btn secondary btn-sm" data-opt-copy="${json}">Kopyala</button>
+        </div></td>
       </tr>`;
     })
     .join("");
@@ -386,6 +390,9 @@ function paintOptTable() {
         optStatus(text, "ok");
       }
     });
+  });
+  body.querySelectorAll("[data-opt-chart]").forEach((btn) => {
+    btn.addEventListener("click", () => openOptChart(btn.getAttribute("data-opt-chart")));
   });
 }
 
@@ -450,6 +457,185 @@ function renderOptResults(payload, live) {
   renderOptCompare(optLastPayload);
   syncOptSortHeaders();
   paintOptTable();
+}
+
+function optChartMoney(n) {
+  return Number(n || 0).toLocaleString("tr-TR", { maximumFractionDigits: 0 });
+}
+
+function optChartPct(n, digits = 2) {
+  const v = Number(n) || 0;
+  const sign = v > 0 ? "+" : "";
+  return `${sign}${v.toFixed(digits)}%`;
+}
+
+function optMonthLabel(period) {
+  const names = ["Oca", "Şub", "Mar", "Nis", "May", "Haz", "Tem", "Ağu", "Eyl", "Eki", "Kas", "Ara"];
+  const [y, m] = String(period || "").split("-");
+  const i = Number(m) - 1;
+  const label = names[i] || m || period;
+  return Number(m) === 1 ? `${label} ${y}` : label;
+}
+
+function optChartDate(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return String(iso).slice(0, 10);
+  return d.toLocaleDateString("tr-TR", { day: "numeric", month: "short", year: "numeric" });
+}
+
+function renderOptChartSvg(data) {
+  const points = data.equity || [];
+  const months = data.months || [];
+  const width = 980;
+  const height = 520;
+  const pad = { left: 62, right: 18, top: 14, bottom: 34 };
+  const equityH = 318;
+  const barH = 108;
+  const barTop = pad.top + equityH + 28;
+  const innerW = width - pad.left - pad.right;
+  const eqs = points.map((p) => Number(p.equity) || 0);
+  const lo = Math.min(...eqs, data.start_equity || 0);
+  const hi = Math.max(...eqs, data.start_equity || 0);
+  const span = hi - lo || 1;
+  const yEq = (v) => pad.top + (1 - (v - lo) / span) * equityH;
+  const xEq = (i) => pad.left + (points.length <= 1 ? innerW / 2 : (i / (points.length - 1)) * innerW);
+  const line = points
+    .map((p, i) => `${i ? "L" : "M"}${xEq(i).toFixed(1)},${yEq(p.equity).toFixed(1)}`)
+    .join(" ");
+  const area = points.length
+    ? `${line} L${xEq(points.length - 1).toFixed(1)},${(pad.top + equityH).toFixed(1)} L${xEq(0).toFixed(1)},${(pad.top + equityH).toFixed(1)} Z`
+    : "";
+  const yTicks = 4;
+  const grid = Array.from({ length: yTicks + 1 }, (_, i) => {
+    const val = hi - (span * i) / yTicks;
+    const y = yEq(val).toFixed(1);
+    return `<line x1="${pad.left}" y1="${y}" x2="${width - pad.right}" y2="${y}" class="opt-chart-grid"/>
+      <text x="${pad.left - 8}" y="${y}" class="opt-chart-axis" text-anchor="end" dominant-baseline="middle">${optChartMoney(val)}</text>`;
+  }).join("");
+  const xLabels = points
+    .map((p, i) => {
+      const show = points.length <= 8 || i === 0 || i === points.length - 1 || i % Math.ceil(points.length / 6) === 0;
+      if (!show) return "";
+      return `<text x="${xEq(i).toFixed(1)}" y="${pad.top + equityH + 16}" class="opt-chart-axis" text-anchor="middle">${optEsc(optChartDate(p.t))}</text>`;
+    })
+    .join("");
+  const dots = points
+    .map((p, i) => {
+      if (i === 0) return "";
+      const title = `${optChartDate(p.t)} · ${optChartMoney(p.equity)} · ${optChartPct(p.pnl_pct)}`;
+      return `<circle cx="${xEq(i).toFixed(1)}" cy="${yEq(p.equity).toFixed(1)}" r="3.2" class="opt-chart-dot"><title>${optEsc(title)}</title></circle>`;
+    })
+    .join("");
+  const pnls = months.map((m) => Number(m.pnl) || 0);
+  const maxAbs = Math.max(1, ...pnls.map((v) => Math.abs(v)));
+  const zeroY = barTop + barH / 2;
+  const barW = months.length ? Math.min(36, (innerW / months.length) * 0.62) : 16;
+  const bars = months
+    .map((m, i) => {
+      const xCenter = pad.left + (months.length <= 1 ? innerW / 2 : ((i + 0.5) / months.length) * innerW);
+      const pnl = Number(m.pnl) || 0;
+      const h = (Math.abs(pnl) / maxAbs) * (barH / 2 - 4);
+      const y = pnl >= 0 ? zeroY - h : zeroY;
+      const cls = pnl >= 0 ? "opt-chart-bar-up" : "opt-chart-bar-down";
+      return `<rect x="${(xCenter - barW / 2).toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${Math.max(1.5, h).toFixed(1)}" class="${cls}" rx="2">
+        <title>${optEsc(`${optMonthLabel(m.period)} · ${optChartMoney(pnl)}`)}</title>
+      </rect>
+      <text x="${xCenter.toFixed(1)}" y="${barTop + barH + 16}" class="opt-chart-axis" text-anchor="middle">${optEsc(optMonthLabel(m.period))}</text>`;
+    })
+    .join("");
+  return `<svg viewBox="0 0 ${width} ${height}" class="opt-chart-svg" role="img" aria-label="Strateji sermaye grafiği">
+    <defs>
+      <linearGradient id="optChartFill" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#26a69a" stop-opacity="0.28"/>
+        <stop offset="100%" stop-color="#26a69a" stop-opacity="0"/>
+      </linearGradient>
+    </defs>
+    <rect x="${pad.left}" y="${pad.top}" width="${innerW}" height="${equityH}" class="opt-chart-plot"/>
+    ${grid}
+    ${area ? `<path d="${area}" class="opt-chart-area"/>` : ""}
+    ${line ? `<path d="${line}" class="opt-chart-line"/>` : ""}
+    ${dots}
+    ${xLabels}
+    <rect x="${pad.left}" y="${barTop}" width="${innerW}" height="${barH}" class="opt-chart-plot"/>
+    <line x1="${pad.left}" y1="${zeroY}" x2="${width - pad.right}" y2="${zeroY}" class="opt-chart-grid"/>
+    ${bars || `<text x="${width / 2}" y="${zeroY}" class="opt-chart-axis" text-anchor="middle">Aylık kâr/zarar yok</text>`}
+  </svg>`;
+}
+
+function renderOptChartStats(data) {
+  const m = data.metrics || {};
+  const net = Number(m.net_profit_pct) || 0;
+  const items = [
+    ["Toplam kâr", optChartPct(net), net >= 0 ? "up" : "down"],
+    ["Sermaye", `${optChartMoney(data.start_equity)} → ${optChartMoney(data.end_equity)}`, net >= 0 ? "up" : "down"],
+    ["Maks. düşüş", `${Number(m.max_drawdown || 0).toFixed(2)}%`, "down"],
+    ["Kârlı işlem", `${m.wins || 0}/${m.trades || 0} · WR ${Number(m.win_rate || 0).toFixed(2)}%`, ""],
+    ["Kâr faktörü", Number(m.profit_factor || 0).toFixed(3), Number(m.profit_factor) >= 1 ? "up" : "down"],
+  ];
+  return items
+    .map(([label, value, cls]) => `<div class="opt-chart-stat ${cls}"><span>${label}</span><strong>${optEsc(value)}</strong></div>`)
+    .join("");
+}
+
+function bindOptChartLightDismiss(dialog) {
+  if (!dialog || "closedBy" in HTMLDialogElement.prototype) return;
+  let pressedOutside = false;
+  const outside = (e) => {
+    const r = dialog.getBoundingClientRect();
+    return e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom;
+  };
+  dialog.addEventListener("pointerdown", (e) => {
+    pressedOutside = outside(e);
+  });
+  dialog.addEventListener("pointerup", (e) => {
+    if (pressedOutside && outside(e) && dialog.open) dialog.close();
+  });
+}
+
+async function openOptChart(raw) {
+  const dialog = document.querySelector("#optChartDialog");
+  const wrap = document.querySelector("#optChartWrap");
+  const title = document.querySelector("#optChartTitle");
+  const meta = document.querySelector("#optChartMeta");
+  const stats = document.querySelector("#optChartStats");
+  if (!dialog || !wrap) return;
+  let params = {};
+  try {
+    params = JSON.parse(raw || "{}");
+  } catch {
+    optStatus("Grafik parametresi okunamadı.", "error");
+    return;
+  }
+  const payload = optLastPayload || {};
+  wrap.innerHTML = '<p class="hint">Grafik hazırlanıyor…</p>';
+  if (stats) stats.innerHTML = "";
+  if (title) title.textContent = `${payload.symbol || "Set"} — strateji grafiği`;
+  if (meta) meta.textContent = "Sermaye eğrisi ve aylık kâr/zarar yükleniyor…";
+  if (typeof dialog.showModal === "function") dialog.showModal();
+  else dialog.setAttribute("open", "");
+  try {
+    const res = await apiFetch("/api/optimize/chart", {
+      method: "POST",
+      body: JSON.stringify({
+        symbol: payload.symbol,
+        timeframe: payload.timeframe || "15m",
+        period: payload.period || "60d",
+        job_id: optLastJobId || optJobId || payload.job_id || "",
+        params,
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || "Grafik alınamadı");
+    if (title) title.textContent = `${data.symbol || payload.symbol || ""} — strateji grafiği`;
+    if (meta) {
+      meta.textContent = `${data.timeframe || ""} · ${optChartDate(data.from)} – ${optChartDate(data.to)} · ${data.bars || 0} bar · ${data.metrics?.trades || 0} işlem`;
+    }
+    if (stats) stats.innerHTML = renderOptChartStats(data);
+    wrap.innerHTML = renderOptChartSvg(data);
+  } catch (err) {
+    wrap.innerHTML = `<p class="hint">${optEsc(err.message || "Grafik yüklenemedi.")}</p>`;
+  }
 }
 
 function syncOptExportButtons(count) {
@@ -904,6 +1090,7 @@ async function startOptRun(e) {
       throw new Error(data.detail || "Başlatılamadı");
     }
     optJobId = data.job_id;
+    optLastJobId = data.job_id;
     await pollOptJob(data.job_id);
   } catch (err) {
     hideOptProgress();
@@ -1057,6 +1244,7 @@ function initOptimize() {
   document.querySelector(".opt-results-table thead")?.addEventListener("click", onOptSortClick);
   document.querySelector("#btnOptExportCsv")?.addEventListener("click", () => exportOptResults("csv"));
   document.querySelector("#btnOptExportXml")?.addEventListener("click", () => exportOptResults("xml"));
+  bindOptChartLightDismiss(document.querySelector("#optChartDialog"));
   document.querySelector("#btnOptRefFromGrid")?.addEventListener("click", fillOptRefFromGrid);
   document.querySelector("#optPeriod")?.addEventListener("change", syncOptPeriodHint);
   document.querySelector("#optTimeframe")?.addEventListener("change", syncOptPeriodHint);

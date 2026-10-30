@@ -5,6 +5,8 @@ from app.services.bias_optimizer import (
     MAX_COMBOS,
     SCAN_ALL_MAX,
     build_grid,
+    build_strategy_chart,
+    chart_from_frame,
     combo_budget,
     combo_passes,
     expand_combos,
@@ -69,6 +71,46 @@ def test_wave_backtest_records_trades():
     assert metrics["trades"] >= 1
     assert 0 <= metrics["win_rate"] <= 100
     assert metrics["max_drawdown"] >= 0
+
+
+def test_strategy_chart_equity_and_months():
+    trades = [
+        {"side": "long", "pnl_pct": 10, "reason": "target", "entry_time": "2025-09-02T10:00:00", "exit_time": "2025-09-10T12:00:00"},
+        {"side": "short", "pnl_pct": -5, "reason": "stop", "entry_time": "2025-10-01T10:00:00", "exit_time": "2025-10-03T12:00:00"},
+    ]
+    chart = build_strategy_chart(trades, start_equity=10000)
+    assert chart["equity"][0]["equity"] == 10000
+    assert abs(chart["end_equity"] - 10000 * 1.1 * 0.95) < 0.05
+    assert [m["period"] for m in chart["months"]] == ["2025-09", "2025-10"]
+    assert chart["months"][0]["pnl"] > 0
+    assert chart["months"][1]["pnl"] < 0
+
+
+def test_chart_from_frame_returns_curve():
+    df = _wave_frame()
+    out = chart_from_frame(
+        df,
+        chart_tf="15m",
+        params={
+            "ha_len": 8,
+            "ha_len2": 8,
+            "osc_len": 3,
+            "ha_htf": "",
+            "exitMode": "Percent",
+            "rrMult": 1.0,
+            "swingBars": 4,
+            "tp_pct": 2.0,
+            "sl_pct": 1.0,
+            "allow_long": True,
+            "allow_short": True,
+            "reverse_exit": True,
+            "require_bar": False,
+            "maxSame": 8,
+        },
+    )
+    assert out["metrics"]["trades"] >= 1
+    assert len(out["equity"]) >= 2
+    assert out["params"]["exitMode"] == "Percent"
 
 
 def test_htf_30_on_15m_does_not_hit_readonly_flags():
