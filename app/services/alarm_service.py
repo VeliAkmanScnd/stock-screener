@@ -14,19 +14,22 @@ from app.services.viop_contracts import SEED_PATH, _load_json
 ALARM_KIND = "viop_pay"
 ALARM_TIMEFRAMES = ("3m", "5m", "15m", "30m", "1h")
 _WEEKDAY_LABELS = ("Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "Paz")
+# Column order matches the desk export template (kontratlar before period;
+# "% kazanç" is manual — not stored in DB, exported blank).
 _ALARM_EXPORT_BASE = (
     ("id", "id"),
     ("name", "ad"),
     ("enabled", "aktif"),
     ("pine_script_id", "pine_id"),
     ("pine_name", "pine"),
+    ("contracts", "kontratlar"),
+    ("pct_gain", "% kazanç"),
     ("timeframe", "periyot"),
     ("hour", "baslangic_saat"),
     ("minute", "dakika"),
     ("end_hour", "bitis_saat"),
     ("weekdays", "gunler"),
     ("timezone", "saat_dilimi"),
-    ("contracts", "kontratlar"),
     ("contract_count", "kontrat_sayisi"),
     ("notify_telegram", "telegram"),
     ("telegram_to", "telegram_chat"),
@@ -36,6 +39,23 @@ _ALARM_EXPORT_BASE = (
     ("last_match_count", "son_eslesen"),
     ("last_error", "son_hata"),
     ("created_at", "olusturma"),
+)
+_ALARM_EXPORT_PARAM_ORDER = (
+    "allow_long",
+    "allow_short",
+    "exitMode",
+    "ha_htf",
+    "ha_len",
+    "ha_len2",
+    "osc_len",
+    "rrMult",
+    "swingBars",
+    "scan_side",
+    "reverse_exit",
+    "require_bar",
+    "sl_pct",
+    "maxSame",
+    "tp_pct",
 )
 
 
@@ -183,14 +203,9 @@ def _xml_text(value: Any) -> str:
     return escape(_excel_cell_text(value), {"'": "&apos;", '"': "&quot;"})
 
 
-def alarm_export_table(
-    alarms: list[dict[str, Any]],
-    pine_names: dict[int, str] | None = None,
-) -> tuple[list[str], list[list[Any]]]:
-    """Flatten alarm settings + Pine overrides into Excel columns."""
-    names = pine_names or {}
-    param_keys: list[str] = []
+def _alarm_export_param_keys(alarms: list[dict[str, Any]]) -> list[str]:
     seen: set[str] = set()
+    extras: list[str] = []
     for row in alarms:
         ov = row.get("pine_input_overrides") or {}
         if not isinstance(ov, dict):
@@ -200,8 +215,19 @@ def alarm_export_table(
             if name in seen:
                 continue
             seen.add(name)
-            param_keys.append(name)
-    param_keys.sort()
+            extras.append(name)
+    ordered = [k for k in _ALARM_EXPORT_PARAM_ORDER if k in seen]
+    tail = sorted(k for k in extras if k not in _ALARM_EXPORT_PARAM_ORDER)
+    return ordered + tail
+
+
+def alarm_export_table(
+    alarms: list[dict[str, Any]],
+    pine_names: dict[int, str] | None = None,
+) -> tuple[list[str], list[list[Any]]]:
+    """Flatten alarm settings + Pine overrides into Excel columns."""
+    names = pine_names or {}
+    param_keys = _alarm_export_param_keys(alarms)
     headers = [title for _, title in _ALARM_EXPORT_BASE] + [f"param_{k}" for k in param_keys]
     body: list[list[Any]] = []
     for row in alarms:
@@ -217,13 +243,14 @@ def alarm_export_table(
             "enabled": bool(row.get("enabled")),
             "pine_script_id": pine_id,
             "pine_name": names.get(pine_key, "") if pine_key is not None else "",
+            "contracts": ",".join(str(c) for c in contracts),
+            "pct_gain": row.get("pct_gain", ""),
             "timeframe": row.get("timeframe"),
             "hour": row.get("hour"),
             "minute": row.get("minute"),
             "end_hour": row.get("end_hour"),
             "weekdays": _weekdays_label(row.get("weekdays")),
             "timezone": row.get("timezone"),
-            "contracts": ",".join(str(c) for c in contracts),
             "contract_count": len(contracts),
             "notify_telegram": bool(row.get("notify_telegram", True)),
             "telegram_to": row.get("telegram_to") or "",
