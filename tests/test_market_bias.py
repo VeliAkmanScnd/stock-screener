@@ -162,11 +162,11 @@ def test_htf_waits_for_closed_30m_bar():
 
     spike_close = pd.Series([1.0, 1.0, 1.0, 9.0, 1.0, 1.0, 1.0, 1.0], index=idx)
     held_close = _no_repaint_request(spike_close, "30", "15m")
-    # 09:30-10:00 closes on the 09:45 bar; realtime-equivalent security(expr[1])
-    # publishes that HTF value as soon as the 10:00 bucket opens.
-    assert held_close.loc["2026-01-02 09:45"] != 9.0
-    assert held_close.loc["2026-01-02 10:00"] == 9.0
-    assert held_close.loc["2026-01-02 10:15"] == 9.0
+    # 09:30-10:00 closes on the 09:45 bar; publish there so the 10:01 scan sees it.
+    assert held_close.loc["2026-01-02 09:30"] != 9.0
+    assert held_close.loc["2026-01-02 09:45"] == 9.0
+    assert held_close.loc["2026-01-02 10:00"] == 9.0  # holds prior HTF mid-bucket
+    assert held_close.loc["2026-01-02 10:15"] == 1.0  # next HTF bucket completed
 
 
 def test_no_repaint_survives_readonly_numpy_views():
@@ -185,8 +185,9 @@ def test_no_repaint_survives_readonly_numpy_views():
         held = _no_repaint_request(spike, "30", "15m")
     finally:
         pd.Series.to_numpy = orig
+    assert held.loc["2026-01-02 09:45"] == 9.0
     assert held.loc["2026-01-02 10:00"] == 9.0
-    assert held.loc["2026-01-02 10:15"] == 9.0
+    assert held.loc["2026-01-02 10:15"] == 1.0
 
 
 def test_snapshot_does_not_carry_previous_bar():

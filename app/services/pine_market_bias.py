@@ -94,16 +94,19 @@ def _htf_bucket_index(idx: pd.DatetimeIndex, h_sec: int) -> pd.DatetimeIndex | N
 
 
 def _no_repaint_request(series: pd.Series, ha_htf: str, chart_tf: str | None) -> pd.Series:
-    """Pine f_no_repaint_request on a slower HTF (realtime-equivalent).
+    """Pine f_no_repaint_request on a slower HTF (closed-bar scan friendly).
 
-    Pine uses ``security(expr[1])`` on realtime bars: publish the previous
-    *completed* HTF value as soon as the next HTF bucket opens (no chart-bar
-    ``[1]`` on top — that historical branch lags one 15m vs live TV).
+    Publish each *completed* HTF value on the last chart bar of that HTF bucket
+    (e.g. 10:45 for a 10:30–11:00 30m bar). That bar closes at the same clock
+    time the HTF closes, so the 11:01 scan sees the TV 11:00 flip. Mid-bucket
+    chart bars keep the previous completed HTF (no lookahead).
     """
     h_sec = _tf_seconds(ha_htf)
     c_sec = _tf_seconds(chart_tf)
     if h_sec is None or (c_sec is not None and h_sec <= c_sec):
         return series
+    if c_sec is None:
+        c_sec = h_sec
     idx = series.index
     if not isinstance(idx, pd.DatetimeIndex) or len(series) == 0:
         return series
@@ -119,12 +122,26 @@ def _no_repaint_request(series: pd.Series, ha_htf: str, chart_tf: str | None) ->
     out = np.full(n, np.nan)
     bucket_last = np.nan
     finalized = np.nan
+    # Last chart open that still belongs to a completed HTF bucket.
+    last_complete_offset = max(0, int(h_sec) - int(c_sec))
     for i in range(n):
         if flags[i] and i:
             finalized = bucket_last
         if np.isfinite(vals[i]):
             bucket_last = vals[i]
-        out[i] = finalized
+        bucket_start = floored[i]
+        try:
+            elapsed = int((idx[i] - bucket_start).total_seconds())
+        except Exception:
+            elapsed = 0
+        bucket_complete = elapsed >= last_complete_offset
+        next_is_new = i + 1 < n and bool(flags[i + 1])
+        if bucket_complete or next_is_new:
+            # End of HTF bucket (or confirmed by next bucket open).
+            out[i] = bucket_last
+            finalized = bucket_last
+        else:
+            out[i] = finalized
     return pd.Series(out, index=idx)
 
 
