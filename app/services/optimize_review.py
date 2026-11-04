@@ -562,6 +562,7 @@ def start_review(config: dict[str, Any] | None = None, *, resume: bool = False) 
                             break
                         result["symbol"] = contract
                         result["name"] = item.get("name") or item.get("ticker") or contract
+                        result["side"] = body.get("side") or body_cfg.get("side") or "both"
                         review = build_symbol_review(result, alarm)
                     except OptimizeCancelled:
                         break
