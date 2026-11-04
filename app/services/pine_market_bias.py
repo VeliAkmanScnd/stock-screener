@@ -81,12 +81,24 @@ def market_bias_params_from_script(pine_code: str, overrides: dict | None = None
     }
 
 
-def _no_repaint_request(series: pd.Series, ha_htf: str, chart_tf: str | None) -> pd.Series:
-    """Pine f_no_repaint_request on a slower HTF.
+def _htf_bucket_index(idx: pd.DatetimeIndex, h_sec: int) -> pd.DatetimeIndex | None:
+    freq = pd.Timedelta(seconds=h_sec)
+    try:
+        return idx.floor(freq)
+    except Exception:
+        minutes = max(1, int(h_sec // 60))
+        try:
+            return idx.floor(f"{minutes}min")
+        except Exception:
+            return None
 
-    Take the last chart value of each *completed* HTF bar (no lookahead into
-    the open 30m while the first 15m is still printing), then delay one chart
-    bar — ``request.security(..., expr)[1]`` on historical bars.
+
+def _no_repaint_request(series: pd.Series, ha_htf: str, chart_tf: str | None) -> pd.Series:
+    """Pine f_no_repaint_request on a slower HTF (realtime-equivalent).
+
+    Pine uses ``security(expr[1])`` on realtime bars: publish the previous
+    *completed* HTF value as soon as the next HTF bucket opens (no chart-bar
+    ``[1]`` on top — that historical branch lags one 15m vs live TV).
     """
     h_sec = _tf_seconds(ha_htf)
     c_sec = _tf_seconds(chart_tf)
@@ -95,15 +107,9 @@ def _no_repaint_request(series: pd.Series, ha_htf: str, chart_tf: str | None) ->
     idx = series.index
     if not isinstance(idx, pd.DatetimeIndex) or len(series) == 0:
         return series
-    freq = pd.Timedelta(seconds=h_sec)
-    try:
-        floored = idx.floor(freq)
-    except Exception:
-        minutes = max(1, int(h_sec // 60))
-        try:
-            floored = idx.floor(f"{minutes}min")
-        except Exception:
-            return series
+    floored = _htf_bucket_index(idx, h_sec)
+    if floored is None:
+        return series
     bucket = pd.Series(floored, index=idx)
     vals = np.array(series.to_numpy(dtype=float), copy=True)
     flags = np.array(bucket.ne(bucket.shift(1)).to_numpy(dtype=bool), copy=True)
@@ -119,7 +125,7 @@ def _no_repaint_request(series: pd.Series, ha_htf: str, chart_tf: str | None) ->
         if np.isfinite(vals[i]):
             bucket_last = vals[i]
         out[i] = finalized
-    return pd.Series(out, index=idx).shift(1)
+    return pd.Series(out, index=idx)
 
 
 def _confirmed_swings(low: pd.Series, high: pd.Series, swing: int) -> tuple[np.ndarray, np.ndarray]:
@@ -145,6 +151,81 @@ def _confirmed_swings(low: pd.Series, high: pd.Series, swing: int) -> tuple[np.n
     return last_low, last_high
 
 
+def _ha_oscillator(
+    o_src: pd.Series,
+    h_src: pd.Series,
+    l_src: pd.Series,
+    c_src: pd.Series,
+    ha_len: int,
+    ha_len2: int,
+    osc_len: int,
+) -> tuple[pd.Series, pd.Series]:
+    """Chart-TF (or native HTF) HA bias oscillator — no security wrap."""
+    o = ind.ema(o_src, ha_len)
+    c = ind.ema(c_src, ha_len)
+    h = ind.ema(h_src, ha_len)
+    l = ind.ema(l_src, ha_len)
+    haclose = (o + h + l + c) / 4.0
+    xhaopen = (o + c) / 2.0
+    mid_oc = ((o + c) / 2.0).to_numpy(dtype=float)
+    haopen = np.empty(len(o_src), dtype=float)
+    xo = xhaopen.to_numpy(dtype=float)
+    hc = haclose.to_numpy(dtype=float)
+    haopen[0] = mid_oc[0] if np.isfinite(mid_oc[0]) else np.nan
+    for i in range(1, len(o_src)):
+        prev_x = xo[i - 1]
+        prev_c = hc[i - 1]
+        if np.isfinite(prev_x) and np.isfinite(prev_c):
+            haopen[i] = (prev_x + prev_c) / 2.0
+        else:
+            haopen[i] = mid_oc[i]
+    haopen_s = pd.Series(haopen, index=o_src.index)
+    o2 = ind.ema(haopen_s, ha_len2)
+    c2 = ind.ema(haclose, ha_len2)
+    osc_bias = 100.0 * (c2 - o2)
+    osc_smooth = ind.ema(osc_bias, osc_len)
+    return osc_bias, osc_smooth
+
+
+def _resample_ohlc_htf(df: pd.DataFrame, h_sec: int) -> pd.DataFrame | None:
+    minutes = max(1, int(h_sec // 60))
+    rule = f"{minutes}min"
+    try:
+        agg = df.resample(rule, label="left", closed="left").agg(
+            {
+                "Open": "first",
+                "High": "max",
+                "Low": "min",
+                "Close": "last",
+            }
+        )
+    except Exception:
+        return None
+    return agg.dropna(subset=["Close"])
+
+
+def _map_htf_osc_to_chart(
+    htf_osc: pd.Series,
+    htf_smooth: pd.Series,
+    chart_index: pd.DatetimeIndex,
+    ha_htf: str,
+    chart_tf: str | None,
+) -> tuple[pd.Series, pd.Series]:
+    """Expand HTF oscillator onto chart bars via f_no_repaint_request."""
+    h_sec = _tf_seconds(ha_htf)
+    if h_sec is None or not isinstance(chart_index, pd.DatetimeIndex):
+        return htf_osc.reindex(chart_index), htf_smooth.reindex(chart_index)
+    floored = _htf_bucket_index(chart_index, h_sec)
+    if floored is None:
+        return htf_osc.reindex(chart_index), htf_smooth.reindex(chart_index)
+    mapped_osc = pd.Series(htf_osc.reindex(floored).to_numpy(dtype=float), index=chart_index)
+    mapped_sm = pd.Series(htf_smooth.reindex(floored).to_numpy(dtype=float), index=chart_index)
+    return (
+        _no_repaint_request(mapped_osc, ha_htf, chart_tf),
+        _no_repaint_request(mapped_sm, ha_htf, chart_tf),
+    )
+
+
 def bias_signal_pack(
     df: pd.DataFrame,
     ha_len: int = 100,
@@ -153,37 +234,43 @@ def bias_signal_pack(
     ha_htf: str = "",
     chart_tf: str | None = None,
 ) -> dict:
-    """HA/osc signals only — cacheable across exit-parameter combos."""
+    """HA/osc signals only — cacheable across exit-parameter combos.
+
+    When ``ha_htf`` is slower than the chart, Pine's ``request.security``
+    recalculates the HA stack on HTF bars. We resample OHLC, run the same
+    oscillator there, then map back with ``f_no_repaint_request``.
+    """
     o_src = df["Open"].astype(float)
     h_src = df["High"].astype(float)
     l_src = df["Low"].astype(float)
     c_src = df["Close"].astype(float)
-
-    o = ind.ema(o_src, ha_len)
-    c = ind.ema(c_src, ha_len)
-    h = ind.ema(h_src, ha_len)
-    l = ind.ema(l_src, ha_len)
     held_htf = _force_ctf(ha_htf, chart_tf)
-    haclose = _no_repaint_request((o + h + l + c) / 4.0, held_htf, chart_tf)
-    xhaopen = _no_repaint_request((o + c) / 2.0, held_htf, chart_tf)
-    mid_oc = ((o + c) / 2.0).to_numpy(dtype=float)
+    h_sec = _tf_seconds(held_htf)
+    c_sec = _tf_seconds(chart_tf)
 
-    haopen = np.empty(len(df), dtype=float)
-    xo = xhaopen.to_numpy(dtype=float)
-    hc = haclose.to_numpy(dtype=float)
-    haopen[0] = mid_oc[0] if np.isfinite(mid_oc[0]) else np.nan
-    for i in range(1, len(df)):
-        prev_x = xo[i - 1]
-        prev_c = hc[i - 1]
-        if np.isfinite(prev_x) and np.isfinite(prev_c):
-            haopen[i] = (prev_x + prev_c) / 2.0
+    if h_sec is not None and (c_sec is None or h_sec > c_sec):
+        htf_df = _resample_ohlc_htf(df, h_sec)
+        if htf_df is not None and len(htf_df) >= max(ha_len, ha_len2, osc_len) + 5:
+            htf_osc, htf_sm = _ha_oscillator(
+                htf_df["Open"].astype(float),
+                htf_df["High"].astype(float),
+                htf_df["Low"].astype(float),
+                htf_df["Close"].astype(float),
+                ha_len,
+                ha_len2,
+                osc_len,
+            )
+            osc_bias, osc_smooth = _map_htf_osc_to_chart(
+                htf_osc, htf_sm, df.index, held_htf, chart_tf
+            )
         else:
-            haopen[i] = mid_oc[i]
-    haopen_s = pd.Series(haopen, index=df.index)
-    o2 = _no_repaint_request(ind.ema(haopen_s, ha_len2), held_htf, chart_tf)
-    c2 = _no_repaint_request(ind.ema(haclose, ha_len2), held_htf, chart_tf)
-    osc_bias = 100.0 * (c2 - o2)
-    osc_smooth = ind.ema(osc_bias, osc_len)
+            osc_bias, osc_smooth = _ha_oscillator(
+                o_src, h_src, l_src, c_src, ha_len, ha_len2, osc_len
+            )
+    else:
+        osc_bias, osc_smooth = _ha_oscillator(
+            o_src, h_src, l_src, c_src, ha_len, ha_len2, osc_len
+        )
 
     strong_bull = (osc_bias > 0) & (osc_bias >= osc_smooth)
     weak_bull = (osc_bias > 0) & (osc_bias < osc_smooth)
