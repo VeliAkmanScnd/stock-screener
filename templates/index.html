@@ -6,7 +6,7 @@
   <title>TradeLABtr Stock Screener</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/css/style.css?v=60" />
+  <link rel="stylesheet" href="/static/css/style.css?v=61" />
   <link rel="stylesheet" href="/static/css/auth.css?v=7" />
 </head>
 <body>
@@ -816,9 +816,84 @@
               <span>Cuma 19:00</span>
             </label>
             <button type="button" class="btn secondary btn-sm" id="btnOptReviewSaveGrid">Izgara kaydet</button>
+            <button type="button" class="btn secondary btn-sm" id="btnOptReviewToggleCfg" aria-expanded="false">Ayarları değiştir</button>
             <button type="button" class="btn primary btn-sm" id="btnOptReviewStart">Şimdi başlat</button>
             <button type="button" class="btn secondary btn-sm" id="btnOptReviewOpen">Son sonuçları göster</button>
             <button type="button" class="btn danger btn-sm" id="btnOptReviewStop" hidden>Durdur</button>
+          </div>
+        </div>
+        <div class="opt-review-cfg" id="optReviewCfg" hidden>
+          <p class="hint">Yalnız cuma / «Şimdi başlat» taraması. Tester formundan bağımsızdır.</p>
+          <div class="alarm-form-grid opt-review-cfg-grid">
+            <label class="field">
+              <span>Periyot</span>
+              <select id="optReviewTf">
+                <option value="5m">5 dakika</option>
+                <option value="15m">15 dakika</option>
+                <option value="30m" selected>30 dakika</option>
+                <option value="1h">1 saat</option>
+                <option value="1d">1 gün</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Veri süresi</span>
+              <select id="optReviewPeriod">
+                <option value="40d">40 gün</option>
+                <option value="60d">60 gün</option>
+                <option value="90d">90 gün</option>
+                <option value="6mo">6 ay</option>
+                <option value="8mo">8 ay</option>
+                <option value="13mo" selected>13 ay</option>
+                <option value="2y">2 yıl</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Tarama</span>
+              <select id="optReviewMode">
+                <option value="quick" selected>Hızlı ızgara</option>
+                <option value="full">Geniş (rastgele örnek)</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Yön</span>
+              <select id="optReviewSide">
+                <option value="both" selected>AL ve SAT</option>
+                <option value="buy">Yalnız AL</option>
+                <option value="sell">Yalnız SAT</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Maks. kombinasyon</span>
+              <input type="number" id="optReviewMaxCombos" min="20" max="50000" step="1" value="500" inputmode="numeric" />
+            </label>
+            <label class="field opt-preset-check opt-review-scanall">
+              <input type="checkbox" id="optReviewScanAll" />
+              <span>Tamamını tara</span>
+            </label>
+            <label class="field">
+              <span>Min. win rate %</span>
+              <input type="number" id="optReviewMinWr" min="0" max="100" step="0.1" value="45" />
+            </label>
+            <label class="field">
+              <span>Max. drawdown %</span>
+              <input type="number" id="optReviewMaxDd" min="0" max="100" step="0.1" value="18" />
+            </label>
+            <label class="field">
+              <span>Min. profit factor</span>
+              <input type="number" id="optReviewMinPf" min="0" max="50" step="0.05" value="1.3" />
+            </label>
+            <label class="field">
+              <span>Min. kâr %</span>
+              <input type="number" id="optReviewMinProfit" min="-100" max="500" step="0.1" value="8" />
+            </label>
+            <label class="field">
+              <span>Min. işlem</span>
+              <input type="number" id="optReviewMinTrades" min="1" max="500" step="1" value="10" />
+            </label>
+          </div>
+          <div class="track-list-actions opt-review-cfg-actions">
+            <button type="button" class="btn primary btn-sm" id="btnOptReviewSaveCfg">Cuma taraması için kaydet</button>
+            <span class="hint" id="optReviewCfgSummary"></span>
           </div>
         </div>
         <div class="opt-review-mail">
@@ -1363,6 +1438,6 @@
   <script src="/static/js/perf.js?v=5"></script>
   <script src="/static/js/help.js?v=2"></script>
   <script src="/static/js/alarm.js?v=2"></script>
-  <script src="/static/js/optimize.js?v=35"></script>
+  <script src="/static/js/optimize.js?v=36"></script>
 </body>
 </html>

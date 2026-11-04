@@ -1410,6 +1410,61 @@ function renderOptReviewPay(item) {
   </article>`;
 }
 
+function fillOptReviewCfgForm(cfg) {
+  const c = cfg || {};
+  const setVal = (id, value) => {
+    const el = document.querySelector(id);
+    if (!el || document.activeElement === el) return;
+    el.value = value;
+  };
+  setVal("#optReviewTf", c.timeframe || "30m");
+  setVal("#optReviewPeriod", c.period || "13mo");
+  setVal("#optReviewMode", c.mode || "quick");
+  setVal("#optReviewSide", c.side || "both");
+  setVal("#optReviewMaxCombos", Math.round(Number(c.max_combos) || 500));
+  setVal("#optReviewMinWr", c.min_win_rate ?? 45);
+  setVal("#optReviewMaxDd", c.max_drawdown ?? 18);
+  setVal("#optReviewMinPf", c.min_profit_factor ?? 1.3);
+  setVal("#optReviewMinProfit", c.min_profit ?? 8);
+  setVal("#optReviewMinTrades", Math.round(Number(c.min_trades) || 10));
+  const scanAll = document.querySelector("#optReviewScanAll");
+  if (scanAll) scanAll.checked = !!c.scan_all;
+  const summary = document.querySelector("#optReviewCfgSummary");
+  if (summary) {
+    const tf = c.timeframe || "30m";
+    const period = c.period || "13mo";
+    const mode = c.mode === "full" ? "geniş" : "hızlı";
+    const combos = c.scan_all ? "tam ızgara" : `${c.max_combos || 500} combo`;
+    summary.textContent = `Kayıtlı: ${tf} · ${period} · ${mode} · ${combos}`;
+  }
+}
+
+function collectOptReviewCfg() {
+  return {
+    timeframe: document.querySelector("#optReviewTf")?.value || "30m",
+    period: document.querySelector("#optReviewPeriod")?.value || "13mo",
+    mode: document.querySelector("#optReviewMode")?.value || "quick",
+    side: document.querySelector("#optReviewSide")?.value || "both",
+    max_combos: Math.round(optNum("#optReviewMaxCombos", 500)),
+    scan_all: !!document.querySelector("#optReviewScanAll")?.checked,
+    min_win_rate: optNum("#optReviewMinWr", 45),
+    max_drawdown: optNum("#optReviewMaxDd", 18),
+    min_profit_factor: optNum("#optReviewMinPf", 1.3),
+    min_profit: optNum("#optReviewMinProfit", 8),
+    min_trades: Math.round(optNum("#optReviewMinTrades", 10)),
+  };
+}
+
+function toggleOptReviewCfg(force) {
+  const panel = document.querySelector("#optReviewCfg");
+  const btn = document.querySelector("#btnOptReviewToggleCfg");
+  if (!panel || !btn) return;
+  const open = force === undefined ? panel.hidden : !!force;
+  panel.hidden = !open;
+  btn.setAttribute("aria-expanded", open ? "true" : "false");
+  btn.textContent = open ? "Ayarları gizle" : "Ayarları değiştir";
+}
+
 function renderOptReview(payload) {
   optReviewState = payload || null;
   const settings = payload?.settings || {};
@@ -1426,6 +1481,7 @@ function renderOptReview(payload) {
   }
   const tg = document.querySelector("#optReviewTelegram");
   if (tg && document.activeElement !== tg) tg.value = settings.telegram_to || "";
+  fillOptReviewCfgForm(settings.config || run?.config || {});
   const mailHint = document.querySelector("#optReviewMailHint");
   if (mailHint) {
     const smtp = settings.smtp_configured
@@ -1443,9 +1499,11 @@ function renderOptReview(payload) {
   const remaining = run?.remaining_count ?? Math.max(0, total - done);
   const pct = total ? Math.round((done / total) * 100) : 0;
   if (summary) {
-    if (run?.summary) summary.textContent = run.summary;
-    else if (settings.weekly_enabled) summary.textContent = "Haftalık tarama açık · sonraki start Cuma 19:00 İstanbul.";
-    else summary.textContent = "Henüz rapor yok. Haftalık tarama kapalı.";
+    const cfg = settings.config || {};
+    const cfgBit = `${cfg.timeframe || "30m"} · ${cfg.period || "13mo"}`;
+    if (run?.summary) summary.textContent = `${run.summary} · ayar ${cfgBit}`;
+    else if (settings.weekly_enabled) summary.textContent = `Haftalık tarama açık · ${cfgBit} · Cuma 19:00.`;
+    else summary.textContent = `Henüz rapor yok. Haftalık tarama kapalı · ayar ${cfgBit}.`;
   }
   const prog = document.querySelector("#optReviewProgress");
   const bar = document.querySelector("#optReviewProgressBar");
@@ -1579,19 +1637,43 @@ async function saveOptReviewGrid() {
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.detail || "Izgara kaydedilemedi");
-    optReviewStatus("Haftalık tarama ızgarası kaydedildi (30m / 13 ay önerilir).", "ok");
+    optReviewStatus("Haftalık tarama ızgarası kaydedildi (tester formundan).", "ok");
     if (optReviewState) optReviewState.settings = data;
+    fillOptReviewCfgForm(data.config || {});
+  } catch (err) {
+    optReviewStatus(err.message || "Kayıt hatası", "error");
+  }
+}
+
+async function saveOptReviewCfg() {
+  const config = collectOptReviewCfg();
+  try {
+    const res = await apiFetch("/api/optimize/review/settings", {
+      method: "PUT",
+      body: JSON.stringify({ config }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || "Cuma ayarları kaydedilemedi");
+    const c = data.config || config;
+    optReviewStatus(
+      `Cuma taraması kaydedildi: ${c.timeframe} · ${c.period} · ${c.mode} · ${c.scan_all ? "tam ızgara" : `${c.max_combos} combo`}.`,
+      "ok",
+    );
+    if (optReviewState) optReviewState.settings = data;
+    fillOptReviewCfgForm(c);
+    renderOptReview({ ...(optReviewState || {}), settings: data });
   } catch (err) {
     optReviewStatus(err.message || "Kayıt hatası", "error");
   }
 }
 
 async function startOptReview() {
-  optReviewStatus("47 pay taraması başlatılıyor…");
+  const config = collectOptReviewCfg();
+  optReviewStatus(`47 pay taraması başlatılıyor (${config.timeframe} · ${config.period})…`);
   try {
     const res = await apiFetch("/api/optimize/review/start", {
       method: "POST",
-      body: JSON.stringify({}),
+      body: JSON.stringify({ config }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.detail || "Başlatılamadı");
@@ -1676,6 +1758,11 @@ function initOptimize() {
     });
   });
   document.querySelector("#btnOptReviewSaveGrid")?.addEventListener("click", saveOptReviewGrid);
+  document.querySelector("#btnOptReviewToggleCfg")?.addEventListener("click", () => {
+    const panel = document.querySelector("#optReviewCfg");
+    toggleOptReviewCfg(!!panel?.hidden);
+  });
+  document.querySelector("#btnOptReviewSaveCfg")?.addEventListener("click", saveOptReviewCfg);
   document.querySelector("#btnOptReviewStart")?.addEventListener("click", startOptReview);
   document.querySelector("#btnOptReviewOpen")?.addEventListener("click", () => {
     window.open("/optimize/review", "_blank", "noopener");
