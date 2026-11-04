@@ -271,9 +271,48 @@ function tfLabel(tf) {
   );
 }
 
+function alarmDownloadBlob(filename, blob) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.rel = "noopener";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+async function exportAlarmsExcel() {
+  alarmStatus("Excel hazırlanıyor…");
+  try {
+    const res = await apiFetch("/api/alarms/export.xlsx");
+    if (!res.ok) {
+      let detail = "İndirme başarısız";
+      try {
+        const data = await res.json();
+        detail = data.detail || detail;
+      } catch {
+        /* ignore */
+      }
+      alarmStatus(detail, "error");
+      return;
+    }
+    const blob = await res.blob();
+    const disposition = res.headers.get("Content-Disposition") || "";
+    const match = /filename=\"([^\"]+)\"/i.exec(disposition);
+    const filename = match?.[1] || `viop-alarmlar-${new Date().toISOString().slice(0, 10)}.xlsx`;
+    alarmDownloadBlob(filename, blob);
+    alarmStatus("Alarmlar Excel olarak indirildi.", "ok");
+  } catch (err) {
+    alarmStatus(err.message || "İndirme başarısız", "error");
+  }
+}
+
 async function loadAlarmList() {
   const body = document.querySelector("#alarmListBody");
   if (!body) return;
+  const exportBtn = document.querySelector("#btnAlarmExportExcel");
   try {
     const res = await apiFetch("/api/alarms");
     const rows = await res.json();
@@ -281,6 +320,7 @@ async function loadAlarmList() {
     if (title) {
       title.textContent = rows.length ? `Kayıtlı alarmlar (${rows.length})` : "Kayıtlı alarmlar";
     }
+    if (exportBtn) exportBtn.disabled = !rows.length;
     if (!rows.length) {
       body.innerHTML = '<tr class="empty"><td colspan="5">Henüz alarm yok.</td></tr>';
       return;
@@ -317,6 +357,7 @@ async function loadAlarmList() {
       btn.addEventListener("click", () => deleteAlarm(parseInt(btn.dataset.alarmDel, 10)));
     });
   } catch (err) {
+    if (exportBtn) exportBtn.disabled = true;
     body.innerHTML = `<tr class="empty"><td colspan="5">${alarmEsc(err.message)}</td></tr>`;
   }
 }
@@ -410,6 +451,7 @@ function initAlarmPanel() {
   document.querySelector("#alarmForm")?.addEventListener("submit", saveAlarm);
   document.querySelector("#btnAlarmNew")?.addEventListener("click", resetAlarmForm);
   document.querySelector("#btnAlarmRunNow")?.addEventListener("click", () => runAlarm());
+  document.querySelector("#btnAlarmExportExcel")?.addEventListener("click", exportAlarmsExcel);
   document.querySelector("#alarmPine")?.addEventListener("change", (e) => {
     loadAlarmPineParams(e.target.value, {});
   });

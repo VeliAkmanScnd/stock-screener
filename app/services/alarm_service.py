@@ -3,13 +3,40 @@
 from __future__ import annotations
 
 import json
+import zipfile
+from io import BytesIO
 from typing import Any
+from xml.sax.saxutils import escape
 
 from app.services.ticker_format import to_viop_continuous_symbol
 from app.services.viop_contracts import SEED_PATH, _load_json
 
 ALARM_KIND = "viop_pay"
 ALARM_TIMEFRAMES = ("3m", "5m", "15m", "30m", "1h")
+_WEEKDAY_LABELS = ("Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "Paz")
+_ALARM_EXPORT_BASE = (
+    ("id", "id"),
+    ("name", "ad"),
+    ("enabled", "aktif"),
+    ("pine_script_id", "pine_id"),
+    ("pine_name", "pine"),
+    ("timeframe", "periyot"),
+    ("hour", "baslangic_saat"),
+    ("minute", "dakika"),
+    ("end_hour", "bitis_saat"),
+    ("weekdays", "gunler"),
+    ("timezone", "saat_dilimi"),
+    ("contracts", "kontratlar"),
+    ("contract_count", "kontrat_sayisi"),
+    ("notify_telegram", "telegram"),
+    ("telegram_to", "telegram_chat"),
+    ("last_run_istanbul", "son_calisma"),
+    ("next_run_istanbul", "sonraki"),
+    ("last_status", "son_durum"),
+    ("last_match_count", "son_eslesen"),
+    ("last_error", "son_hata"),
+    ("created_at", "olusturma"),
+)
 
 
 def list_viop_pay_contracts() -> list[dict[str, str]]:
@@ -128,3 +155,160 @@ def alarm_view(row_dict: dict[str, Any]) -> dict[str, Any]:
         "last_error": row_dict.get("last_error"),
         "created_at": row_dict.get("created_at"),
     }
+
+
+def _weekdays_label(days: list[Any] | None) -> str:
+    labels = []
+    for d in days or []:
+        try:
+            i = int(d)
+        except (TypeError, ValueError):
+            continue
+        if 0 <= i < len(_WEEKDAY_LABELS):
+            labels.append(_WEEKDAY_LABELS[i])
+    return ",".join(labels)
+
+
+def _excel_cell_text(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return "evet" if value else "hayir"
+    if isinstance(value, (list, tuple)):
+        return ",".join(str(v) for v in value)
+    return str(value)
+
+
+def _xml_text(value: Any) -> str:
+    return escape(_excel_cell_text(value), {"'": "&apos;", '"': "&quot;"})
+
+
+def alarm_export_table(
+    alarms: list[dict[str, Any]],
+    pine_names: dict[int, str] | None = None,
+) -> tuple[list[str], list[list[Any]]]:
+    """Flatten alarm settings + Pine overrides into Excel columns."""
+    names = pine_names or {}
+    param_keys: list[str] = []
+    seen: set[str] = set()
+    for row in alarms:
+        ov = row.get("pine_input_overrides") or {}
+        if not isinstance(ov, dict):
+            continue
+        for key in ov:
+            name = str(key)
+            if name in seen:
+                continue
+            seen.add(name)
+            param_keys.append(name)
+    param_keys.sort()
+    headers = [title for _, title in _ALARM_EXPORT_BASE] + [f"param_{k}" for k in param_keys]
+    body: list[list[Any]] = []
+    for row in alarms:
+        pine_id = row.get("pine_script_id")
+        try:
+            pine_key = int(pine_id) if pine_id is not None else None
+        except (TypeError, ValueError):
+            pine_key = None
+        contracts = row.get("contracts") or []
+        base = {
+            "id": row.get("id"),
+            "name": row.get("name"),
+            "enabled": bool(row.get("enabled")),
+            "pine_script_id": pine_id,
+            "pine_name": names.get(pine_key, "") if pine_key is not None else "",
+            "timeframe": row.get("timeframe"),
+            "hour": row.get("hour"),
+            "minute": row.get("minute"),
+            "end_hour": row.get("end_hour"),
+            "weekdays": _weekdays_label(row.get("weekdays")),
+            "timezone": row.get("timezone"),
+            "contracts": ",".join(str(c) for c in contracts),
+            "contract_count": len(contracts),
+            "notify_telegram": bool(row.get("notify_telegram", True)),
+            "telegram_to": row.get("telegram_to") or "",
+            "last_run_istanbul": row.get("last_run_istanbul") or "",
+            "next_run_istanbul": row.get("next_run_istanbul") or "",
+            "last_status": row.get("last_status") or "",
+            "last_match_count": row.get("last_match_count"),
+            "last_error": row.get("last_error") or "",
+            "created_at": row.get("created_at") or "",
+        }
+        ov = row.get("pine_input_overrides") if isinstance(row.get("pine_input_overrides"), dict) else {}
+        values = [base[key] for key, _ in _ALARM_EXPORT_BASE]
+        values.extend(ov.get(k, "") for k in param_keys)
+        body.append(values)
+    return headers, body
+
+
+def build_alarms_xlsx(headers: list[str], rows: list[list[Any]]) -> bytes:
+    """Minimal Office Open XML workbook (opens in Excel)."""
+
+    def cell_xml(col_i: int, row_i: int, value: Any) -> str:
+        ref = f"{_xlsx_col(col_i)}{row_i}"
+        text = _xml_text(value)
+        if text == "":
+            return f'<c r="{ref}"/>'
+        return f'<c r="{ref}" t="inlineStr"><is><t>{text}</t></is></c>'
+
+    sheet_rows = []
+    for r_i, values in enumerate([headers, *rows], start=1):
+        cells = "".join(cell_xml(c_i, r_i, val) for c_i, val in enumerate(values, start=1))
+        sheet_rows.append(f'<row r="{r_i}">{cells}</row>')
+    sheet = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+        f'<sheetData>{"".join(sheet_rows)}</sheetData>'
+        "</worksheet>"
+    )
+    workbook = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
+        'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+        '<sheets><sheet name="Alarmlar" sheetId="1" r:id="rId1"/></sheets>'
+        "</workbook>"
+    )
+    workbook_rels = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        '<Relationship Id="rId1" '
+        'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" '
+        'Target="worksheets/sheet1.xml"/>'
+        "</Relationships>"
+    )
+    root_rels = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        '<Relationship Id="rId1" '
+        'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" '
+        'Target="xl/workbook.xml"/>'
+        "</Relationships>"
+    )
+    content_types = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+        '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+        '<Default Extension="xml" ContentType="application/xml"/>'
+        '<Override PartName="/xl/workbook.xml" '
+        'ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
+        '<Override PartName="/xl/worksheets/sheet1.xml" '
+        'ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
+        "</Types>"
+    )
+    buf = BytesIO()
+    with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("[Content_Types].xml", content_types)
+        zf.writestr("_rels/.rels", root_rels)
+        zf.writestr("xl/workbook.xml", workbook)
+        zf.writestr("xl/_rels/workbook.xml.rels", workbook_rels)
+        zf.writestr("xl/worksheets/sheet1.xml", sheet)
+    return buf.getvalue()
+
+
+def _xlsx_col(index: int) -> str:
+    n = index
+    letters = []
+    while n > 0:
+        n, rem = divmod(n - 1, 26)
+        letters.append(chr(65 + rem))
+    return "".join(reversed(letters)) or "A"

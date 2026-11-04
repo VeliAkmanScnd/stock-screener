@@ -774,8 +774,15 @@
         </form>
       </section>
       <section class="card">
-        <h2 id="alarmListTitle">Kayıtlı alarmlar</h2>
-        <p class="hint">Her satır ayrı ayar + kontrat listesidir. Aynı Pine’ı istediğiniz kadar alarmda kullanabilirsiniz.</p>
+        <div class="track-list-head">
+          <div>
+            <h2 id="alarmListTitle">Kayıtlı alarmlar</h2>
+            <p class="hint">Her satır ayrı ayar + kontrat listesidir. Aynı Pine’ı istediğiniz kadar alarmda kullanabilirsiniz.</p>
+          </div>
+          <div class="track-list-actions">
+            <button type="button" class="btn secondary btn-sm" id="btnAlarmExportExcel" title="Tüm alarmları ve ayarlarını Excel olarak indir">Excel indir</button>
+          </div>
+        </div>
         <div class="table-wrap">
           <table class="scheduled-scans-table">
             <thead>
@@ -1355,7 +1362,7 @@
   <script src="/static/js/track.js?v=13"></script>
   <script src="/static/js/perf.js?v=5"></script>
   <script src="/static/js/help.js?v=2"></script>
-  <script src="/static/js/alarm.js?v=1"></script>
+  <script src="/static/js/alarm.js?v=2"></script>
   <script src="/static/js/optimize.js?v=35"></script>
 </body>
 </html>

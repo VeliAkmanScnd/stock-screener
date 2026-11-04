@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -18,10 +20,12 @@ from app.api.schedule_routes import (
     run_scheduled_now,
 )
 from app.config import DEFAULT_SCHEDULE_TIMEZONE
-from app.database import ScanRun, ScheduledScan, User, get_db
+from app.database import PineScript, ScanRun, ScheduledScan, User, get_db
 from app.services.alarm_service import (
     ALARM_TIMEFRAMES,
+    alarm_export_table,
     alarm_view,
+    build_alarms_xlsx,
     build_scan_config,
     config_from_row,
     is_alarm_config,
@@ -92,16 +96,12 @@ def alarm_contracts(_user: User = Depends(get_current_user)):
     return {"count": len(rows), "contracts": rows}
 
 
-@router.get("")
-def list_alarms(
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
+def _list_alarm_views(db: Session, user: User) -> list[dict[str, Any]]:
     q = db.query(ScheduledScan)
     if user.role != "admin":
         q = q.filter(ScheduledScan.user_id == user.id)
     rows = q.order_by(ScheduledScan.created_at.desc()).all()
-    out = []
+    out: list[dict[str, Any]] = []
     for row in rows:
         try:
             if not is_alarm_config(config_from_row(row)):
@@ -110,6 +110,42 @@ def list_alarms(
         except Exception:
             logger.exception("Alarm listesi satırı atlandı id=%s", getattr(row, "id", None))
     return out
+
+
+@router.get("")
+def list_alarms(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    return _list_alarm_views(db, user)
+
+
+@router.get("/export.xlsx")
+def export_alarms_xlsx(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    alarms = _list_alarm_views(db, user)
+    if not alarms:
+        raise HTTPException(404, "İndirilecek alarm yok.")
+    pine_ids = {
+        int(a["pine_script_id"])
+        for a in alarms
+        if a.get("pine_script_id") not in (None, "")
+    }
+    pine_names: dict[int, str] = {}
+    if pine_ids:
+        for row in db.query(PineScript).filter(PineScript.id.in_(pine_ids)).all():
+            pine_names[int(row.id)] = str(row.name or "")
+    headers, table = alarm_export_table(alarms, pine_names)
+    payload = build_alarms_xlsx(headers, table)
+    stamp = datetime.now().strftime("%Y%m%d-%H%M")
+    filename = f"viop-alarmlar-{stamp}.xlsx"
+    return Response(
+        content=payload,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.get("/{alarm_id}")
