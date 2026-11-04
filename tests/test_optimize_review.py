@@ -208,6 +208,23 @@ def test_build_review_email_lists_recommendations():
                         "trades": 20,
                         "reasons": ["WR 50.0% → 62.0%"],
                         "highlights": ["win_rate"],
+                        "params": {
+                            "ha_len": 54,
+                            "ha_len2": 68,
+                            "osc_len": 11,
+                            "ha_htf": "30",
+                            "exitMode": "Swing RR",
+                            "rrMult": 1.2,
+                            "swingBars": 13,
+                            "tp_pct": 0,
+                            "sl_pct": 0,
+                            "allow_long": True,
+                            "allow_short": True,
+                            "reverse_exit": False,
+                            "require_bar": False,
+                            "maxSame": 4,
+                            "scan_side": "both",
+                        },
                     }
                 ],
             }
@@ -217,6 +234,12 @@ def test_build_review_email_lists_recommendations():
     assert "tamamlandı" in subject
     assert "AEFES1!" in text
     assert "<strong>WR 62.0%</strong>" in html_body
+    assert "TV:" in text
+    assert "ha_len=54" in text
+    assert "rrMult=1.2" in text
+    assert "ha_len=54" in html_body
+    assert "TV ayarları" in html_body
+    assert "Period" in html_body
 
 
 def test_pay_universe_has_forty_seven_contracts():

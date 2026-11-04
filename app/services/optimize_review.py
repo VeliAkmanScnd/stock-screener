@@ -206,7 +206,58 @@ def pine_overrides_from_public(params: dict[str, Any] | None) -> dict[str, Any]:
         "reverse_exit": p.get("reverse_exit", True),
         "require_bar": p.get("require_bar", False),
         "maxSame": p.get("maxSame", p.get("max_same", 1)),
+        "scan_side": p.get("scan_side") or p.get("side") or "both",
     }
+
+
+# TV Market Bias input order — keep email copy-paste friendly for chart settings.
+_TV_PARAM_LABELS: tuple[tuple[str, str], ...] = (
+    ("ha_htf", "Timeframe"),
+    ("ha_len", "Period"),
+    ("ha_len2", "Smoothing"),
+    ("osc_len", "Oscillator Period"),
+    ("exitMode", "SL / TP mode"),
+    ("rrMult", "Risk reward"),
+    ("swingBars", "Swing bars"),
+    ("tp_pct", "Take Profit %"),
+    ("sl_pct", "Stop Loss %"),
+    ("allow_long", "Enable Long"),
+    ("allow_short", "Enable Short"),
+    ("reverse_exit", "Close/Reverse on Opposite"),
+    ("require_bar", "Bull/Bear Signal Candle"),
+    ("maxSame", "Max entries one direction"),
+    ("scan_side", "Scan side"),
+)
+
+
+def _fmt_tv_value(value: Any) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if value is None or value == "":
+        return "chart"
+    if isinstance(value, float):
+        text = f"{value:g}"
+        return text
+    return str(value)
+
+
+def format_tv_settings(rec: dict[str, Any] | None) -> list[tuple[str, str, str]]:
+    """Return (key, TV label, value) rows for a recommendation."""
+    ov = dict((rec or {}).get("pine_overrides") or {})
+    if not ov:
+        ov = pine_overrides_from_public((rec or {}).get("params") or {})
+    out: list[tuple[str, str, str]] = []
+    for key, label in _TV_PARAM_LABELS:
+        if key not in ov and key not in ((rec or {}).get("params") or {}):
+            # still show defaults from pine_overrides_from_public
+            pass
+        out.append((key, label, _fmt_tv_value(ov.get(key))))
+    return out
+
+
+def format_tv_settings_line(rec: dict[str, Any] | None) -> str:
+    parts = [f"{key}={val}" for key, _label, val in format_tv_settings(rec)]
+    return " · ".join(parts)
 
 
 def reference_from_overrides(overrides: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -320,18 +371,15 @@ def _sort_proposals(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     )
 
 
-def propose_new_alarm_sets(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Rank scan rows into alarm-create suggestions when the pay has no alarm."""
-    out: list[dict[str, Any]] = []
-    for row in rows:
-        reasons = new_alarm_reasons(row)
-        if not reasons:
-            continue
-        out.append(_compact_row(row, reasons))
-    return _sort_proposals(out)
-
-
-def _compact_row(row: dict[str, Any], reasons: list[str]) -> dict[str, Any]:
+def _compact_row(
+    row: dict[str, Any],
+    reasons: list[str],
+    *,
+    scan_side: str | None = None,
+) -> dict[str, Any]:
+    params = dict(row.get("params") or {})
+    if scan_side and not params.get("scan_side"):
+        params["scan_side"] = scan_side
     return {
         "rank": row.get("rank"),
         "passed": bool(row.get("passed")),
@@ -341,18 +389,34 @@ def _compact_row(row: dict[str, Any], reasons: list[str]) -> dict[str, Any]:
         "net_profit_pct": row.get("net_profit_pct"),
         "max_drawdown": row.get("max_drawdown"),
         "trades": row.get("trades"),
-        "params": row.get("params") or {},
+        "params": params,
         "reasons": reasons,
         "highlights": highlight_keys(reasons),
-        "pine_overrides": pine_overrides_from_public(row.get("params") or {}),
+        "pine_overrides": pine_overrides_from_public(params),
     }
+
+
+def propose_new_alarm_sets(
+    rows: list[dict[str, Any]],
+    *,
+    scan_side: str | None = None,
+) -> list[dict[str, Any]]:
+    """Rank scan rows into alarm-create suggestions when the pay has no alarm."""
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        reasons = new_alarm_reasons(row)
+        if not reasons:
+            continue
+        out.append(_compact_row(row, reasons, scan_side=scan_side))
+    return _sort_proposals(out)
 
 
 def build_symbol_review(result: dict[str, Any], alarm: dict[str, Any] | None) -> dict[str, Any]:
     ref = result.get("reference") if isinstance(result.get("reference"), dict) else None
     rows = [r for r in (result.get("results") or []) if isinstance(r, dict) and r.get("tag") != "referans"]
+    scan_side = str(result.get("side") or result.get("scan_side") or "both")
     if not alarm:
-        improved = propose_new_alarm_sets(rows)
+        improved = propose_new_alarm_sets(rows, scan_side=scan_side)
         if improved:
             note = "Kayıtlı alarm yok; tarama sonuçlarından alarm kurma önerileri üretildi."
         else:
@@ -363,7 +427,7 @@ def build_symbol_review(result: dict[str, Any], alarm: dict[str, Any] | None) ->
             reasons = improvement_reasons(row, ref)
             if not reasons:
                 continue
-            improved.append(_compact_row(row, reasons))
+            improved.append(_compact_row(row, reasons, scan_side=scan_side))
         improved = _sort_proposals(improved)
         if ref:
             if not improved:
@@ -371,7 +435,7 @@ def build_symbol_review(result: dict[str, Any], alarm: dict[str, Any] | None) ->
             else:
                 note = f"Alarm «{alarm.get('name') or alarm.get('id')}» ile kıyaslandı."
         else:
-            improved = propose_new_alarm_sets(rows)
+            improved = propose_new_alarm_sets(rows, scan_side=scan_side)
             note = "Alarm kaydı var ama karşılaştırılacak parametre yok; tarama setleri alarm önerisi olarak listelendi."
     return {
         "symbol": result.get("symbol"),
@@ -614,9 +678,12 @@ def build_review_email(payload: dict[str, Any]) -> tuple[str, str, str]:
                 for label, val, key in bits
             )
             why = " · ".join(str(x) for x in (rec.get("reasons") or []) if x)
+            tv_line = format_tv_settings_line(rec)
             lines.append(f"  {metric_plain} · {rec.get('trades') or 0} işlem")
             if why:
                 lines.append(f"  {why}")
+            if tv_line:
+                lines.append(f"  TV: {tv_line}")
             why_html = ""
             if why:
                 why_html = "<br>" + " · ".join(
@@ -624,7 +691,22 @@ def build_review_email(payload: dict[str, Any]) -> tuple[str, str, str]:
                     for x in (rec.get("reasons") or [])
                     if x
                 )
-            html_parts.append(f"<li>{metric_html} · {int(rec.get('trades') or 0)} işlem{why_html}</li>")
+            tv_rows = format_tv_settings(rec)
+            tv_html = ""
+            if tv_rows:
+                cells = "".join(
+                    f"<tr><td style='padding:1px 10px 1px 0;color:#555'>{html.escape(label)}</td>"
+                    f"<td style='padding:1px 0'><code>{html.escape(key)}={html.escape(val)}</code></td></tr>"
+                    for key, label, val in tv_rows
+                )
+                tv_html = (
+                    "<br><details open><summary>TV ayarları</summary>"
+                    f"<table style='border-collapse:collapse;font-size:13px;margin-top:4px'>{cells}</table>"
+                    "</details>"
+                )
+            html_parts.append(
+                f"<li>{metric_html} · {int(rec.get('trades') or 0)} işlem{why_html}{tv_html}</li>"
+            )
         html_parts.append("</ul>")
         lines.append("")
     return subject, "\n".join(lines).strip(), "".join(html_parts)
