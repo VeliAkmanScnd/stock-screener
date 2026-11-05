@@ -898,8 +898,11 @@ def test_format_eta_and_progress_label():
 
 
 def test_coverage_note_for_short_15m():
-    assert coverage_note("15m", "13mo", 240)
+    note = coverage_note("15m", "13mo", 220, start="2026-04-01", end="2026-11-05")
+    assert "Uyarı" in note
+    assert "220" in note
     assert coverage_note("30m", "13mo", 400) == ""
+    assert coverage_note("15m", "13mo", 360) == ""
 
 
 def test_filters_reject_low_win_rate():

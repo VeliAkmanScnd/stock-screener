@@ -18,7 +18,12 @@ from typing import Any, Callable
 import pandas as pd
 
 from app.services.bar_close import drop_unclosed_bar
-from app.services.borsapy_client import BACKTEST_PERIODS, backtest_period_days, coverage_note
+from app.services.borsapy_client import (
+    BACKTEST_PERIODS,
+    backtest_period_days,
+    coverage_note,
+    coverage_ok,
+)
 from app.services.pine_market_bias import (
     bias_signal_pack,
     market_bias_from_pack,
@@ -1880,6 +1885,10 @@ def run_bias_optimize(
     }
     start = df.index[0]
     end = df.index[-1]
+    try:
+        span_days = int((end - start).days)
+    except Exception:
+        span_days = 0
     tour_stats: list[dict[str, Any]] = []
     meta = {
         "symbol": symbol,
@@ -1892,7 +1901,12 @@ def run_bias_optimize(
         "grid_size": space,
         "sampling": sampling,
         "refine": plan,
-        "coverage_note": coverage_note(timeframe, period, (end - start).days if hasattr(end - start, "days") else 0),
+        "requested_days": backtest_period_days(period),
+        "actual_days": span_days,
+        "coverage_ok": coverage_ok(period, span_days),
+        "coverage_note": coverage_note(
+            timeframe, period, span_days, start=start, end=end
+        ),
     }
 
     acc_tested = 0
@@ -2099,7 +2113,12 @@ def run_bias_optimize(
         "grid_size": space,
         "sampling": sampling,
         "refine": {**plan, "tour_stats": tour_stats},
-        "coverage_note": coverage_note(timeframe, period, (end - start).days if hasattr(end - start, "days") else 0),
+        "requested_days": backtest_period_days(period),
+        "actual_days": span_days,
+        "coverage_ok": coverage_ok(period, span_days),
+        "coverage_note": coverage_note(
+            timeframe, period, span_days, start=start, end=end
+        ),
         **final,
     })
 

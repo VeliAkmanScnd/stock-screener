@@ -537,7 +537,18 @@ function renderOptResults(payload, live) {
       comboBit = `${tested} kombinasyon`;
     }
     const liveBit = optLastPayload.partial ? " · taranıyor" : "";
-    hint.textContent = `${optLastPayload.bars || 0} bar · ${optLastPayload.from || ""} → ${optLastPayload.to || ""} · ${comboBit} · ${passed} eşik geçti${liveBit}`;
+    const req = optLastPayload.requested_days;
+    const act = optLastPayload.actual_days;
+    const coverBit =
+      req != null && act != null ? ` · veri ${act}/${req} gün` : "";
+    hint.textContent = `${optLastPayload.bars || 0} bar · ${optLastPayload.from || ""} → ${optLastPayload.to || ""}${coverBit} · ${comboBit} · ${passed} eşik geçti${liveBit}`;
+    hint.classList.toggle("error", optLastPayload.coverage_ok === false);
+  }
+  const coverEl = document.querySelector("#optCoverageWarn");
+  if (coverEl) {
+    const note = optLastPayload.coverage_note || "";
+    coverEl.hidden = !note;
+    coverEl.textContent = note;
   }
   renderOptCompare(optLastPayload);
   syncOptSortHeaders();
@@ -854,6 +865,10 @@ function buildOptXml(rows) {
     ["bars", meta.bars],
     ["from", meta.from],
     ["to", meta.to],
+    ["requestedDays", meta.requested_days],
+    ["actualDays", meta.actual_days],
+    ["coverageOk", meta.coverage_ok],
+    ["coverageNote", meta.coverage_note],
     ["tested", meta.tested],
     ["passed", meta.passed],
     ["gridSize", meta.grid_size],
@@ -1002,8 +1017,10 @@ function syncOptPeriodHint() {
   const tf = document.querySelector("#optTimeframe")?.value || "15m";
   const period = document.querySelector("#optPeriod")?.value || "60d";
   let extra = "TradingView’deki kendi setinizi yazın; tarama onu her zaman dener ve tabloda Ref olarak işaretler.";
-  if (period === "13mo" || period === "2y") {
-    extra += " 15m geçmiş TV grafiğindeki gibi parça parça iner; daha kısa süre de seçebilirsiniz.";
+  if ((period === "13mo" || period === "2y") && (tf === "15m" || tf === "5m")) {
+    extra += ` ${tf} için TV oturumu genelde 13 ay vermez (çoğu VIOP ~6–8 ay); parça indirme yapılır, kısa gelirse sonuçta kırmızı uyarı çıkar. 13 ay için 30m seçin.`;
+  } else if (period === "13mo" || period === "2y") {
+    extra += " Uzun süre parça parça indirilir; gelen from/to satırını kontrol edin.";
   }
   hint.textContent = extra;
 }

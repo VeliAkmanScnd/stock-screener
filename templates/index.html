@@ -1033,7 +1033,7 @@
             </label>
           </div>
           <h3 class="opt-subhead">Manuel referans</h3>
-          <p class="hint" id="optPeriodHint">TradingView’deki kendi setinizi yazın; tarama onu her zaman dener ve tabloda Ref olarak işaretler. 13 ay 15m, TV grafiğindeki aralık kadar parça parça iner.</p>
+          <p class="hint" id="optPeriodHint">TradingView’deki kendi setinizi yazın; tarama onu her zaman dener ve tabloda Ref olarak işaretler. 15m’de TV oturumu çoğu VIOP’ta ~6–8 ay verir; 13 ay için 30m seçin. Kısa gelirse sonuçlarda kırmızı uyarı çıkar.</p>
           <div class="opt-ref-bar">
             <label class="opt-filter-check">
               <input type="checkbox" id="optRefOn" checked />
@@ -1189,6 +1189,7 @@
           <div>
             <h2 id="optResultTitle">Sonuçlar</h2>
             <p class="hint" id="optResultHint">Eşikleri geçen setler üstte; sütun başlığına tıklayarak sıralayın, aşağıdaki kutularla tabloyu daraltın.</p>
+            <p class="auth-status error" id="optCoverageWarn" hidden></p>
             <p class="hint" id="optResultCount" hidden></p>
           </div>
           <div class="track-list-actions">
@@ -1438,6 +1439,6 @@
   <script src="/static/js/perf.js?v=5"></script>
   <script src="/static/js/help.js?v=2"></script>
   <script src="/static/js/alarm.js?v=2"></script>
-  <script src="/static/js/optimize.js?v=36"></script>
+  <script src="/static/js/optimize.js?v=37"></script>
 </body>
 </html>

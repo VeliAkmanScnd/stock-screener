@@ -6,7 +6,7 @@ import logging
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Callable
+from typing import Any, Callable
 
 import pandas as pd
 
@@ -335,17 +335,52 @@ def _frame_span_days(df: pd.DataFrame) -> int:
         return 0
 
 
-def coverage_note(timeframe: str, period: str, span_days: int) -> str:
+def coverage_ok(period: str, span_days: int, *, ratio: float = 0.85) -> bool:
     want = backtest_period_days(period)
-    if span_days >= int(want * 0.7):
+    if want <= 0:
+        return True
+    return int(span_days or 0) >= int(want * ratio)
+
+
+def coverage_note(
+    timeframe: str,
+    period: str,
+    span_days: int,
+    *,
+    start: Any = None,
+    end: Any = None,
+) -> str:
+    """Warn when downloaded span is shorter than the selected period."""
+    want = backtest_period_days(period)
+    got = int(span_days or 0)
+    if coverage_ok(period, got):
         return ""
-    if timeframe == "5m":
-        return "5m TradingView indirme bu turda istenen süreden kısa geldi."
+    want_mo = max(1, round(want / 30.5))
+    got_mo = max(0, round(got / 30.5, 1))
+    range_bit = ""
+    if start is not None and end is not None:
+        try:
+            s = pd.Timestamp(start)
+            e = pd.Timestamp(end)
+            range_bit = f" Gelen aralık: {s.strftime('%d.%m.%Y')} → {e.strftime('%d.%m.%Y')}."
+        except Exception:
+            range_bit = ""
     if timeframe == "15m":
-        return "15m parça indirme TV grafiğindeki kadar gelmedi; tekrar deneyin."
+        return (
+            f"Uyarı: {period} istendi (~{want} gün / ~{want_mo} ay) ama 15m TV oturumu "
+            f"yalnız ~{got} gün (~{got_mo} ay) verdi.{range_bit} "
+            "Bu kontratta 15m geçmişi TV tarafında kısa; 13 ay için 30m kullanın "
+            "veya sonuçları gelen from/to aralığıyla okuyun."
+        )
+    if timeframe == "5m":
+        return (
+            f"Uyarı: {period} istendi (~{want} gün) ama 5m yalnız ~{got} gün geldi.{range_bit}"
+        )
     if timeframe == "30m":
-        return "30m TradingView indirme istenen süreden kısa geldi."
-    return f"İstenen süre {want} gün, gelen veri {span_days} gün."
+        return (
+            f"Uyarı: {period} istendi (~{want} gün) ama 30m yalnız ~{got} gün geldi.{range_bit}"
+        )
+    return f"Uyarı: istenen {want} gün, gelen {got} gün.{range_bit}"
 
 
 # One TV history call is bar-capped (~5–10k). 15m VIOP ~32 bars/day → ~8 months
@@ -483,16 +518,24 @@ def fetch_ohlcv_one_backtest(
             return _one_shot(ticker, interval, start_at=start, end_at=end)
         parts: list[pd.DataFrame] = []
         oldest_seen: pd.Timestamp | None = None
+        stagnant = 0
         for w_start, w_end in backtest_chunk_windows(start, end, chunk_days):
             piece = _one_shot(ticker, interval, start_at=w_start, end_at=w_end)
             if piece is None or piece.empty:
-                if parts:
+                stagnant += 1
+                if parts and stagnant >= 2:
                     break
                 continue
-            parts.append(piece)
             piece_oldest = pd.Timestamp(piece.index.min())
+            # Drop clamped stubs that only repeat the already-known oldest edge
+            # (TV often returns a few days at the history floor for older windows).
             if oldest_seen is not None and piece_oldest >= oldest_seen - pd.Timedelta(days=2):
-                break
+                stagnant += 1
+                if stagnant >= 2:
+                    break
+                continue
+            stagnant = 0
+            parts.append(piece)
             oldest_seen = piece_oldest if oldest_seen is None else min(oldest_seen, piece_oldest)
             if oldest_seen <= start + pd.Timedelta(days=2):
                 break
