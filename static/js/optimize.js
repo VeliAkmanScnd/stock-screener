@@ -444,8 +444,8 @@ function paintOptTable() {
         <td>${optEsc(optExitLabel(p.exitMode))}</td>
         <td>${p.exitMode === "Percent" ? "—" : (p.rrMult ?? "")}</td>
         <td>${p.exitMode === "Percent" ? "—" : (p.swingBars ?? "")}</td>
-        <td>${p.exitMode === "Percent" ? (p.tp_pct ?? "") : "—"}</td>
-        <td>${p.exitMode === "Percent" ? (p.sl_pct ?? "") : "—"}</td>
+        <td>${p.exitMode === "Percent" ? (p.tp_pct ?? "") : "0"}</td>
+        <td>${p.exitMode === "Percent" ? (p.sl_pct ?? "") : "0"}</td>
         <td>${optBoolLabel(p.reverse_exit)}</td>
         <td>${optBoolLabel(p.require_bar)}</td>
         <td>${p.maxSame ?? ""}</td>
@@ -813,8 +813,9 @@ function optRowExportFields(row) {
     exit_mode: p.exitMode || "",
     rr_mult: p.exitMode === "Percent" ? "" : (p.rrMult ?? ""),
     swing_bars: p.exitMode === "Percent" ? "" : (p.swingBars ?? ""),
-    tp_pct: p.exitMode === "Percent" ? (p.tp_pct ?? "") : "",
-    sl_pct: p.exitMode === "Percent" ? (p.sl_pct ?? "") : "",
+    // Swing RR ignores %; still export 0 so TV leftovers (3.7/2.4 etc.) get zeroed when copying.
+    tp_pct: p.exitMode === "Percent" ? (p.tp_pct ?? "") : 0,
+    sl_pct: p.exitMode === "Percent" ? (p.sl_pct ?? "") : 0,
     reverse_exit: p.reverse_exit ? "acik" : "kapali",
     require_bar: p.require_bar ? "acik" : "kapali",
     max_same: p.maxSame ?? "",

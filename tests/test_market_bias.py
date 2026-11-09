@@ -6,6 +6,7 @@ import pandas as pd
 from app.services.pine_params import pine_inputs_for_api
 from app.services.pine_parser import extract_al_condition, extract_pine_inputs
 from app.services.pine_market_bias import (
+    _confirmed_swings,
     _no_repaint_request,
     is_market_bias_script,
     market_bias_params_from_script,
@@ -188,6 +189,21 @@ def test_no_repaint_survives_readonly_numpy_views():
     assert held.loc["2026-01-02 09:45"] == 9.0
     assert held.loc["2026-01-02 10:00"] == 9.0
     assert held.loc["2026-01-02 10:15"] == 1.0
+
+
+def test_confirmed_swings_match_pine_right_side_strict():
+    """Equal high on the right must NOT confirm early (ta.pivothigh)."""
+    n = 40
+    idx = pd.date_range("2026-08-13 09:00", periods=n, freq="15min")
+    high = np.full(n, 100.0)
+    low = np.full(n, 90.0)
+    # Candidate at bar 16; tie at bar 20 blocks confirm on bar 20 (right-side strict '>').
+    high[16] = 110.0
+    high[20] = 110.0
+    _, swing_high = _confirmed_swings(pd.Series(low, index=idx), pd.Series(high, index=idx), 4)
+    assert not (swing_high[20] == 110.0)
+    # Bar 24 = mid 20 + 4: the later equal high confirms once its right side is lower.
+    assert swing_high[24] == 110.0
 
 
 def test_snapshot_does_not_carry_previous_bar():

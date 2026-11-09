@@ -146,6 +146,14 @@ def _no_repaint_request(series: pd.Series, ha_htf: str, chart_tf: str | None) ->
 
 
 def _confirmed_swings(low: pd.Series, high: pd.Series, swing: int) -> tuple[np.ndarray, np.ndarray]:
+    """Match Pine ``ta.pivotlow`` / ``ta.pivothigh`` (left=right=swing).
+
+    Pine confirms a pivot at ``mid`` on bar ``mid+swing`` when the mid extreme
+    is >= (high) / <= (low) every bar on the left and *strictly* beyond every
+    bar on the right. Using a flat ``nanmax`` window wrongly accepts ties on the
+    right and can update the swing one or more bars early — enough to flip
+    Swing RR stop/target and invent false take-profits vs TradingView.
+    """
     n = len(low)
     last_low = np.full(n, np.nan)
     last_high = np.full(n, np.nan)
@@ -153,16 +161,30 @@ def _confirmed_swings(low: pd.Series, high: pd.Series, swing: int) -> tuple[np.n
     lh = np.nan
     lo = low.to_numpy(dtype=float)
     hi = high.to_numpy(dtype=float)
+    swing = max(1, int(swing))
     for i in range(n):
         if i >= 2 * swing:
             mid = i - swing
-            left = mid - swing
-            window_l = lo[left : i + 1]
-            window_h = hi[left : i + 1]
-            if np.isfinite(lo[mid]) and lo[mid] == np.nanmin(window_l):
-                ll = lo[mid]
-            if np.isfinite(hi[mid]) and hi[mid] == np.nanmax(window_h):
-                lh = hi[mid]
+            left_h = hi[mid - swing : mid]
+            right_h = hi[mid + 1 : mid + swing + 1]
+            left_l = lo[mid - swing : mid]
+            right_l = lo[mid + 1 : mid + swing + 1]
+            if (
+                np.isfinite(hi[mid])
+                and left_h.size == swing
+                and right_h.size == swing
+                and hi[mid] >= np.nanmax(left_h)
+                and hi[mid] > np.nanmax(right_h)
+            ):
+                lh = float(hi[mid])
+            if (
+                np.isfinite(lo[mid])
+                and left_l.size == swing
+                and right_l.size == swing
+                and lo[mid] <= np.nanmin(left_l)
+                and lo[mid] < np.nanmin(right_l)
+            ):
+                ll = float(lo[mid])
         last_low[i] = ll
         last_high[i] = lh
     return last_low, last_high

@@ -108,6 +108,11 @@ def test_pine_overrides_and_reference_roundtrip():
     assert ref["ha_len"] == 80
     assert ref["exit_mode"] == "Percent"
     assert reference_from_overrides({}) is None
+    swing = pine_overrides_from_public(
+        {"exitMode": "Swing RR", "rrMult": 1, "swingBars": 8, "tp_pct": 3.7, "sl_pct": 2.4}
+    )
+    assert swing["tp_pct"] == 0
+    assert swing["sl_pct"] == 0
 
 
 def test_run_to_dict_counts_remaining_while_running():

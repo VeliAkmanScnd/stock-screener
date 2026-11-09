@@ -191,16 +191,19 @@ def _run_summary(status: str, done: int, total: int, remaining: int, current: st
 
 def pine_overrides_from_public(params: dict[str, Any] | None) -> dict[str, Any]:
     p = params or {}
+    exit_mode = p.get("exitMode") or p.get("exit_mode") or "Swing RR"
+    use_swing = str(exit_mode).strip().lower() in ("swing rr", "swing_rr")
     return {
         "ha_len": p.get("ha_len"),
         "ha_len2": p.get("ha_len2"),
         "osc_len": p.get("osc_len"),
         "ha_htf": p.get("ha_htf") or "",
-        "exitMode": p.get("exitMode") or p.get("exit_mode") or "Swing RR",
+        "exitMode": exit_mode,
         "rrMult": p.get("rrMult", p.get("rr_mult", 1)),
         "swingBars": p.get("swingBars", p.get("swing_bars", 4)),
-        "tp_pct": p.get("tp_pct", 2),
-        "sl_pct": p.get("sl_pct", 1),
+        # Swing RR ignores %; still emit 0 so TV leftover Percent values get cleared.
+        "tp_pct": 0 if use_swing else p.get("tp_pct", 2),
+        "sl_pct": 0 if use_swing else p.get("sl_pct", 1),
         "allow_long": p.get("allow_long", True),
         "allow_short": p.get("allow_short", True),
         "reverse_exit": p.get("reverse_exit", True),
