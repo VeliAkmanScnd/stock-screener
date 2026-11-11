@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from app.api.auth_deps import get_current_user
 from app.database import OptimizePreset, User, get_db
 from app.services.alarm_service import list_viop_pay_contracts
+from app.services.fx_data import list_fx_tester_contracts
 from app.services.borsapy_client import tradingview_auth_configured
 
 router = APIRouter(prefix="/api/optimize", tags=["optimize"])
@@ -97,11 +98,16 @@ def _owned_preset(db: Session, preset_id: int, user: User) -> OptimizePreset:
 
 @router.get("/contracts")
 def optimize_contracts(_user: User = Depends(get_current_user)):
-    rows = list_viop_pay_contracts()
+    viop = [{**row, "market": "viop", "tv_symbol": row.get("contract", "")} for row in list_viop_pay_contracts()]
+    fx = list_fx_tester_contracts()
+    rows = viop + fx
     return {
         "count": len(rows),
         "contracts": rows,
+        "viop_count": len(viop),
+        "fx_count": len(fx),
         "tv_auth": tradingview_auth_configured(),
+        "fx_exchange": "ICMARKETS",
     }
 
 

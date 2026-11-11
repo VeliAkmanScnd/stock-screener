@@ -15,6 +15,13 @@ _FX_ALIASES = {
     "XAG": "XAGUSD",
     "GOLD": "XAUUSD",
     "SILVER": "XAGUSD",
+    "EUR": "EURUSD",
+    "GBP": "GBPUSD",
+    "JPY": "USDJPY",
+    "CHF": "USDCHF",
+    "AUD": "AUDUSD",
+    "CAD": "USDCAD",
+    "NZD": "NZDUSD",
 }
 
 

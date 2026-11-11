@@ -935,7 +935,7 @@
         <div class="track-list-head">
           <div>
             <h2>Market Bias tester</h2>
-            <p class="hint">TradingView oturumu ile seçilen kontratın geçmişini indirir, Bias parametre ızgarasını tarar ve verdiğiniz eşikleri geçen setleri sıralar. Büyük aralıklarda önce başlangıç / klasik (100-100-7) / eksen taraması denenir; ızgara milyarlarca olursa rastgele örnek tek başına yetmez — istenmeyen eksenleri kapatın.</p>
+            <p class="hint">TradingView oturumu ile VIOP pay veya ICMARKETS forex (EURUSD, GBPUSD, XAUUSD…) geçmişini indirir, Bias parametre ızgarasını tarar ve verdiğiniz eşikleri geçen setleri sıralar. Büyük aralıklarda önce başlangıç / klasik (100-100-7) / eksen taraması denenir; ızgara milyarlarca olursa rastgele örnek tek başına yetmez — istenmeyen eksenleri kapatın.</p>
           </div>
           <div class="track-list-actions">
             <button type="button" class="btn secondary btn-sm" id="btnOptPresetSave">Ayarları kaydet</button>
@@ -963,6 +963,13 @@
             </label>
           </div>
           <div class="alarm-form-grid">
+            <label class="field">
+              <span>Piyasa</span>
+              <select id="optMarket">
+                <option value="viop" selected>VIOP pay</option>
+                <option value="fx">FX — ICMARKETS</option>
+              </select>
+            </label>
             <label class="field">
               <span>Sembol</span>
               <input type="text" id="optSymbol" list="optSymbolList" required placeholder="AKBNK1!" autocomplete="off" />
@@ -1445,6 +1452,6 @@
   <script src="/static/js/perf.js?v=5"></script>
   <script src="/static/js/help.js?v=2"></script>
   <script src="/static/js/alarm.js?v=3"></script>
-  <script src="/static/js/optimize.js?v=38"></script>
+  <script src="/static/js/optimize.js?v=39"></script>
 </body>
 </html>

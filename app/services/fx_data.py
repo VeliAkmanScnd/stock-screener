@@ -1,7 +1,8 @@
-"""FX majors plus gold and silver from Oanda via TradingView.
+"""FX majors plus gold and silver via TradingView.
 
-3m bars are built from 1m. Yahoo's gold series is the COMEX future, which
-prints tens of dollars away from broker spot, so every pair uses OANDA.
+Live scans use OANDA (broker spot vs COMEX). Market Bias tester / backtests
+use ICMARKETS so charts match ICMARKETS:XAUUSD style TradingView history.
+3m bars are built from 1m.
 """
 
 from __future__ import annotations
@@ -30,8 +31,38 @@ FX_PAIRS: tuple[str, ...] = (
 )
 _PAIR_SET = frozenset(FX_PAIRS)
 _EXCHANGE = "OANDA"
+FX_BACKTEST_EXCHANGE = "ICMARKETS"
+_FX_PAIR_LABELS = {
+    "EURUSD": "Euro / Dolar",
+    "GBPUSD": "Sterlin / Dolar",
+    "USDJPY": "Dolar / Yen",
+    "USDCHF": "Dolar / Frank",
+    "AUDUSD": "Avustralya Doları",
+    "USDCAD": "Dolar / Kanada",
+    "NZDUSD": "Yeni Zelanda Doları",
+    "XAUUSD": "Altın",
+    "XAGUSD": "Gümüş",
+}
 
 OHLCV = ["Open", "High", "Low", "Close", "Volume"]
+
+
+def is_fx_pair(symbol: str) -> bool:
+    return clean_fx_symbol(symbol) in _PAIR_SET
+
+
+def list_fx_tester_contracts() -> list[dict[str, str]]:
+    """Optimize/tester datalist rows — ICMARKETS continuous pairs."""
+    return [
+        {
+            "ticker": pair,
+            "contract": pair,
+            "name": _FX_PAIR_LABELS.get(pair, pair),
+            "market": "fx",
+            "tv_symbol": f"{FX_BACKTEST_EXCHANGE}:{pair}",
+        }
+        for pair in FX_PAIRS
+    ]
 
 
 def yf_symbol(symbol: str) -> str:
@@ -40,6 +71,13 @@ def yf_symbol(symbol: str) -> str:
     if clean not in _PAIR_SET:
         return ""
     return f"{_EXCHANGE}:{clean}"
+
+
+def backtest_tv_symbol(symbol: str) -> str:
+    clean = clean_fx_symbol(symbol)
+    if clean not in _PAIR_SET:
+        return ""
+    return f"{FX_BACKTEST_EXCHANGE}:{clean}"
 
 
 def display_symbol(feed: str) -> str:
@@ -95,7 +133,13 @@ def _download_spec(timeframe: str) -> tuple[str, str, str | None]:
     return "2y", "1d", None
 
 
-def _download_one(symbol: str, period: str, interval: str) -> pd.DataFrame | None:
+def _download_one(
+    symbol: str,
+    period: str,
+    interval: str,
+    *,
+    exchange: str | None = None,
+) -> pd.DataFrame | None:
     from borsapy._providers.tradingview import get_tradingview_provider
 
     from app.services.borsapy_client import _TV_SLOTS
@@ -105,9 +149,76 @@ def _download_one(symbol: str, period: str, interval: str) -> pd.DataFrame | Non
             symbol=symbol,
             period=period,
             interval=interval,
-            exchange=_EXCHANGE,
+            exchange=exchange or _EXCHANGE,
         )
     return _frame(raw)
+
+
+def fetch_ohlcv_one_fx_backtest(
+    symbol: str,
+    timeframe: str,
+    period: str = "60d",
+) -> pd.DataFrame | None:
+    """Single-pair ICMARKETS history for Market Bias tester."""
+    from app.services.borsapy_client import (
+        _borsapy_backtest_period,
+        _normalize_frame,
+        backtest_period_days,
+        ensure_tradingview_auth,
+    )
+
+    clean = clean_fx_symbol(symbol)
+    if clean not in _PAIR_SET:
+        return None
+    ensure_tradingview_auth()
+    want_days = backtest_period_days(period)
+    tv_period = _borsapy_backtest_period(period)
+    # Prefer native TF; for short windows try 5m→15m/30m for denser wicks.
+    attempts: list[tuple[str, str | None]] = [(timeframe, None)]
+    if timeframe == "15m" and want_days <= 75:
+        attempts = [("5m", "15min"), ("15m", None)]
+    elif timeframe == "30m" and want_days <= 75:
+        attempts = [("5m", "30min"), ("30m", None)]
+    elif timeframe == "3m":
+        attempts = [("1m", "3min")]
+
+    best: pd.DataFrame | None = None
+    best_span = -1
+    asof = pd.Timestamp.now(tz="Europe/Istanbul")
+    for interval, rule in attempts:
+        try:
+            frame = _download_one(
+                clean,
+                tv_period,
+                interval,
+                exchange=FX_BACKTEST_EXCHANGE,
+            )
+        except Exception as exc:
+            logger.warning(
+                "ICMARKETS backtest %s %s %s failed: %s",
+                clean,
+                timeframe,
+                interval,
+                exc,
+            )
+            continue
+        if frame is None or frame.empty:
+            continue
+        if rule:
+            frame = _resample_ohlcv(frame, rule, asof=asof)
+        norm = _normalize_frame(frame) if frame is not None else None
+        if norm is None or len(norm) < 30:
+            continue
+        try:
+            span = max(0, int((norm.index[-1] - norm.index[0]).days))
+        except Exception:
+            span = 0
+        if rule and span >= min(want_days, 35):
+            return norm
+        if span > best_span:
+            best = norm
+            best_span = span
+    return best
 
 
 def fetch_ohlcv_batch_fx(

@@ -1,4 +1,5 @@
 let optContractsLoaded = false;
+let optAllContracts = [];
 let optPollTimer = null;
 let optReviewTimer = null;
 let optPresets = [];
@@ -1032,6 +1033,13 @@ function applyOptConfig(cfg) {
     const el = document.querySelector(id);
     if (el && val !== undefined && val !== null && val !== "") el.value = val;
   };
+  const sym = String(cfg.symbol || "").toUpperCase();
+  const looksFx =
+    cfg.market === "fx" ||
+    optAllContracts.some((r) => r.market === "fx" && r.contract === sym);
+  if (looksFx) set("#optMarket", "fx");
+  else if (cfg.symbol) set("#optMarket", "viop");
+  renderOptSymbolList();
   set("#optSymbol", cfg.symbol);
   set("#optTimeframe", cfg.timeframe);
   set("#optPeriod", cfg.period);
@@ -1209,24 +1217,44 @@ async function startOptRun(e) {
   }
 }
 
+function optMarketValue() {
+  return document.querySelector("#optMarket")?.value || "viop";
+}
+
+function renderOptSymbolList() {
+  const list = document.querySelector("#optSymbolList");
+  const symbol = document.querySelector("#optSymbol");
+  const market = optMarketValue();
+  const rows = optAllContracts.filter((r) => (r.market || "viop") === market);
+  if (list) {
+    list.innerHTML = rows
+      .map((r) => {
+        const label = r.tv_symbol && market === "fx" ? r.tv_symbol : `${r.ticker} ${r.name || ""}`;
+        return `<option value="${optEsc(r.contract)}">${optEsc(label)}</option>`;
+      })
+      .join("");
+  }
+  if (symbol) {
+    const ok = rows.some((r) => r.contract === symbol.value);
+    if (!ok) symbol.value = rows[0]?.contract || "";
+    symbol.placeholder = market === "fx" ? "XAUUSD / EURUSD" : "AKBNK1!";
+  }
+}
+
 async function loadOptContracts() {
   if (optContractsLoaded) return;
-  const list = document.querySelector("#optSymbolList");
   const hint = document.querySelector("#optTvHint");
-  const symbol = document.querySelector("#optSymbol");
   try {
     const res = await apiFetch("/api/optimize/contracts");
     const data = await res.json();
-    const rows = data.contracts || [];
-    if (list) {
-      list.innerHTML = rows
-        .map((r) => `<option value="${optEsc(r.contract)}">${optEsc(r.ticker)} ${optEsc(r.name || "")}</option>`)
-        .join("");
-    }
-    if (symbol && !symbol.value && rows[0]) symbol.value = rows[0].contract;
+    optAllContracts = data.contracts || [];
+    renderOptSymbolList();
     if (hint) {
+      const fxBit = data.fx_count
+        ? ` FX: ICMARKETS (${data.fx_count} parite).`
+        : "";
       hint.textContent = data.tv_auth
-        ? "TradingView oturumu tanımlı — veri session üzerinden çekilecek."
+        ? `TradingView oturumu tanımlı — VIOP +${fxBit} veri session üzerinden çekilecek.`
         : "TradingView sessionid / sessionid_sign .env içinde yok; tester çalışmaz.";
     }
     optContractsLoaded = true;
@@ -1756,6 +1784,10 @@ function initOptimize() {
   document.querySelector("#btnOptPresetDelete")?.addEventListener("click", deleteSelectedOptPreset);
   document.querySelector("#optPresetThisSymbol")?.addEventListener("change", loadOptPresets);
   document.querySelector("#optSymbol")?.addEventListener("change", () => {
+    if (document.querySelector("#optPresetThisSymbol")?.checked) loadOptPresets();
+  });
+  document.querySelector("#optMarket")?.addEventListener("change", () => {
+    renderOptSymbolList();
     if (document.querySelector("#optPresetThisSymbol")?.checked) loadOptPresets();
   });
   document.querySelector("#optReviewWeekly")?.addEventListener("change", saveOptReviewWeekly);

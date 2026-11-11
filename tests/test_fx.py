@@ -7,7 +7,16 @@ import pandas as pd
 
 from app.services.batch_data import _resample_ohlcv
 from app.services.data_fetcher import get_fx_symbols, parse_symbol_list
-from app.services.fx_data import FX_PAIRS, _istanbul_naive, display_symbol, yf_symbol
+from app.services.fx_data import (
+    FX_BACKTEST_EXCHANGE,
+    FX_PAIRS,
+    _istanbul_naive,
+    backtest_tv_symbol,
+    display_symbol,
+    is_fx_pair,
+    list_fx_tester_contracts,
+    yf_symbol,
+)
 from app.services.telegram_service import format_signal_telegram_card
 from app.services.ticker_format import clean_fx_symbol, to_yf_ticker
 from app.services.tv_export import to_tradingview_symbol
@@ -29,8 +38,21 @@ class FxUniverseTests(unittest.TestCase):
         self.assertEqual(display_symbol("OANDA:XAUUSD"), "XAUUSD")
         self.assertEqual(display_symbol("OANDA:XAGUSD"), "XAGUSD")
 
+    def test_icmarkets_backtest_symbols(self):
+        self.assertEqual(FX_BACKTEST_EXCHANGE, "ICMARKETS")
+        self.assertEqual(backtest_tv_symbol("XAU"), "ICMARKETS:XAUUSD")
+        self.assertEqual(backtest_tv_symbol("ICMARKETS:EURUSD"), "ICMARKETS:EURUSD")
+        self.assertTrue(is_fx_pair("GBP"))
+        self.assertTrue(is_fx_pair("ICMARKETS:XAUUSD"))
+        rows = list_fx_tester_contracts()
+        self.assertEqual(len(rows), 9)
+        self.assertEqual(rows[0]["market"], "fx")
+        self.assertTrue(rows[0]["tv_symbol"].startswith("ICMARKETS:"))
+
     def test_aliases(self):
         self.assertEqual(clean_fx_symbol("XAU"), "XAUUSD")
+        self.assertEqual(clean_fx_symbol("EUR"), "EURUSD")
+        self.assertEqual(clean_fx_symbol("GBP"), "GBPUSD")
         self.assertEqual(clean_fx_symbol("gold"), "XAUUSD")
         self.assertEqual(clean_fx_symbol("XAG"), "XAGUSD")
         self.assertEqual(clean_fx_symbol("FX:EURUSD"), "EURUSD")

@@ -1310,11 +1310,16 @@ def chart_from_frame(
 
 def load_backtest_frame(symbol: str, timeframe: str, period: str):
     from app.services.borsapy_client import fetch_ohlcv_one_backtest
+    from app.services.fx_data import is_fx_pair
+    from app.services.ticker_format import clean_fx_symbol
 
-    df = fetch_ohlcv_one_backtest(symbol, timeframe, period=period)
+    raw = str(symbol or "").strip()
+    display = clean_fx_symbol(raw) if is_fx_pair(raw) else raw
+    universe = "fx" if is_fx_pair(raw) else "viop"
+    df = fetch_ohlcv_one_backtest(raw, timeframe, period=period)
     if df is None or df.empty:
-        raise RuntimeError(f"{symbol} için TradingView verisi alınamadı")
-    df = drop_unclosed_bar(df, timeframe, universe="viop")
+        raise RuntimeError(f"{display} için TradingView verisi alınamadı")
+    df = drop_unclosed_bar(df, timeframe, universe=universe)
     df = prepare_backtest_ohlcv(df)
     want_days = backtest_period_days(period)
     if df is not None and not df.empty:
@@ -1323,7 +1328,7 @@ def load_backtest_frame(symbol: str, timeframe: str, period: str):
         if len(sliced) >= 80:
             df = sliced
     if df is None or len(df) < 80:
-        raise RuntimeError(f"{symbol}: yetersiz bar ({0 if df is None else len(df)})")
+        raise RuntimeError(f"{display}: yetersiz bar ({0 if df is None else len(df)})")
     return df
 
 
@@ -1335,8 +1340,12 @@ def get_job_frame(job_id: str):
 
 def chart_bias_combo(body: dict[str, Any]) -> dict[str, Any]:
     from app.services.borsapy_client import is_borsapy_available, tradingview_auth_configured
+    from app.services.fx_data import FX_BACKTEST_EXCHANGE, is_fx_pair
+    from app.services.ticker_format import clean_fx_symbol
 
-    symbol = str(body.get("symbol") or "").strip().upper()
+    raw_symbol = str(body.get("symbol") or "").strip().upper()
+    fx_mode = is_fx_pair(raw_symbol)
+    symbol = clean_fx_symbol(raw_symbol) if fx_mode else raw_symbol
     timeframe = str(body.get("timeframe") or "15m").strip()
     period = str(body.get("period") or "60d").strip() or "60d"
     if period not in BACKTEST_PERIODS:
@@ -1357,6 +1366,9 @@ def chart_bias_combo(body: dict[str, Any]) -> dict[str, Any]:
         df = load_backtest_frame(symbol, timeframe, period)
     out = chart_from_frame(df, chart_tf=timeframe, params=params, start_equity=start_equity)
     out["symbol"] = symbol
+    out["market"] = "fx" if fx_mode else "viop"
+    if fx_mode:
+        out["tv_symbol"] = f"{FX_BACKTEST_EXCHANGE}:{symbol}"
     out["period"] = period
     return out
 
@@ -1838,7 +1850,12 @@ def run_bias_optimize(
         tradingview_auth_configured,
     )
 
-    symbol = str(body.get("symbol") or "").strip().upper()
+    from app.services.fx_data import FX_BACKTEST_EXCHANGE, is_fx_pair
+    from app.services.ticker_format import clean_fx_symbol
+
+    raw_symbol = str(body.get("symbol") or "").strip().upper()
+    fx_mode = is_fx_pair(raw_symbol)
+    symbol = clean_fx_symbol(raw_symbol) if fx_mode else raw_symbol
     timeframe = str(body.get("timeframe") or "15m").strip()
     period = str(body.get("period") or "60d").strip() or "60d"
     if period not in BACKTEST_PERIODS:
@@ -1865,8 +1882,9 @@ def run_bias_optimize(
     seed = int(body.get("seed") or 42)
     sampling = str(plan.get("mode") or "full")
 
+    feed_label = f"{FX_BACKTEST_EXCHANGE}:{symbol}" if fx_mode else symbol
     if on_progress:
-        on_progress("downloading", 0, 1, f"{symbol} {timeframe} indiriliyor")
+        on_progress("downloading", 0, 1, f"{feed_label} {timeframe} indiriliyor")
     if stopped():
         raise OptimizeCancelled("Tarama durduruldu")
     df = load_backtest_frame(symbol, timeframe, period)
@@ -1892,6 +1910,8 @@ def run_bias_optimize(
     tour_stats: list[dict[str, Any]] = []
     meta = {
         "symbol": symbol,
+        "market": "fx" if fx_mode else "viop",
+        "tv_symbol": feed_label,
         "timeframe": timeframe,
         "period": period,
         "bars": int(len(df)),

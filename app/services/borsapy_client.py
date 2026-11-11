@@ -462,12 +462,15 @@ def fetch_ohlcv_one_backtest(
 
     import borsapy as bp
 
+    from app.services.fx_data import fetch_ohlcv_one_fx_backtest, is_fx_pair
     from app.services.ticker_format import to_viop_continuous_symbol
 
     ensure_tradingview_auth()
     raw = str(symbol or "").strip()
     if not raw:
         return None
+    if is_fx_pair(raw):
+        return fetch_ohlcv_one_fx_backtest(raw, timeframe, period=period)
 
     candidates: list[str] = []
     cont = to_viop_continuous_symbol(raw)
