@@ -13,6 +13,7 @@ def test_alarm_export_flattens_settings_and_pine_params():
             "pine_script_id": 7,
             "pine_input_overrides": {"ha_len": 70, "ha_len2": 91},
             "contracts": ["AEFES1!", "AKBNK1!"],
+            "success_pct": 72,
             "timeframe": "15m",
             "hour": 9,
             "minute": 1,
@@ -52,18 +53,20 @@ def test_alarm_export_flattens_settings_and_pine_params():
         },
     ]
     headers, rows = alarm_export_table(alarms, {7: "Market Bias"})
-    assert headers.index("kontratlar") < headers.index("% kazanç") < headers.index("periyot")
+    assert headers.index("kontratlar") < headers.index("% başarı") < headers.index("periyot")
     assert headers.index("param_ha_len") < headers.index("param_ha_len2") < headers.index("param_osc_len")
     assert "param_ha_len" in headers
     assert "param_osc_len" in headers
     assert len(rows) == 2
     first = dict(zip(headers, rows[0]))
+    second = dict(zip(headers, rows[1]))
     assert first["ad"] == "AEFES Bias"
     assert first["pine"] == "Market Bias"
     assert first["gunler"] == "Pzt,Sal,Çar,Per,Cum"
     assert first["kontratlar"] == "AEFES1!,AKBNK1!"
     assert first["kontrat_sayisi"] == 2
-    assert first["% kazanç"] == ""
+    assert first["% başarı"] == "72%"
+    assert second["% başarı"] == ""
     assert first["param_ha_len"] == 70
     assert first["param_osc_len"] == ""
     blob = build_alarms_xlsx(headers, rows)
@@ -75,4 +78,5 @@ def test_alarm_export_flattens_settings_and_pine_params():
         assert "AEFES Bias" in sheet
         assert "Market Bias" in sheet
         assert "param_ha_len" in sheet
-        assert "% kazanç" in sheet
+        assert "% başarı" in sheet
+        assert "72%" in sheet

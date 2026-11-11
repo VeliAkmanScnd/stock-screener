@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.database import ScanRun, ScanSignalLast, ScheduledScan, SessionLocal
 from app.services.email_service import send_tv_list_email
+from app.services.alarm_service import is_alarm_config
 from app.services.telegram_service import send_telegram_scan_result, telegram_configured
 from app.services.scan_executor import execute_scan_config
 from app.services.schedule_helpers import (
@@ -496,6 +497,10 @@ def _execute_scheduled_scan(
         progress = make_schedule_progress_callback(scheduled_id)
 
         config = json.loads(sched.config_json)
+        alarm_success = {
+            "include_success_pct": True,
+            "success_pct": config.get("success_pct"),
+        } if is_alarm_config(config) else {}
         from app.services.signal_dedupe import _direction, _price_key
 
         repeat_rows = (
@@ -546,6 +551,7 @@ def _execute_scheduled_scan(
                     results=[item],
                     custom_source_universe=config.get("custom_source_universe"),
                     bot_token=getattr(sched, "telegram_bot_token", None),
+                    **alarm_success,
                 )
             except Exception:
                 logger.exception("Early telegram failed for %s", symbol)
@@ -611,8 +617,13 @@ def _execute_scheduled_scan(
                     timeframe=str(payload.get("timeframe") or ""),
                     custom_source_universe=payload.get("custom_source_universe"),
                     scan_name=sched.name,
+                    **alarm_success,
                 )
                 body = f"Tarama: {sched.name}\nEşleşme: {match_count}\n"
+                if alarm_success:
+                    from app.services.alarm_service import format_success_pct_label
+
+                    body += f"Başarı: {format_success_pct_label(alarm_success.get('success_pct'))}\n"
                 if cards:
                     body += "\n" + "\n\n".join(cards) + "\n"
                 body += "\nTradingView sembol listesi ekte (.txt).\n"
@@ -658,6 +669,7 @@ def _execute_scheduled_scan(
                     results=pending_results,
                     custom_source_universe=payload.get("custom_source_universe"),
                     bot_token=getattr(sched, "telegram_bot_token", None),
+                    **alarm_success,
                 )
                 telegram_sent_count += int(sent or 0)
                 telegram_sent = telegram_sent_count > 0

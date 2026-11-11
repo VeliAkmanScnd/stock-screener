@@ -290,6 +290,8 @@ def format_signal_telegram_card(
     bar_label: str | None = None,
     scan_name: str | None = None,
     signals: dict | None = None,
+    success_pct: float | str | None = None,
+    include_success_pct: bool = False,
 ) -> str:
     yon = "SAT" if str(direction).strip().upper() == "SAT" else "AL"
     giris = _signal_level(signals, "fib_entry")
@@ -327,6 +329,10 @@ def format_signal_telegram_card(
     scan = (scan_name or "").strip()
     if scan:
         lines.append(f"Tarama\t: {scan}")
+    if include_success_pct:
+        from app.services.alarm_service import format_success_pct_label
+
+        lines.append(f"Başarı\t: {format_success_pct_label(success_pct)}")
     if bar_label:
         lines.append(f"Bar\t\t: {bar_label}")
     lines.append(f"Fiyat\t: {_tr_price(price, digits)}")
@@ -352,6 +358,8 @@ def _signal_cards(
     exchange: str | None = None,
     timeframe: str | None = None,
     scan_name: str | None = None,
+    success_pct: float | str | None = None,
+    include_success_pct: bool = False,
 ) -> list[str]:
     cards: list[str] = []
     for row in results or []:
@@ -379,6 +387,8 @@ def _signal_cards(
                 bar_label=_bar_label_from_signals(signals, timeframe),
                 scan_name=scan_name,
                 signals=signals,
+                success_pct=success_pct,
+                include_success_pct=include_success_pct,
             )
         )
     return cards
@@ -391,6 +401,8 @@ def format_signal_cards(
     timeframe: str | None = None,
     custom_source_universe: str | None = None,
     scan_name: str | None = None,
+    success_pct: float | str | None = None,
+    include_success_pct: bool = False,
 ) -> list[str]:
     """Same card text for Telegram and email."""
     market = _card_market(universe, custom_source_universe, results)
@@ -401,6 +413,8 @@ def format_signal_cards(
         exchange=exchange,
         timeframe=timeframe,
         scan_name=scan_name,
+        success_pct=success_pct,
+        include_success_pct=include_success_pct,
     )
 
 
@@ -475,6 +489,8 @@ def send_telegram_scan_result(
     results: list[dict] | None = None,
     custom_source_universe: str | None = None,
     bot_token: str | None = None,
+    success_pct: float | str | None = None,
+    include_success_pct: bool = False,
 ) -> int:
     """One Telegram card per match; no file, no title. Skip if empty."""
     bot_token, extra_chat_ids = merge_telegram_credentials(bot_token, extra_chat_ids)
@@ -487,6 +503,8 @@ def send_telegram_scan_result(
         exchange=exchange,
         timeframe=timeframe,
         scan_name=name,
+        success_pct=success_pct,
+        include_success_pct=include_success_pct,
     )
     if not cards:
         if results or match_count > 0:

@@ -198,6 +198,7 @@ function resetAlarmForm() {
   document.querySelector("#alarmName").value = "";
   document.querySelector("#alarmPine").value = "";
   document.querySelector("#alarmTimeframe").value = "15m";
+  document.querySelector("#alarmSuccessPct").value = "";
   document.querySelector("#alarmStartHour").value = "9";
   document.querySelector("#alarmEndHour").value = "18";
   document.querySelector("#alarmTelegram").value = "";
@@ -227,6 +228,21 @@ function readyForNextAlarm(savedName) {
   );
 }
 
+function alarmSuccessPctValue() {
+  const raw = (document.querySelector("#alarmSuccessPct")?.value || "").trim();
+  if (!raw) return null;
+  const n = parseFloat(raw.replace(",", "."));
+  if (!Number.isFinite(n)) return null;
+  return Math.max(0, Math.min(100, n));
+}
+
+function formatAlarmSuccessPct(value) {
+  if (value === null || value === undefined || value === "") return "N/A";
+  const n = Number(value);
+  if (!Number.isFinite(n)) return "N/A";
+  return `${Number.isInteger(n) ? n : n}%`;
+}
+
 function collectAlarmBody() {
   const pineId = parseInt(document.querySelector("#alarmPine").value, 10);
   const contracts = selectedAlarmContracts();
@@ -236,6 +252,7 @@ function collectAlarmBody() {
     pine_input_overrides: collectAlarmPineInputs(),
     contracts,
     timeframe: document.querySelector("#alarmTimeframe").value,
+    success_pct: alarmSuccessPctValue(),
     hour: parseInt(document.querySelector("#alarmStartHour").value, 10),
     minute: 1,
     end_hour: parseInt(document.querySelector("#alarmEndHour").value, 10),
@@ -253,6 +270,8 @@ async function fillAlarmForm(row) {
   document.querySelector("#alarmName").value = row.name || "";
   document.querySelector("#alarmPine").value = row.pine_script_id || "";
   document.querySelector("#alarmTimeframe").value = row.timeframe || "15m";
+  document.querySelector("#alarmSuccessPct").value =
+    row.success_pct === null || row.success_pct === undefined ? "" : row.success_pct;
   document.querySelector("#alarmStartHour").value = row.hour ?? 9;
   document.querySelector("#alarmEndHour").value = row.end_hour ?? 18;
   document.querySelector("#alarmTelegram").value = row.telegram_to || "";
@@ -322,7 +341,7 @@ async function loadAlarmList() {
     }
     if (exportBtn) exportBtn.disabled = !rows.length;
     if (!rows.length) {
-      body.innerHTML = '<tr class="empty"><td colspan="5">Henüz alarm yok.</td></tr>';
+      body.innerHTML = '<tr class="empty"><td colspan="6">Henüz alarm yok.</td></tr>';
       return;
     }
     body.innerHTML = rows
@@ -337,6 +356,7 @@ async function loadAlarmList() {
         return `<tr>
           <td><strong>${alarmEsc(r.name)}</strong>${r.enabled ? "" : ' <span class="hint">kapalı</span>'}</td>
           <td>${alarmEsc(tfLabel(r.timeframe))}</td>
+          <td>${alarmEsc(formatAlarmSuccessPct(r.success_pct))}</td>
           <td>${alarmEsc(names)}${extra} <span class="hint">(${n})</span></td>
           <td>${alarmEsc(last)}<br><span class="hint">${alarmEsc(next)}</span></td>
           <td class="scheduled-actions">
@@ -358,7 +378,7 @@ async function loadAlarmList() {
     });
   } catch (err) {
     if (exportBtn) exportBtn.disabled = true;
-    body.innerHTML = `<tr class="empty"><td colspan="5">${alarmEsc(err.message)}</td></tr>`;
+    body.innerHTML = `<tr class="empty"><td colspan="6">${alarmEsc(err.message)}</td></tr>`;
   }
 }
 

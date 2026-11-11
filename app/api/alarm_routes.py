@@ -49,6 +49,7 @@ class AlarmBody(BaseModel):
     pine_input_overrides: dict[str, Any] = Field(default_factory=dict)
     contracts: list[str] = Field(min_length=1)
     timeframe: str = "15m"
+    success_pct: float | str | None = None
     hour: int = Field(default=9, ge=0, le=23)
     minute: int = Field(default=1, ge=0, le=59)
     end_hour: int = Field(default=18, ge=0, le=23)
@@ -65,6 +66,7 @@ class AlarmPatch(BaseModel):
     pine_input_overrides: dict[str, Any] | None = None
     contracts: list[str] | None = None
     timeframe: str | None = None
+    success_pct: float | str | None = None
     hour: int | None = Field(default=None, ge=0, le=23)
     minute: int | None = Field(default=None, ge=0, le=59)
     end_hour: int | None = Field(default=None, ge=0, le=23)
@@ -179,6 +181,7 @@ def create_alarm(
         timeframe=tf,
         telegram_to=body.telegram_to,
         telegram_bot_token=(body.telegram_bot_token or "").strip() or None,
+        success_pct=body.success_pct,
     )
     row = ScheduledScan(
         user_id=user.id,
@@ -251,6 +254,9 @@ def update_alarm(
         if body.pine_input_overrides is not None
         else (cfg.get("pine_input_overrides") or {})
     )
+    success_pct = (
+        body.success_pct if "success_pct" in body.model_fields_set else cfg.get("success_pct")
+    )
     row.schedule_type = tf
     weekdays = _weekdays(
         body.weekdays if body.weekdays is not None else _row_weekdays(row)
@@ -264,6 +270,7 @@ def update_alarm(
             timeframe=tf,
             telegram_to=row.telegram_to,
             telegram_bot_token=row.telegram_bot_token,
+            success_pct=success_pct,
         )
     )
     db.commit()

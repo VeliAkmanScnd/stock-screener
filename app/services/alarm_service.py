@@ -15,7 +15,7 @@ ALARM_KIND = "viop_pay"
 ALARM_TIMEFRAMES = ("3m", "5m", "15m", "30m", "1h")
 _WEEKDAY_LABELS = ("Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "Paz")
 # Column order matches the desk export template (kontratlar before period;
-# "% kazanç" is manual — not stored in DB, exported blank).
+# "% başarı" is the manual test success rate stored as success_pct).
 _ALARM_EXPORT_BASE = (
     ("id", "id"),
     ("name", "ad"),
@@ -23,7 +23,7 @@ _ALARM_EXPORT_BASE = (
     ("pine_script_id", "pine_id"),
     ("pine_name", "pine"),
     ("contracts", "kontratlar"),
-    ("pct_gain", "% kazanç"),
+    ("success_pct", "% başarı"),
     ("timeframe", "periyot"),
     ("hour", "baslangic_saat"),
     ("minute", "dakika"),
@@ -99,6 +99,34 @@ def config_from_row(row) -> dict[str, Any]:
         return {}
 
 
+def normalize_success_pct(raw: Any) -> float | None:
+    """Manual backtest success % for an alarm; None when blank / invalid."""
+    if raw is None:
+        return None
+    if isinstance(raw, str):
+        text = raw.strip().replace("%", "").replace(",", ".")
+        if not text:
+            return None
+        raw = text
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return None
+    if value != value:  # NaN
+        return None
+    return round(max(0.0, min(100.0, value)), 2)
+
+
+def format_success_pct_label(raw: Any) -> str:
+    """Telegram/email display: '72%' or 'N/A'."""
+    value = normalize_success_pct(raw)
+    if value is None:
+        return "N/A"
+    if value == int(value):
+        return f"{int(value)}%"
+    return f"{value:g}%"
+
+
 def parse_contracts(raw: str | list[str] | None) -> list[str]:
     if isinstance(raw, list):
         parts = raw
@@ -127,6 +155,7 @@ def build_scan_config(
     timeframe: str,
     telegram_to: str | None = None,
     telegram_bot_token: str | None = None,
+    success_pct: Any = None,
 ) -> dict[str, Any]:
     tf = (timeframe or "15m").strip().lower()
     if tf not in ALARM_TIMEFRAMES:
@@ -143,6 +172,7 @@ def build_scan_config(
         "pine_script_id": int(pine_script_id),
         "require_pine_al": True,
         "pine_input_overrides": dict(pine_input_overrides or {}),
+        "success_pct": normalize_success_pct(success_pct),
         "max_symbols": max(len(symbols), 1),
         "notify_telegram": True,
         "telegram_to": telegram_to,
@@ -159,6 +189,7 @@ def alarm_view(row_dict: dict[str, Any]) -> dict[str, Any]:
         "enabled": bool(row_dict.get("enabled")),
         "pine_script_id": cfg.get("pine_script_id"),
         "pine_input_overrides": cfg.get("pine_input_overrides") or {},
+        "success_pct": normalize_success_pct(cfg.get("success_pct")),
         "contracts": contracts,
         "timeframe": cfg.get("timeframe") or row_dict.get("schedule_type") or "15m",
         "hour": row_dict.get("hour"),
@@ -244,7 +275,11 @@ def alarm_export_table(
             "pine_script_id": pine_id,
             "pine_name": names.get(pine_key, "") if pine_key is not None else "",
             "contracts": ",".join(str(c) for c in contracts),
-            "pct_gain": row.get("pct_gain", ""),
+            "success_pct": (
+                format_success_pct_label(row.get("success_pct"))
+                if row.get("success_pct") is not None and str(row.get("success_pct")).strip() != ""
+                else ""
+            ),
             "timeframe": row.get("timeframe"),
             "hour": row.get("hour"),
             "minute": row.get("minute"),
