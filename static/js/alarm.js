@@ -270,8 +270,9 @@ async function fillAlarmForm(row) {
   document.querySelector("#alarmName").value = row.name || "";
   document.querySelector("#alarmPine").value = row.pine_script_id || "";
   document.querySelector("#alarmTimeframe").value = row.timeframe || "15m";
+  const sp = row.success_pct;
   document.querySelector("#alarmSuccessPct").value =
-    row.success_pct === null || row.success_pct === undefined ? "" : row.success_pct;
+    sp === null || sp === undefined || sp === "" ? "" : String(sp);
   document.querySelector("#alarmStartHour").value = row.hour ?? 9;
   document.querySelector("#alarmEndHour").value = row.end_hour ?? 18;
   document.querySelector("#alarmTelegram").value = row.telegram_to || "";

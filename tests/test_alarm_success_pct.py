@@ -3,6 +3,7 @@ from app.services.alarm_service import (
     format_success_pct_label,
     normalize_success_pct,
 )
+from app.services.scan_executor import config_to_json, scan_body_from_dict
 from app.services.telegram_service import format_signal_telegram_card
 
 
@@ -40,6 +41,29 @@ def test_build_scan_config_stores_success_pct():
         success_pct=None,
     )
     assert empty["success_pct"] is None
+
+
+def test_config_to_json_keeps_alarm_success_pct():
+    cfg = build_scan_config(
+        pine_script_id=7,
+        pine_input_overrides={"ha_len": 84},
+        contracts=["AEFES1!"],
+        timeframe="15m",
+        success_pct=72,
+    )
+    stored = scan_body_from_dict(__import__("json").loads(config_to_json(cfg)))
+    assert stored["alarm"] is True
+    assert stored["success_pct"] == 72.0
+    # Blank stays null so edit form can show empty / Telegram N/A.
+    cfg2 = build_scan_config(
+        pine_script_id=7,
+        pine_input_overrides={},
+        contracts=["AEFES1!"],
+        timeframe="15m",
+        success_pct=None,
+    )
+    stored2 = scan_body_from_dict(__import__("json").loads(config_to_json(cfg2)))
+    assert stored2["success_pct"] is None
 
 
 def test_telegram_card_includes_success_or_na():

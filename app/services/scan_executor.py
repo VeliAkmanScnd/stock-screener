@@ -42,6 +42,11 @@ def scan_body_from_dict(data: dict[str, Any]) -> dict[str, Any]:
     if data.get("alarm"):
         body["alarm"] = True
         body["alarm_kind"] = data.get("alarm_kind") or "viop_pay"
+        # Manual tester success % — must survive config_to_json round-trips.
+        if "success_pct" in data:
+            from app.services.alarm_service import normalize_success_pct
+
+            body["success_pct"] = normalize_success_pct(data.get("success_pct"))
     return body
 
 
