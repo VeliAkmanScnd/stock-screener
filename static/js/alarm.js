@@ -214,16 +214,19 @@ function resetAlarmForm() {
   alarmStatus("Yeni alarm.");
 }
 
-function readyForNextAlarm(savedName) {
+function readyForNextAlarm(savedName, savedSuccessPct) {
   alarmEditingId = null;
   document.querySelector("#alarmId").value = "";
   document.querySelector("#alarmName").value = "";
+  const spEl = document.querySelector("#alarmSuccessPct");
+  if (spEl) spEl.value = "";
   const filter = document.querySelector("#alarmContractFilter");
   if (filter) filter.value = "";
   renderAlarmContracts([]);
   setAlarmSaveMode(false);
+  const spBit = ` · Başarı ${formatAlarmSuccessPct(savedSuccessPct)}`;
   alarmStatus(
-    `Kaydedildi: ${savedName}. Ad ve pay seçip tekrar Kaydet — alarm sayısı sınırsız.`,
+    `Kaydedildi: ${savedName}${spBit}. Ad ve pay seçip tekrar Kaydet — alarm sayısı sınırsız.`,
     "ok"
   );
 }
@@ -270,9 +273,14 @@ async function fillAlarmForm(row) {
   document.querySelector("#alarmName").value = row.name || "";
   document.querySelector("#alarmPine").value = row.pine_script_id || "";
   document.querySelector("#alarmTimeframe").value = row.timeframe || "15m";
-  const sp = row.success_pct;
-  document.querySelector("#alarmSuccessPct").value =
-    sp === null || sp === undefined || sp === "" ? "" : String(sp);
+  const spEl = document.querySelector("#alarmSuccessPct");
+  if (spEl) {
+    const sp = row.success_pct;
+    spEl.value =
+      sp === null || sp === undefined || sp === "" || Number.isNaN(Number(sp))
+        ? ""
+        : String(Number(sp));
+  }
   document.querySelector("#alarmStartHour").value = row.hour ?? 9;
   document.querySelector("#alarmEndHour").value = row.end_hour ?? 18;
   document.querySelector("#alarmTelegram").value = row.telegram_to || "";
@@ -282,7 +290,8 @@ async function fillAlarmForm(row) {
   await loadAlarmPineParams(row.pine_script_id, row.pine_input_overrides || {});
   renderAlarmContracts(row.contracts || []);
   setAlarmSaveMode(true);
-  alarmStatus(`Düzenleniyor: ${row.name}`);
+  const spLabel = formatAlarmSuccessPct(row.success_pct);
+  alarmStatus(`Düzenleniyor: ${row.name} · Başarı ${spLabel}`);
 }
 
 function tfLabel(tf) {
@@ -457,7 +466,7 @@ async function saveAlarm(e) {
       return;
     }
     await loadAlarmList();
-    readyForNextAlarm(data.name || body.name);
+    readyForNextAlarm(data.name || body.name, data.success_pct);
   } catch (err) {
     alarmStatus(err.message, "error");
   }
