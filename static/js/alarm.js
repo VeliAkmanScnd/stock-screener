@@ -344,7 +344,12 @@ async function loadAlarmList() {
   const exportBtn = document.querySelector("#btnAlarmExportExcel");
   try {
     const res = await apiFetch("/api/alarms");
-    const rows = await res.json();
+    const rows = (await res.json()).slice().sort((a, b) =>
+      String(a.name || "").localeCompare(String(b.name || ""), "tr", {
+        sensitivity: "base",
+        numeric: true,
+      })
+    );
     const title = document.querySelector("#alarmListTitle");
     if (title) {
       title.textContent = rows.length ? `Kayıtlı alarmlar (${rows.length})` : "Kayıtlı alarmlar";

@@ -1727,6 +1727,48 @@ body {
 
 .alarm-pine-box {
   margin: 0.5rem 0 0.75rem;
+  container-type: inline-size;
+}
+
+/* Alarm Pine parameters: no inner scroll, and each label sits next to its field.
+   Rows share the form's tracks (subgrid), so every field in a column stays aligned
+   and the label column is only as wide as its longest label. */
+.alarm-pine-box .pine-inputs-form {
+  max-height: none;
+  overflow: visible;
+  padding-right: 0;
+  grid-template-columns: repeat(3, fit-content(10rem) 9rem);
+  justify-content: start;
+  column-gap: 2rem;
+  row-gap: 0.5rem;
+}
+
+.alarm-pine-box .pine-input-row {
+  grid-column: span 2;
+  grid-template-columns: subgrid;
+  column-gap: 0.6rem;
+}
+
+.alarm-pine-box .pine-input-row input[type="number"],
+.alarm-pine-box .pine-input-row input[type="text"],
+.alarm-pine-box .pine-input-row select {
+  width: 100%;
+}
+
+.alarm-pine-box .pine-input-row input[type="checkbox"] {
+  justify-self: start;
+}
+
+@container (max-width: 66rem) {
+  .alarm-pine-box .pine-inputs-form {
+    grid-template-columns: repeat(2, fit-content(14rem) 9rem);
+  }
+}
+
+@container (max-width: 40rem) {
+  .alarm-pine-box .pine-inputs-form {
+    grid-template-columns: fit-content(16rem) 9rem;
+  }
 }
 
 .perf-section-nav {
