@@ -79,6 +79,17 @@ class ScanRun(Base):
     error_message = Column(Text, nullable=True)
 
 
+class AlarmBarMark(Base):
+    """Last closed bar each alarm evaluated per symbol (catch-up after a missed run)."""
+
+    __tablename__ = "alarm_bar_marks"
+
+    scheduled_scan_id = Column(Integer, primary_key=True)
+    symbol = Column(String(32), primary_key=True)
+    last_bar = Column(String(40), nullable=False)
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
 class ScanSignalLast(Base):
     """Last emitted signal price per user/scan/symbol/direction (repeat filter)."""
 

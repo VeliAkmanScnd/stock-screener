@@ -14,7 +14,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.database import ScanRun, ScanSignalLast, ScheduledScan, SessionLocal
+from app.database import AlarmBarMark, ScanRun, ScanSignalLast, ScheduledScan, SessionLocal
 from app.services.email_service import send_tv_list_email
 from app.services.alarm_service import is_alarm_config
 from app.services.telegram_service import send_telegram_scan_result, telegram_configured
@@ -431,6 +431,20 @@ def run_scheduled_scan(
     _kick_worker()
 
 
+def _save_bar_marks(db: Session, scheduled_id: int, marks: dict[str, str]) -> None:
+    """Remember the last closed bar per symbol so the next run can catch up."""
+    now = _utc_now_naive()
+    for symbol, last_bar in marks.items():
+        db.merge(
+            AlarmBarMark(
+                scheduled_scan_id=scheduled_id,
+                symbol=str(symbol)[:32],
+                last_bar=str(last_bar)[:40],
+                updated_at=now,
+            )
+        )
+
+
 def _execute_scheduled_scan(
     scheduled_id: int,
     *,
@@ -559,9 +573,28 @@ def _execute_scheduled_scan(
             streamed.add(key)
 
         notify_telegram = bool(getattr(sched, "notify_telegram", True))
+        # Alarms walk every closed bar since their last run, so a run that missed
+        # a bar does not lose its signal. Plain schedules keep last-bar scoring.
+        bar_marks_in: dict[str, str] | None = None
+        bar_marks_out: dict[str, str] | None = None
+        if is_alarm_config(config):
+            bar_marks_in = {
+                row.symbol: row.last_bar
+                for row in db.query(AlarmBarMark)
+                .filter(AlarmBarMark.scheduled_scan_id == sched.id)
+                .all()
+            }
+            bar_marks_out = {}
         payload = execute_scan_config(
-            config, db, progress_callback=progress, on_match=_on_match
+            config,
+            db,
+            progress_callback=progress,
+            on_match=_on_match,
+            bar_marks_in=bar_marks_in,
+            bar_marks_out=bar_marks_out,
         )
+        if bar_marks_out:
+            _save_bar_marks(db, sched.id, bar_marks_out)
         from app.services.signal_dedupe import apply_repeat_price_filter, scan_fingerprint
 
         update_schedule_progress(

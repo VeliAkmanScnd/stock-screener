@@ -42,6 +42,11 @@ class ScanRequest:
     pine_input_overrides: dict[str, Any] = field(default_factory=dict)
     max_symbols: int = MAX_SYMBOLS_PER_SCAN
     bist_data_provider: str | None = None
+    # Scheduled alarms only. bar_marks_in: symbol -> last evaluated bar (ISO).
+    # bar_marks_out is filled with symbol -> last closed bar after the run.
+    # Setting bar_marks_out turns on catch-up evaluation and the stale-bar gate.
+    bar_marks_in: dict[str, str] | None = None
+    bar_marks_out: dict[str, str] | None = None
 
 
 @dataclass
@@ -360,6 +365,26 @@ def scan_dataframe(
                     signals.update(
                         signal_bar_fields(df.iloc[:-shift], req.timeframe, universe=market)
                     )
+                if pine_ok and req.bar_marks_out is not None:
+                    from app.services.bar_close import (
+                        ALARM_MAX_BAR_AGE_BARS,
+                        bar_close_age_seconds,
+                        timeframe_seconds,
+                    )
+
+                    age = bar_close_age_seconds(df.index[-1], req.timeframe, universe=market)
+                    limit = ALARM_MAX_BAR_AGE_BARS * timeframe_seconds(req.timeframe)
+                    if age is not None and age > limit:
+                        pine_ok = False
+                        signals["stale_bar"] = True
+                        signals["stale_bar_age_min"] = round(age / 60.0, 1)
+                        logger.info(
+                            "Alarm skip %s: bar %s closed %.0f min ago (limit %.0f min)",
+                            symbol,
+                            df.index[-1],
+                            age / 60.0,
+                            limit / 60.0,
+                        )
             elif pine_source == "bias_ts" and pine_code:
                 from app.services.pine_bias_ts import bias_ts_params_from_script, bias_ts_snapshot
 
@@ -460,6 +485,70 @@ def scan_dataframe(
     )
 
 
+def alarm_candidate_bars(
+    index: pd.Index,
+    since: str | None,
+    max_bars: int,
+) -> list[pd.Timestamp]:
+    """Closed bars an alarm must score this run.
+
+    First sight of a symbol: just the last closed bar. Otherwise every closed bar
+    after the last one evaluated, capped at ``max_bars``. Older bars would fail
+    the stale-bar gate anyway, so they are never scored.
+    """
+    if index is None or len(index) == 0:
+        return []
+    last = pd.Timestamp(index[-1])
+    if since is None:
+        return [last]
+    since_ts = pd.Timestamp(since)
+    if getattr(index, "tz", None) is not None and since_ts.tzinfo is None:
+        since_ts = since_ts.tz_localize(index.tz)
+    elif getattr(index, "tz", None) is None and since_ts.tzinfo is not None:
+        since_ts = since_ts.tz_localize(None)
+    recent = index[-max(1, int(max_bars)) :]
+    return [pd.Timestamp(t) for t in recent if pd.Timestamp(t) > since_ts]
+
+
+def _rows_for_symbol(
+    sym: str,
+    df: pd.DataFrame,
+    req: ScanRequest,
+    market_cap: float | None,
+    pine_condition: str | None,
+    pine_source: str | None,
+    pine_code: str | None,
+) -> list[ScanResult]:
+    """Rows for one symbol. Plain scans get exactly one row, as before.
+
+    Alarm market_bias runs score every candidate bar on the data available up
+    to that bar, i.e. what a live scan would have seen then. A bar a run missed
+    is therefore scored by the next run instead of being lost.
+    """
+    if req.bar_marks_out is None or pine_source != "market_bias" or not pine_code:
+        return [
+            scan_dataframe(sym, df, req, market_cap, pine_condition, pine_source, pine_code)
+        ]
+
+    from app.services.bar_close import ALARM_MAX_BAR_AGE_BARS, drop_unclosed_bar
+
+    market = scan_market_universe(req)
+    closed = drop_unclosed_bar(df, req.timeframe, universe=market)
+    if closed is None or len(closed) == 0:
+        return []
+    req.bar_marks_out[sym] = pd.Timestamp(closed.index[-1]).isoformat()
+
+    since_raw = (req.bar_marks_in or {}).get(sym)
+    bars = alarm_candidate_bars(closed.index, since_raw, ALARM_MAX_BAR_AGE_BARS)
+    rows: list[ScanResult] = []
+    for ts in bars:
+        prefix = closed.loc[:ts]
+        rows.append(
+            scan_dataframe(sym, prefix, req, market_cap, pine_condition, pine_source, pine_code)
+        )
+    return rows
+
+
 def run_scan(
     req: ScanRequest,
     pine_condition: str | None = None,
@@ -498,7 +587,7 @@ def run_scan(
                     key = reason or "inactive"
                     stats.skip_reasons[key] = stats.skip_reasons.get(key, 0) + 1
                     continue
-                row = scan_dataframe(
+                rows = _rows_for_symbol(
                     sym,
                     df,
                     req,
@@ -509,14 +598,15 @@ def run_scan(
                 )
                 seen.add(sym)
                 stats.scanned += 1
-                if row.matched:
-                    results.append(row)
-                    stats.matched += 1
-                    if on_match:
-                        try:
-                            on_match(row)
-                        except Exception:
-                            logger.exception("Scan match callback failed for %s", sym)
+                for row in rows:
+                    if row.matched:
+                        results.append(row)
+                        stats.matched += 1
+                        if on_match:
+                            try:
+                                on_match(row)
+                            except Exception:
+                                logger.exception("Scan match callback failed for %s", sym)
                 report("scanning", stats.scanned, max(stats.scanned, len(symbols)), sym)
             except Exception:
                 logger.exception("Scan failed for %s", sym)

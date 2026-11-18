@@ -55,6 +55,8 @@ def execute_scan_config(
     db: Session,
     progress_callback: Callable[[str, int, int, str], None] | None = None,
     on_match: Callable[..., None] | None = None,
+    bar_marks_in: dict[str, str] | None = None,
+    bar_marks_out: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Execute scan; returns same shape as POST /api/scan (without raising HTTPException)."""
     body = scan_body_from_dict(config)
@@ -149,6 +151,8 @@ def execute_scan_config(
         pine_input_overrides=pine_input_overrides,
         max_symbols=min(int(body.get("max_symbols") or 100), MAX_SYMBOLS_PER_SCAN),
         bist_data_provider=body.get("bist_data_provider"),
+        bar_marks_in=bar_marks_in,
+        bar_marks_out=bar_marks_out,
     )
 
     results, stats = run_scan(

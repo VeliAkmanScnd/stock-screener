@@ -116,6 +116,33 @@ def signal_bar_fields(
     return out
 
 
+def bar_close_age_seconds(
+    value: Any,
+    timeframe: str | None,
+    *,
+    universe: str | None = None,
+    now: datetime | None = None,
+) -> float | None:
+    """Seconds between a bar's close and ``now`` (negative while the bar is open)."""
+    ts = _to_market_ts(value, universe=universe)
+    if ts is None:
+        return None
+    close_ts = ts + pd.Timedelta(seconds=timeframe_seconds(timeframe or "1d"))
+    if now is None:
+        now_ts = pd.Timestamp.now(tz=ts.tz)
+    else:
+        now_ts = pd.Timestamp(now)
+        if now_ts.tzinfo is None:
+            now_ts = now_ts.tz_localize(ts.tz)
+    return float((now_ts - close_ts).total_seconds())
+
+
+# Alarm sends only a bar whose close is at most this many bars old. A run that
+# missed a bar still catches it on the next run; a bar from a previous session
+# (weekend gap, stale feed) does not.
+ALARM_MAX_BAR_AGE_BARS = 4
+
+
 def seconds_until_bar_settled(
     timeframe: str,
     now: datetime | None = None,
